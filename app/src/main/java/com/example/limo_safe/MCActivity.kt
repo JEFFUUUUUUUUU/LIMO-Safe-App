@@ -41,37 +41,11 @@ class MCActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.fragment_mc)
 
-        // Initialize SessionManager
-        sessionManager = SessionManager(this) {
-            val intent = Intent(this, LoginActivity::class.java)
-            startActivity(intent)
-            finish()
-        }
+        // Initialize views and session manager
+        initializeViews()
 
-        // Initialize views
-        titleText = findViewById(R.id.titleText)
-        generatedCodeText = findViewById(R.id.generatedCodeText)
-        playMorseButton = findViewById(R.id.playMorseButton)
-        checkMonitoringButton = findViewById(R.id.checkMonitoringButton)
-        exitButton = findViewById(R.id.exitButton)
-
-        // Set initial code
-        updateGeneratedCodeText()
-
-        // Request camera permission if not granted
-        if (!hasCameraPermission()) {
-            requestCameraPermission()
-        }
-
-        // Check if timer is running and update UI accordingly
-        if (isTimerRunning) {
-            playMorseButton.isEnabled = false
-            val elapsedTime = System.currentTimeMillis() - startTime
-            val remainingTime = COUNTDOWN_DURATION - elapsedTime
-            if (remainingTime > 0) {
-                startCountdown(remainingTime, false) // false means don't reset the start time
-            }
-        }
+        // Check timer state immediately
+        checkAndRestoreTimerState()
 
         playMorseButton.setOnClickListener {
             if (!hasCameraPermission()) {
@@ -85,7 +59,7 @@ class MCActivity : AppCompatActivity() {
                 val morseCodeSequence = convertToMorseCode(currentCode)
                 playMorseCodeSequence(this, morseCodeSequence)
                 startTime = System.currentTimeMillis()
-                startCountdown(COUNTDOWN_DURATION, true) // true means new countdown
+                startCountdown(COUNTDOWN_DURATION, true)
             }
         }
 
@@ -96,6 +70,29 @@ class MCActivity : AppCompatActivity() {
 
         exitButton.setOnClickListener {
             showExitConfirmationDialog()
+        }
+    }
+
+    private fun initializeViews() {
+        sessionManager = SessionManager(this) {
+            val intent = Intent(this, LoginActivity::class.java)
+            startActivity(intent)
+            finish()
+        }
+
+        titleText = findViewById(R.id.titleText)
+        generatedCodeText = findViewById(R.id.generatedCodeText)
+        playMorseButton = findViewById(R.id.playMorseButton)
+        checkMonitoringButton = findViewById(R.id.checkMonitoringButton)
+        exitButton = findViewById(R.id.exitButton)
+
+        updateGeneratedCodeText()
+    }
+
+    private fun checkAndRestoreTimerState() {
+        if (isTimerRunning && timeRemaining > 0) {
+            playMorseButton.isEnabled = false
+            startCountdown(timeRemaining, false)
         }
     }
 
@@ -141,12 +138,13 @@ class MCActivity : AppCompatActivity() {
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
         playMorseButton.isEnabled = false
         countDownTimer?.cancel()
-        isTimerRunning = true
-        timeRemaining = duration
         
         if (isNewCountdown) {
             startTime = System.currentTimeMillis()
+            isTimerRunning = true
         }
+        
+        timeRemaining = duration
 
         countDownTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
@@ -239,10 +237,7 @@ class MCActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (isTimerRunning && timeRemaining > 0) {
-            playMorseButton.isEnabled = false
-            startCountdown(timeRemaining, false)
-        }
+        checkAndRestoreTimerState()
     }
 
     override fun onPause() {
@@ -252,11 +247,6 @@ class MCActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        countDownTimer?.cancel()
-        isTimerRunning = false
-        timeRemaining = 0
-        
-        // Ensure flashlight is turned off when activity is destroyed
         try {
             toggleFlashlight(this, false)
         } catch (e: Exception) {

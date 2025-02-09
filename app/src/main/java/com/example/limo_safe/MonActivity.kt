@@ -24,17 +24,11 @@ class MonActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.fragment_monitoring)
 
-        // Initialize views and setup
         initializeViews()
-
-        // Continue countdown if it was running
-        if (MCActivity.isTimerRunning && MCActivity.timeRemaining > 0) {
-            startCountdown(MCActivity.timeRemaining)
-        }
+        continueCountdownIfRunning()
     }
 
     private fun initializeViews() {
-        // Initialize SessionManager
         sessionManager = SessionManager(this) {
             val intent = Intent(this, LoginActivity::class.java)
             startActivity(intent)
@@ -44,18 +38,42 @@ class MonActivity : AppCompatActivity() {
         backButton = findViewById(R.id.backButton)
         monitoringTable = findViewById(R.id.monitoringTable)
 
-        // Add header row
         addTableRow("Date", "Time", "Status", true)
         addTableRow("Date", "Time", "Status", false)
         addTableRow("Date", "Time", "Status", false)
         addTableRow("Date", "Time", "Status", false)
 
         backButton.setOnClickListener {
-            val intent = Intent(this, MCActivity::class.java)
-            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            startActivity(intent)
-            finish()
+            navigateBackToMC()
         }
+    }
+
+    private fun continueCountdownIfRunning() {
+        if (MCActivity.isTimerRunning && MCActivity.timeRemaining > 0) {
+            startCountdown(MCActivity.timeRemaining)
+        }
+    }
+
+    private fun startCountdown(duration: Long) {
+        countDownTimer?.cancel()
+        
+        countDownTimer = object : CountDownTimer(duration, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                MCActivity.timeRemaining = millisUntilFinished
+            }
+
+            override fun onFinish() {
+                MCActivity.isTimerRunning = false
+                MCActivity.timeRemaining = 0
+            }
+        }.start()
+    }
+
+    private fun navigateBackToMC() {
+        val intent = Intent(this, MCActivity::class.java)
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        startActivity(intent)
+        finish()
     }
 
     private fun addTableRow(date: String, time: String, status: String, isHeader: Boolean = false) {
@@ -96,32 +114,13 @@ class MonActivity : AppCompatActivity() {
         }
     }
 
-    private fun startCountdown(duration: Long) {
-        countDownTimer?.cancel()
-        
-        countDownTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                MCActivity.timeRemaining = millisUntilFinished
-            }
-
-            override fun onFinish() {
-                MCActivity.isTimerRunning = false
-                MCActivity.timeRemaining = 0
-            }
-        }.start()
+    override fun onBackPressed() {
+        super.onBackPressed()
+        navigateBackToMC()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        countDownTimer?.cancel()
-    }
-
-    override fun onBackPressed() {
-        super.onBackPressed()
-        val intent = Intent(this, MCActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        startActivity(intent)
-        finish()
     }
 
     override fun onUserInteraction() {
