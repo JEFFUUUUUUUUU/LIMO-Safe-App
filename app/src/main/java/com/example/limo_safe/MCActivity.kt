@@ -41,6 +41,16 @@ class MCActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.fragment_mc)
 
+        // Initialize SessionManager with timeout callback
+        sessionManager = SessionManager(this) {
+            // This will be called when session times out
+            Toast.makeText(this, "Logging out due to inactivity", Toast.LENGTH_LONG).show()
+            val intent = Intent(this, LoginActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+        }
+
         // Initialize views and session manager
         initializeViews()
 
@@ -74,12 +84,6 @@ class MCActivity : AppCompatActivity() {
     }
 
     private fun initializeViews() {
-        sessionManager = SessionManager(this) {
-            val intent = Intent(this, LoginActivity::class.java)
-            startActivity(intent)
-            finish()
-        }
-
         titleText = findViewById(R.id.titleText)
         generatedCodeText = findViewById(R.id.generatedCodeText)
         playMorseButton = findViewById(R.id.playMorseButton)
@@ -247,6 +251,7 @@ class MCActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        sessionManager.endSession()
         try {
             toggleFlashlight(this, false)
         } catch (e: Exception) {

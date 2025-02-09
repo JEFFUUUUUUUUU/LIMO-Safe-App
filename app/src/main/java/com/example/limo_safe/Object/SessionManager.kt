@@ -1,5 +1,6 @@
 package com.example.limo_safe.Object
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
@@ -14,55 +15,56 @@ class SessionManager(
     private val onLogout: () -> Unit
 ) : LifecycleObserver {
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var idleTimeoutRunnable: Runnable? = null
-    private val idleTimeoutMillis: Long = 300000 // 5 minutes
-    private val warningTimeMillis: Long = 10000 // 10 seconds before timeout
+    private var handler: Handler = Handler(Looper.getMainLooper())
+    private var sessionTimeoutRunnable: Runnable? = null
+    private var warningRunnable: Runnable? = null
+    private val SESSION_TIMEOUT = 60000L // 1 minute in milliseconds
+    private val WARNING_TIME = 50000L // Show warning 10 seconds before timeout
 
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
 
     init {
         activity.lifecycle.addObserver(this)
-        resetIdleTimeout()
+        resetSessionTimeout()
     }
 
     private fun isUserSignedIn(): Boolean {
         return firebaseAuth.currentUser != null
     }
 
-    private fun resetIdleTimeout() {
-        if (!isUserSignedIn()) {
-            cancelIdleTimeout()
-            return
+    private fun resetSessionTimeout() {
+        // Remove existing callbacks
+        sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        warningRunnable?.let { handler.removeCallbacks(it) }
+        
+        // Create warning runnable
+        warningRunnable = Runnable {
+            Toast.makeText(
+                activity,
+                "Warning: Session will timeout in 10 seconds due to inactivity",
+                Toast.LENGTH_LONG
+            ).show()
         }
-        cancelIdleTimeout()
-        idleTimeoutRunnable = Runnable {
-            showIdleWarning()
-        }
-        handler.postDelayed(idleTimeoutRunnable!!, idleTimeoutMillis - warningTimeMillis)
-    }
 
-    private fun cancelIdleTimeout() {
-        idleTimeoutRunnable?.let { handler.removeCallbacks(it) }
-    }
-
-    private fun showIdleWarning() {
-        if (!isUserSignedIn()) {
-            cancelIdleTimeout()
-            return
+        // Create timeout runnable
+        sessionTimeoutRunnable = Runnable {
+            Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
+            onLogout.invoke()
         }
-        Toast.makeText(activity, "You will be logged out in 10 seconds due to inactivity.", Toast.LENGTH_LONG).show()
-        handler.postDelayed({
-            if (isUserSignedIn()) {
-                firebaseAuth.signOut()
-                activity.finishAffinity() // This will close the app
-            }
-        }, warningTimeMillis)
+
+        // Schedule both runnables
+        warningRunnable?.let {
+            handler.postDelayed(it, WARNING_TIME)
+        }
+        
+        sessionTimeoutRunnable?.let {
+            handler.postDelayed(it, SESSION_TIMEOUT)
+        }
     }
 
     fun userActivityDetected() {
         if (isUserSignedIn()) {
-            resetIdleTimeout()
+            resetSessionTimeout()
         }
     }
 
@@ -76,7 +78,12 @@ class SessionManager(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     fun onDestroy() {
-        cancelIdleTimeout()
+        endSession()
         activity.lifecycle.removeObserver(this)
+    }
+
+    fun endSession() {
+        sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        warningRunnable?.let { handler.removeCallbacks(it) }
     }
 }

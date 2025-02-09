@@ -13,6 +13,7 @@ import android.view.View
 import android.os.CountDownTimer
 import android.content.Intent
 import com.example.limo_safe.Object.SessionManager
+import android.widget.Toast
 
 class MonActivity : AppCompatActivity() {
     private lateinit var backButton: Button
@@ -24,17 +25,21 @@ class MonActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.fragment_monitoring)
 
+        // Initialize SessionManager with timeout callback
+        sessionManager = SessionManager(this) {
+            // This will be called when session times out
+            Toast.makeText(this, "Logging out due to inactivity", Toast.LENGTH_LONG).show()
+            val intent = Intent(this, LoginActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+        }
+
         initializeViews()
         continueCountdownIfRunning()
     }
 
     private fun initializeViews() {
-        sessionManager = SessionManager(this) {
-            val intent = Intent(this, LoginActivity::class.java)
-            startActivity(intent)
-            finish()
-        }
-
         backButton = findViewById(R.id.backButton)
         monitoringTable = findViewById(R.id.monitoringTable)
 
@@ -121,6 +126,7 @@ class MonActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        sessionManager.endSession()
     }
 
     override fun onUserInteraction() {
