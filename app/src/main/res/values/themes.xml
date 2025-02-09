@@ -1,0 +1,35 @@
+<resources>
+    <style name="Theme.LIMOSafe" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/black</item>
+        <item name="colorPrimaryVariant">@color/black</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/black</item>
+        <item name="colorSecondaryVariant">@color/black</item>
+        <item name="colorOnSecondary">@color/white</item>
+
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+
+        <!-- EditText style -->
+        <item name="editTextStyle">@style/BlackTextEditText</item>
+        <item name="android:editTextStyle">@style/BlackTextEditText</item>
+
+        <!-- Button style -->
+        <item name="materialButtonStyle">@style/BlackButton</item>
+    </style>
+
+    <style name="BlackTextEditText" parent="Widget.AppCompat.EditText">
+        <item name="android:textColor">@android:color/black</item>
+        <item name="android:textColorHint">#808080</item>
+        <item name="android:background">@android:color/white</item>
+    </style>
+
+    <style name="BlackButton" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@android:color/black</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="cornerRadius">25dp</item>
+    </style>
+</resources>
