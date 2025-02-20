@@ -22,7 +22,8 @@ import kotlin.concurrent.thread
 class MCActivity : AppCompatActivity() {
     private lateinit var titleText: TextView
     private lateinit var generatedCodeText: TextView
-    private lateinit var playMorseButton: Button
+    private lateinit var codeDisplayText: TextView
+    private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
     private var currentCode: String = generateRandomCode()
@@ -57,20 +58,39 @@ class MCActivity : AppCompatActivity() {
         // Check timer state immediately
         checkAndRestoreTimerState()
 
-        playMorseButton.setOnClickListener {
-            if (!hasCameraPermission()) {
-                requestCameraPermission()
-                return@setOnClickListener
-            }
+        generateCodeButton.setOnClickListener {
+            currentCode = generateRandomCode()
+            updateGeneratedCodeText()
+            
+            // Start the countdown timer immediately after generating code
+            startTime = System.currentTimeMillis()
+            startCountdown(COUNTDOWN_DURATION, true)
 
-            if (playMorseButton.isEnabled) {
-                currentCode = generateRandomCode()
-                updateGeneratedCodeText()
-                val morseCodeSequence = convertToMorseCode(currentCode)
-                playMorseCodeSequence(this, morseCodeSequence)
-                startTime = System.currentTimeMillis()
-                startCountdown(COUNTDOWN_DURATION, true)
-            }
+            val dialogBuilder = AlertDialog.Builder(this)
+            dialogBuilder.setTitle("Please align your flashlight to the Sensor of Your LIMO-Safe")
+                .setMessage("Generated Code: $currentCode")
+                .setCancelable(false)
+                .setPositiveButton("Play Morse Code") { dialog, _ ->
+                    if (!hasCameraPermission()) {
+                        requestCameraPermission()
+                        return@setPositiveButton
+                    }
+
+                    val morseCodeSequence = convertToMorseCode(currentCode)
+                    playMorseCodeSequence(this, morseCodeSequence)
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Cancel") { dialog, _ ->
+                    // Just dismiss the dialog, the countdown timer will continue
+                    dialog.dismiss()
+                }
+                .setOnDismissListener {
+                    // Ensure button stays disabled and countdown continues
+                    generateCodeButton.isEnabled = false
+                }
+
+            val alert = dialogBuilder.create()
+            alert.show()
         }
 
         checkMonitoringButton.setOnClickListener {
@@ -86,7 +106,8 @@ class MCActivity : AppCompatActivity() {
     private fun initializeViews() {
         titleText = findViewById(R.id.titleText)
         generatedCodeText = findViewById(R.id.generatedCodeText)
-        playMorseButton = findViewById(R.id.playMorseButton)
+        codeDisplayText = findViewById(R.id.codeDisplayText)
+        generateCodeButton = findViewById(R.id.generateCodeButton)
         checkMonitoringButton = findViewById(R.id.checkMonitoringButton)
         exitButton = findViewById(R.id.exitButton)
 
@@ -95,7 +116,7 @@ class MCActivity : AppCompatActivity() {
 
     private fun checkAndRestoreTimerState() {
         if (isTimerRunning && timeRemaining > 0) {
-            playMorseButton.isEnabled = false
+            generateCodeButton.isEnabled = false
             startCountdown(timeRemaining, false)
         }
     }
@@ -136,11 +157,12 @@ class MCActivity : AppCompatActivity() {
     }
 
     private fun updateGeneratedCodeText() {
-        generatedCodeText.text = "Generated Code: $currentCode"
+        generatedCodeText.text = "Generated Code:"
+        codeDisplayText.text = currentCode
     }
 
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
-        playMorseButton.isEnabled = false
+        generateCodeButton.isEnabled = false
         countDownTimer?.cancel()
         
         if (isNewCountdown) {
@@ -159,21 +181,25 @@ class MCActivity : AppCompatActivity() {
             override fun onFinish() {
                 isTimerRunning = false
                 timeRemaining = 0
-                playMorseButton.isEnabled = true
-                playMorseButton.text = "Play Morse Code"
+                generateCodeButton.isEnabled = true
+                generateCodeButton.text = "Generate Code"
             }
         }.start()
     }
 
     private fun updateButtonText(millisUntilFinished: Long) {
         val secondsRemaining = millisUntilFinished / 1000
-        playMorseButton.text = "Wait: $secondsRemaining sec"
-        playMorseButton.isEnabled = false
+        generateCodeButton.text = "Wait: $secondsRemaining sec"
+        generateCodeButton.isEnabled = false
     }
 
     private fun generateRandomCode(): String {
         val chars = ('A'..'Z') + ('0'..'9')
         return (1..8).map { chars.random() }.joinToString("")
+    }
+
+    private fun getReadableMorseCode(input: String): String {
+        return input.uppercase()
     }
 
     private fun convertToMorseCode(input: String): List<Long> {
