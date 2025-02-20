@@ -52,13 +52,23 @@
             android:textSize="20sp"
             android:gravity="center" />
 
+        <TextView
+            android:id="@+id/codeDisplayText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/white"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
         <Button
-            android:id="@+id/playMorseButton"
+            android:id="@+id/generateCodeButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
             style="@style/BlackButton"
-            android:text="Play Morse Code"
+            android:text="Generate Code"
             android:textStyle="bold"
             android:minWidth="200dp" />
 

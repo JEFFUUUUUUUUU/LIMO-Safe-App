@@ -66,6 +66,7 @@
             android:textColor="@android:color/black"
             android:textColorHint="#808080"
             android:inputType="textPassword"
+            android:password="true"
             android:padding="12dp"
             android:gravity="start|center_vertical"
             android:textAlignment="textStart" />
@@ -80,6 +81,7 @@
             android:textColor="@android:color/black"
             android:textColorHint="#808080"
             android:inputType="textPassword"
+            android:password="true"
             android:padding="12dp"
             android:gravity="start|center_vertical"
             android:textAlignment="textStart" />

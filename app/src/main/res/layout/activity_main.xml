@@ -54,12 +54,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
-            android:background="@drawable/rounded_button"
-            android:backgroundTint="@null"
+            style="@style/BlackButton"
             android:text="Press to Enter"
             android:textStyle="bold"
-            android:minWidth="200dp"
-            android:textColor="@color/white" />
+            android:minWidth="200dp" />
 
     </LinearLayout>
 
