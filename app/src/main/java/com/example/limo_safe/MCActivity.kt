@@ -68,10 +68,10 @@ class MCActivity : AppCompatActivity() {
         generateCodeButton.setOnClickListener {
             currentCode = generateRandomCode()
             updateGeneratedCodeText()
-            
+
             // Reset tries when generating new code
             remainingTries = MAX_TRIES
-            
+
             // Start the countdown timer immediately after generating code
             startTime = System.currentTimeMillis()
             startCountdown(COUNTDOWN_DURATION, true)
@@ -95,7 +95,7 @@ class MCActivity : AppCompatActivity() {
         exitButton = findViewById(R.id.exitButton)
         generatedCodeText = findViewById(R.id.generatedCodeText)
         codeDisplayText = findViewById(R.id.codeDisplayText)
-        
+
         checkAndRestoreTimerState()
     }
 
@@ -144,12 +144,12 @@ class MCActivity : AppCompatActivity() {
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
         generateCodeButton.isEnabled = false
         countDownTimer?.cancel()
-        
+
         if (isNewCountdown) {
             startTime = System.currentTimeMillis()
             isTimerRunning = true
         }
-        
+
         timeRemaining = duration
 
         countDownTimer = object : CountDownTimer(duration, 1000) {
@@ -277,16 +277,16 @@ class MCActivity : AppCompatActivity() {
             if (remainingTries > 0) {
                 remainingTries--
                 lastMorsePlayTime = System.currentTimeMillis()
-                
+
                 val morseCodeSequence = convertToMorseCode(currentCode)
                 playMorseCodeSequence(this@MCActivity, morseCodeSequence)
-                
+
                 // Update dialog message with remaining tries
                 dialog.setMessage("Generated Code: $currentCode\nTries Left: $remainingTries")
-                
+
                 // Disable button and start cooldown
                 playMorseButton.isEnabled = false
-                
+
                 // Start cooldown timer
                 object : CountDownTimer(MORSE_COOLDOWN, 1000) {
                     override fun onTick(millisUntilFinished: Long) {
