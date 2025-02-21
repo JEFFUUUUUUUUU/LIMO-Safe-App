@@ -1,5 +1,6 @@
 package com.example.limo_safe
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,16 +16,23 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import android.Manifest
 import com.example.limo_safe.Object.SessionManager
-import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+// Data class representing a single Morse pulse (either a flash ON or an OFF gap).
+data class MorsePulse(val flash: Boolean, val duration: Long)
 
 class MCActivity : AppCompatActivity() {
+
     private lateinit var titleText: TextView
     private lateinit var generatedCodeText: TextView
     private lateinit var playMorseButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
+
     private var currentCode: String = generateRandomCode()
     private var countDownTimer: CountDownTimer? = null
     private val CAMERA_PERMISSION_REQUEST_CODE = 123
@@ -35,15 +43,15 @@ class MCActivity : AppCompatActivity() {
         var isTimerRunning = false
         var startTime: Long = 0
         const val COUNTDOWN_DURATION = 30000L
+        const val UNIT_TIME = 70L // Base time unit in milliseconds.
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.fragment_mc)
 
-        // Initialize SessionManager with timeout callback
+        // Initialize SessionManager with a timeout callback.
         sessionManager = SessionManager(this) {
-            // This will be called when session times out
             Toast.makeText(this, "Logging out due to inactivity", Toast.LENGTH_LONG).show()
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -51,10 +59,7 @@ class MCActivity : AppCompatActivity() {
             finish()
         }
 
-        // Initialize views and session manager
         initializeViews()
-
-        // Check timer state immediately
         checkAndRestoreTimerState()
 
         playMorseButton.setOnClickListener {
@@ -64,10 +69,14 @@ class MCActivity : AppCompatActivity() {
             }
 
             if (playMorseButton.isEnabled) {
+                // Generate a new random 8-character alphanumeric code.
                 currentCode = generateRandomCode()
                 updateGeneratedCodeText()
-                val morseCodeSequence = convertToMorseCode(currentCode)
-                playMorseCodeSequence(this, morseCodeSequence)
+
+                // Convert the code into a pulse sequence with explicit gaps.
+                val pulses = convertToMorsePulseSequence(currentCode)
+                playMorsePulseSequence(this, pulses)
+
                 startTime = System.currentTimeMillis()
                 startCountdown(COUNTDOWN_DURATION, true)
             }
@@ -142,12 +151,11 @@ class MCActivity : AppCompatActivity() {
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
         playMorseButton.isEnabled = false
         countDownTimer?.cancel()
-        
+
         if (isNewCountdown) {
             startTime = System.currentTimeMillis()
             isTimerRunning = true
         }
-        
         timeRemaining = duration
 
         countDownTimer = object : CountDownTimer(duration, 1000) {
@@ -173,53 +181,77 @@ class MCActivity : AppCompatActivity() {
 
     private fun generateRandomCode(): String {
         val chars = ('A'..'Z') + ('0'..'9')
-        return (1..8).map { chars.random() }.joinToString("")
+        return (1..6).map { chars.random() }.joinToString("")
     }
 
-    private fun convertToMorseCode(input: String): List<Long> {
+    /**
+     * Converts the given input string into a sequence of Morse pulses.
+     * For each letter:
+     *   - A dot is transmitted as: Flash ON for 1 unit (70 ms) followed by an OFF gap (1 unit) if not the last signal.
+     *   - A dash is transmitted as: Flash ON for 3 units (210 ms) followed by an OFF gap (1 unit) if not the last signal.
+     * After the letter, an additional OFF period (2 units) is added so that the total gap between letters is 3 units (210 ms).
+     * A space in the input creates a word gap of 7 units (490 ms).
+     */
+    private fun convertToMorsePulseSequence(input: String): List<MorsePulse> {
         val morseCodeMap = mapOf(
-            'A' to ".-", 'B' to "-...", 'C' to "-.-.", 'D' to "-..", 'E' to ".",
-            'F' to "..-.", 'G' to "--.", 'H' to "....", 'I' to "..", 'J' to ".---",
-            'K' to "-.-", 'L' to ".-..", 'M' to "--", 'N' to "-.", 'O' to "---",
-            'P' to ".--.", 'Q' to "--.-", 'R' to ".-.", 'S' to "...", 'T' to "-",
-            'U' to "..-", 'V' to "...-", 'W' to ".--", 'X' to "-..-", 'Y' to "-.--",
-            'Z' to "--..", '1' to ".----", '2' to "..---", '3' to "...--",
-            '4' to "....-", '5' to ".....", '6' to "-....", '7' to "--...",
+            'A' to ".-",    'B' to "-...", 'C' to "-.-.", 'D' to "-..",  'E' to ".",
+            'F' to "..-.",  'G' to "--.",  'H' to "....", 'I' to "..",   'J' to ".---",
+            'K' to "-.-",   'L' to ".-..", 'M' to "--",   'N' to "-.",   'O' to "---",
+            'P' to ".--.",  'Q' to "--.-", 'R' to ".-.",  'S' to "...",  'T' to "-",
+            'U' to "..-",   'V' to "...-", 'W' to ".--",  'X' to "-..-", 'Y' to "-.--",
+            'Z' to "--..",  '1' to ".----", '2' to "..---", '3' to "...--",
+            '4' to "....-",  '5' to ".....", '6' to "-....", '7' to "--...",
             '8' to "---..", '9' to "----.", '0' to "-----"
         )
 
-        val unitTime = 70L // Base time unit in milliseconds
+        val pulses = mutableListOf<MorsePulse>()
+        val unitTime = UNIT_TIME
 
-        return input.uppercase().flatMap { char ->
-            val morse = morseCodeMap[char] ?: return@flatMap emptyList<Long>()
-            val signalDurations = morse.map { signal ->
-                if (signal == '.') unitTime else unitTime * 3
-            } + listOf(unitTime) // Add pause after each letter
-            signalDurations
-        } + listOf(unitTime * 3) // Add extra pause at the end
-    }
-
-    private fun playMorseCodeSequence(context: Context, sequence: List<Long>) {
-        thread {
-            try {
-                for (duration in sequence) {
-                    if (duration > 200) {
-                        toggleFlashlight(context, true)
-                        Thread.sleep(duration)
-                        toggleFlashlight(context, false)
-                    } else {
-                        Thread.sleep(duration) // Pause between signals
+        for (char in input.uppercase()) {
+            if (char == ' ') {
+                // Insert a word gap: OFF for 7 units (490 ms).
+                pulses.add(MorsePulse(false, unitTime * 7))
+            } else {
+                val morse = morseCodeMap[char] ?: continue
+                // For each Morse symbol (dot or dash) in the letter:
+                for ((index, symbol) in morse.withIndex()) {
+                    // Dot: ON for 1 unit; Dash: ON for 3 units.
+                    val onDuration = if (symbol == '.') unitTime else unitTime * 3
+                    pulses.add(MorsePulse(true, onDuration))
+                    // If not the last symbol, add an intra-character gap: OFF for 1 unit.
+                    if (index < morse.length - 1) {
+                        pulses.add(MorsePulse(false, unitTime))
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                runOnUiThread {
-                    Toast.makeText(context, "Error playing Morse code: ${e.message}", Toast.LENGTH_SHORT).show()
+                // After the letter, add an additional OFF gap of 2 units (total letter gap = 3 units).
+                pulses.add(MorsePulse(false, unitTime * 5))
+            }
+        }
+        return pulses
+    }
+
+    /**
+     * Plays the generated Morse pulse sequence by toggling the flashlight.
+     * For pulses with flash = true, the flashlight is turned on for the specified duration;
+     * for OFF pulses, a delay is inserted.
+     */
+    private fun playMorsePulseSequence(context: Context, pulses: List<MorsePulse>) {
+        CoroutineScope(Dispatchers.Main).launch {
+            for (pulse in pulses) {
+                if (pulse.flash) {
+                    toggleFlashlight(context, true)
+                    delay(pulse.duration)
+                    toggleFlashlight(context, false)
+                } else {
+                    delay(pulse.duration)
                 }
             }
         }
     }
 
+    /**
+     * Uses the CameraManager to toggle the device's flashlight (torch mode).
+     */
     private fun toggleFlashlight(context: Context, turnOn: Boolean) {
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
@@ -264,9 +296,9 @@ class MCActivity : AppCompatActivity() {
             .setTitle("Exit LIMO Safe App")
             .setMessage("Are you sure you want to exit the LIMO Safe App?")
             .setPositiveButton("Yes") { _, _ ->
-                finishAffinity() // This will close the entire app
+                finishAffinity() // Closes the entire app.
             }
-            .setNegativeButton("No", null)  // This will dismiss the dialog and stay on MC page
+            .setNegativeButton("No", null)
             .show()
     }
 }
