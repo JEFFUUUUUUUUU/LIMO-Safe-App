@@ -8,7 +8,11 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -20,12 +24,11 @@ import com.example.limo_safe.Object.SessionManager
 import kotlin.concurrent.thread
 
 class MCActivity : AppCompatActivity() {
-    private lateinit var titleText: TextView
-    private lateinit var generatedCodeText: TextView
-    private lateinit var codeDisplayText: TextView
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
+    private lateinit var generatedCodeText: TextView
+    private lateinit var codeDisplayText: TextView
     private var currentCode: String = generateRandomCode()
     private var countDownTimer: CountDownTimer? = null
     private val CAMERA_PERMISSION_REQUEST_CODE = 123
@@ -35,7 +38,11 @@ class MCActivity : AppCompatActivity() {
         var timeRemaining: Long = 0
         var isTimerRunning = false
         var startTime: Long = 0
-        const val COUNTDOWN_DURATION = 30000L
+        const val COUNTDOWN_DURATION = 120000L  // 2 minutes in milliseconds
+        const val MORSE_COOLDOWN = 30000L // 30 seconds cooldown
+        const val MAX_TRIES = 3
+        private var remainingTries = MAX_TRIES
+        private var lastMorsePlayTime = 0L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,35 +69,14 @@ class MCActivity : AppCompatActivity() {
             currentCode = generateRandomCode()
             updateGeneratedCodeText()
             
+            // Reset tries when generating new code
+            remainingTries = MAX_TRIES
+            
             // Start the countdown timer immediately after generating code
             startTime = System.currentTimeMillis()
             startCountdown(COUNTDOWN_DURATION, true)
 
-            val dialogBuilder = AlertDialog.Builder(this)
-            dialogBuilder.setTitle("Please align your flashlight to the Sensor of Your LIMO-Safe")
-                .setMessage("Generated Code: $currentCode")
-                .setCancelable(false)
-                .setPositiveButton("Play Morse Code") { dialog, _ ->
-                    if (!hasCameraPermission()) {
-                        requestCameraPermission()
-                        return@setPositiveButton
-                    }
-
-                    val morseCodeSequence = convertToMorseCode(currentCode)
-                    playMorseCodeSequence(this, morseCodeSequence)
-                    dialog.dismiss()
-                }
-                .setNegativeButton("Cancel") { dialog, _ ->
-                    // Just dismiss the dialog, the countdown timer will continue
-                    dialog.dismiss()
-                }
-                .setOnDismissListener {
-                    // Ensure button stays disabled and countdown continues
-                    generateCodeButton.isEnabled = false
-                }
-
-            val alert = dialogBuilder.create()
-            alert.show()
+            showMorseCodeDialog(currentCode)
         }
 
         checkMonitoringButton.setOnClickListener {
@@ -104,14 +90,13 @@ class MCActivity : AppCompatActivity() {
     }
 
     private fun initializeViews() {
-        titleText = findViewById(R.id.titleText)
-        generatedCodeText = findViewById(R.id.generatedCodeText)
-        codeDisplayText = findViewById(R.id.codeDisplayText)
         generateCodeButton = findViewById(R.id.generateCodeButton)
         checkMonitoringButton = findViewById(R.id.checkMonitoringButton)
         exitButton = findViewById(R.id.exitButton)
-
-        updateGeneratedCodeText()
+        generatedCodeText = findViewById(R.id.generatedCodeText)
+        codeDisplayText = findViewById(R.id.codeDisplayText)
+        
+        checkAndRestoreTimerState()
     }
 
     private fun checkAndRestoreTimerState() {
@@ -154,11 +139,6 @@ class MCActivity : AppCompatActivity() {
                 Toast.makeText(this, "Camera permission required for Morse code", Toast.LENGTH_LONG).show()
             }
         }
-    }
-
-    private fun updateGeneratedCodeText() {
-        generatedCodeText.text = "Generated Code:"
-        codeDisplayText.text = currentCode
     }
 
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
@@ -265,6 +245,115 @@ class MCActivity : AppCompatActivity() {
         }
     }
 
+    private fun showExitConfirmationDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Exit LIMO Safe App")
+            .setMessage("Are you sure you want to exit the LIMO Safe App?")
+            .setPositiveButton("Yes") { _, _ ->
+                finishAffinity() // This will close the entire app
+            }
+            .setNegativeButton("No", null)  // This will dismiss the dialog and stay on MC page
+            .show()
+    }
+
+    private fun showMorseCodeDialog(currentCode: String) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Please align your flashlight to the Sensor of Your LIMO-Safe")
+            .setMessage("Generated Code: $currentCode\nTries Left: $remainingTries")
+            .setCancelable(false)
+            .create()
+
+        val playMorseButton = Button(this).apply {
+            text = "Play Morse Code"
+            isEnabled = System.currentTimeMillis() - lastMorsePlayTime >= MORSE_COOLDOWN
+        }
+
+        playMorseButton.setOnClickListener {
+            if (!hasCameraPermission()) {
+                requestCameraPermission()
+                return@setOnClickListener
+            }
+
+            if (remainingTries > 0) {
+                remainingTries--
+                lastMorsePlayTime = System.currentTimeMillis()
+                
+                val morseCodeSequence = convertToMorseCode(currentCode)
+                playMorseCodeSequence(this@MCActivity, morseCodeSequence)
+                
+                // Update dialog message with remaining tries
+                dialog.setMessage("Generated Code: $currentCode\nTries Left: $remainingTries")
+                
+                // Disable button and start cooldown
+                playMorseButton.isEnabled = false
+                
+                // Start cooldown timer
+                object : CountDownTimer(MORSE_COOLDOWN, 1000) {
+                    override fun onTick(millisUntilFinished: Long) {
+                        val secondsLeft = millisUntilFinished / 1000
+                        playMorseButton.text = "Wait ${secondsLeft}s"
+                    }
+
+                    override fun onFinish() {
+                        if (remainingTries > 0) {
+                            playMorseButton.isEnabled = true
+                            playMorseButton.text = "Play Morse Code"
+                        }
+                    }
+                }.start()
+
+                if (remainingTries == 0) {
+                    dialog.dismiss()
+                    showCooldownMessage()
+                }
+            }
+        }
+
+        val cancelButton = Button(this).apply {
+            text = "Cancel"
+            setOnClickListener {
+                dialog.dismiss()
+            }
+        }
+
+        // Create a linear layout to hold the buttons
+        val buttonLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(20, 20, 20, 20)
+        }
+
+        // Add buttons to the layout with equal weight
+        arrayOf(playMorseButton, cancelButton).forEach { button ->
+            buttonLayout.addView(button, LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1.0f
+            ).apply {
+                marginStart = 8
+                marginEnd = 8
+            })
+        }
+
+        dialog.setView(buttonLayout)
+        dialog.show()
+    }
+
+    private fun showCooldownMessage() {
+        AlertDialog.Builder(this)
+            .setTitle("Maximum Tries Reached")
+            .setMessage("You have used all 3 tries.\nPlease wait for the generate code button's cooldown to finish.")
+            .setCancelable(false)
+            .setPositiveButton("OK") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    private fun updateGeneratedCodeText() {
+        codeDisplayText.text = currentCode
+    }
+
     override fun onResume() {
         super.onResume()
         checkAndRestoreTimerState()
@@ -283,16 +372,5 @@ class MCActivity : AppCompatActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-    }
-
-    private fun showExitConfirmationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Exit LIMO Safe App")
-            .setMessage("Are you sure you want to exit the LIMO Safe App?")
-            .setPositiveButton("Yes") { _, _ ->
-                finishAffinity() // This will close the entire app
-            }
-            .setNegativeButton("No", null)  // This will dismiss the dialog and stay on MC page
-            .show()
     }
 }
