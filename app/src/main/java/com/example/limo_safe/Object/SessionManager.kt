@@ -18,8 +18,8 @@ class SessionManager(
     private var handler: Handler = Handler(Looper.getMainLooper())
     private var sessionTimeoutRunnable: Runnable? = null
     private var warningRunnable: Runnable? = null
-    private val SESSION_TIMEOUT = 60000L // 1 minute in milliseconds
-    private val WARNING_TIME = 50000L // Show warning 10 seconds before timeout
+    private val SESSION_TIMEOUT = 180000L // 3 minute in milliseconds
+    private val WARNING_TIME = 170000L // Show warning 10 seconds before timeout (3 minutes - 10 seconds)
 
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
 
@@ -39,17 +39,21 @@ class SessionManager(
         
         // Create warning runnable
         warningRunnable = Runnable {
-            Toast.makeText(
-                activity,
-                "Warning: Session will timeout in 10 seconds due to inactivity",
-                Toast.LENGTH_LONG
-            ).show()
+            if (isUserSignedIn()) {
+                Toast.makeText(
+                    activity,
+                    "Warning: Session will timeout in 10 seconds due to inactivity",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
         // Create timeout runnable
         sessionTimeoutRunnable = Runnable {
-            Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
-            onLogout.invoke()
+            if (isUserSignedIn()) {
+                Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
+                onLogout.invoke()
+            }
         }
 
         // Schedule both runnables
