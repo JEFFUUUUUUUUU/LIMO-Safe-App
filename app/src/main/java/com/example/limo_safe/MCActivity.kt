@@ -1,6 +1,5 @@
 package com.example.limo_safe
 
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraAccessException
@@ -11,7 +10,6 @@ import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -23,6 +21,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.Manifest
+import android.content.Context
+import android.view.View
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.StyleSpan
 import com.example.limo_safe.Object.SessionManager
 import kotlin.concurrent.thread
 
@@ -37,6 +41,7 @@ class MCActivity : AppCompatActivity() {
     private var countDownTimer: CountDownTimer? = null
     private val CAMERA_PERMISSION_REQUEST_CODE = 123
     private lateinit var sessionManager: SessionManager
+    private var isWifiTransmitted: Boolean = false
 
     companion object {
         var timeRemaining: Long = 0
@@ -47,9 +52,6 @@ class MCActivity : AppCompatActivity() {
         const val MAX_TRIES = 3
         private var remainingTries = MAX_TRIES
         private var lastMorsePlayTime = 0L
-        const val DOT_DURATION: Long = 100 // Faster dot duration (was 200)
-        const val DASH_DURATION: Long = DOT_DURATION * 2 // Faster dash duration (was 3x)
-        const val WORD_SPACE_DURATION: Long = DOT_DURATION * 4 // Faster word space (was 7x)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,6 +78,8 @@ class MCActivity : AppCompatActivity() {
             // Start the countdown timer with remaining time
             val remainingTime = COUNTDOWN_DURATION - (currentTime - lastGenerateTime)
             startCountdown(remainingTime, false)
+            generateCodeButton.isEnabled = false
+            generateCodeButton.alpha = 0.5f
         }
 
         generateCodeButton.setOnClickListener {
@@ -87,6 +91,10 @@ class MCActivity : AppCompatActivity() {
 
             // Start the countdown timer immediately after generating code
             startCountdown(COUNTDOWN_DURATION, true)
+            
+            // Disable the button during cooldown
+            generateCodeButton.isEnabled = false
+            generateCodeButton.alpha = 0.5f
 
             showMorseCodeDialog(currentCode)
         }
@@ -109,247 +117,300 @@ class MCActivity : AppCompatActivity() {
         codeDisplayText = findViewById(R.id.codeDisplayText)
         wifiButton = findViewById(R.id.wifiButton)
 
+        // Reset WiFi icon state
+        if (!isWifiTransmitted) {
+            wifiButton.setImageResource(R.drawable.ic_wifi)
+        }
+
         wifiButton.setOnClickListener {
-            showWifiCredentialsDialog()
+            if (!isWifiTransmitted) {
+                showWifiCredentialsDialog()
+            } else {
+                Toast.makeText(this, "WiFi credentials already transmitted", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
-        if (isNewCountdown) {
-            sessionManager.setLastGenerateTime(System.currentTimeMillis())
-        }
-        
-        isTimerRunning = true
-        startTime = System.currentTimeMillis()
-        timeRemaining = duration
-
         countDownTimer?.cancel()
+        isTimerRunning = true
+
+        if (isNewCountdown) {
+            startTime = System.currentTimeMillis()
+            sessionManager.setLastGenerateTime(startTime)
+        }
+
         countDownTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 timeRemaining = millisUntilFinished
-                val minutes = millisUntilFinished / 60000
-                val seconds = (millisUntilFinished % 60000) / 1000
-                val timeStr = String.format("%d:%02d", minutes, seconds)
-                updateButtonText(timeStr)
+                val minutes = millisUntilFinished / 1000 / 60
+                val seconds = (millisUntilFinished / 1000) % 60
+                generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
             }
 
             override fun onFinish() {
                 isTimerRunning = false
-                timeRemaining = 0
-                updateButtonText("Generate Code")
+                currentCode = generateRandomCode()
+                updateGeneratedCodeText()
+                generateCodeButton.text = "Generate Code"
+                // Re-enable the button after cooldown
                 generateCodeButton.isEnabled = true
+                generateCodeButton.alpha = 1.0f
             }
         }.start()
     }
 
-    private fun updateButtonText(text: String) {
-        runOnUiThread {
-            generateCodeButton.text = text
-            generateCodeButton.isEnabled = text == "Generate Code"
-        }
-    }
-
-    private fun showMorseCodeDialog(currentCode: String) {
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Please align your flashlight to the Sensor of Your LIMO-Safe")
-            .setMessage("Generated Code: $currentCode\nTries Left: $remainingTries")
-            .setCancelable(false)
-            .setPositiveButton("Play Morse Code", null)  // Set to null initially
-            .create()
-
-        dialog.setOnShowListener {
-            val playButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            playButton.isEnabled = System.currentTimeMillis() - lastMorsePlayTime >= MORSE_COOLDOWN
-
-            playButton.setOnClickListener {
-                if (System.currentTimeMillis() - lastMorsePlayTime >= MORSE_COOLDOWN) {
-                    if (hasCameraPermission()) {
-                        remainingTries--
-                        val morseCode = convertToMorseCode(currentCode)
-                        playMorseCodeSequence(this, morseCode)
-                        lastMorsePlayTime = System.currentTimeMillis()
-                        
-                        // Update dialog message with remaining tries
-                        dialog.setMessage("Generated Code: $currentCode\nTries Left: $remainingTries")
-                        
-                        // Disable button during cooldown
-                        playButton.isEnabled = false
-                        
-                        // Start cooldown timer
-                        object : CountDownTimer(MORSE_COOLDOWN, 1000) {
-                            override fun onTick(millisUntilFinished: Long) {
-                                val minutes = (millisUntilFinished / 1000) / 60
-                                val seconds = (millisUntilFinished / 1000) % 60
-                                val timeStr = String.format("%d:%02d", minutes, seconds)
-                                playButton.text = "Wait $timeStr"
-                            }
-                            
-                            override fun onFinish() {
-                                if (remainingTries > 0) {
-                                    playButton.isEnabled = true
-                                    playButton.text = "Play Morse Code"
-                                }
-                            }
-                        }.start()
-                        
-                        if (remainingTries == 0) {
-                            dialog.dismiss()
-                            showMaximumTriesReachedDialog()
-                        }
-                    } else {
-                        requestCameraPermission()
-                    }
-                } else {
-                    showCooldownMessage()
-                }
-            }
-        }
-        
-        dialog.show()
-    }
-
-    private fun showCooldownMessage() {
+    private fun showExitConfirmationDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Cooldown")
-            .setMessage("Please wait for the cooldown to finish.")
-            .setCancelable(false)
-            .setPositiveButton("OK") { dialog, _ ->
+            .setTitle("Exit Confirmation")
+            .setMessage("Are you sure you want to exit?")
+            .setPositiveButton("Yes") { dialog, _ ->
+                dialog.dismiss()
+                finish()
+            }
+            .setNegativeButton("No") { dialog, _ ->
                 dialog.dismiss()
             }
+            .create()
             .show()
     }
 
-    override fun onUserInteraction() {
-        super.onUserInteraction()
-        sessionManager.userActivityDetected()
-    }
+    private fun showMorseCodeDialog(code: String) {
+        if (remainingTries <= 0) {
+            AlertDialog.Builder(this)
+                .setTitle("Maximum Tries Reached")
+                .setMessage("You have used all 3 tries. Please wait for the Generate Code button to be available again to get a new code.")
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .setCancelable(false)
+                .show()
+            return
+        }
 
-    private fun hasCameraPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+        // Create a custom layout for the dialog
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 30, 50, 30)
+        }
 
-    private fun requestCameraPermission() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.CAMERA),
-            CAMERA_PERMISSION_REQUEST_CODE
-        )
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Camera permission granted", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Camera permission required for Morse code", Toast.LENGTH_LONG).show()
+        // Code display text
+        val codeDisplayTextView = TextView(this).apply {
+            val fullText = "Code: $code"
+            val spannableString = SpannableString(fullText)
+            val startIndex = fullText.indexOf(code)
+            spannableString.setSpan(
+                StyleSpan(Typeface.BOLD),
+                startIndex,
+                startIndex + code.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            text = spannableString
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(resources.getColor(android.R.color.black))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 30
             }
+        }
+
+        // Main instruction text
+        val instructionText = TextView(this).apply {
+            text = "Align first your phone flashlight to the Sensor of your LIMO-Safe while transmitting data. Thank you"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 30
+            }
+        }
+
+        // Remaining tries text
+        val triesText = TextView(this).apply {
+            text = "Remaining tries: $remainingTries"
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(resources.getColor(android.R.color.darker_gray))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Cooldown text
+        val cooldownText = TextView(this).apply {
+            visibility = View.GONE
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(resources.getColor(android.R.color.holo_orange_dark))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = 10
+            }
+        }
+
+        layout.addView(codeDisplayTextView)
+        layout.addView(instructionText)
+        layout.addView(triesText)
+        layout.addView(cooldownText)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Play Morse Code")
+            .setView(layout)
+            .setCancelable(false)
+            .create()
+
+        // Create custom button layout
+        val buttonLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(50, 20, 50, 20)
+        }
+
+        val playButton = Button(this).apply {
+            text = "Play Morse Code"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        buttonLayout.addView(playButton)
+        layout.addView(buttonLayout)
+
+        playButton.setOnClickListener {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastMorsePlayTime < MORSE_COOLDOWN) {
+                val remainingCooldown = (MORSE_COOLDOWN - (currentTime - lastMorsePlayTime)) / 1000
+                cooldownText.text = "Please wait ${remainingCooldown} seconds before next try"
+                cooldownText.visibility = View.VISIBLE
+                playButton.isEnabled = false
+                playButton.alpha = 0.5f
+                return@setOnClickListener
+            }
+
+            playMorseCode(code)
+            remainingTries--
+            lastMorsePlayTime = System.currentTimeMillis()
+            triesText.text = "Remaining tries: $remainingTries"
+
+            // Start cooldown timer
+            object : CountDownTimer(MORSE_COOLDOWN, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    val seconds = millisUntilFinished / 1000
+                    cooldownText.text = "Please wait ${seconds} seconds before next try"
+                    cooldownText.visibility = View.VISIBLE
+                    playButton.isEnabled = false
+                    playButton.alpha = 0.5f
+                }
+
+                override fun onFinish() {
+                    cooldownText.visibility = View.GONE
+                    if (remainingTries > 0) {
+                        playButton.isEnabled = true
+                        playButton.alpha = 1.0f
+                    } else {
+                        AlertDialog.Builder(this@MCActivity)
+                            .setTitle("Maximum Tries Reached")
+                            .setMessage("You have used all 3 tries. Please wait for the Generate Code button to be available again to get a new code.")
+                            .setPositiveButton("OK") { dialogInner, _ ->
+                                dialogInner.dismiss()
+                                dialog.dismiss()
+                            }
+                            .setCancelable(false)
+                            .show()
+                    }
+                }
+            }.start()
+        }
+
+        dialog.show()
+    }
+
+    private fun playMorseCode(code: String) {
+        thread {
+            for (char in code) {
+                when (char) {
+                    '.' -> {
+                        flashlightOn()
+                        Thread.sleep(200)
+                        flashlightOff()
+                        Thread.sleep(200)
+                    }
+                    '-' -> {
+                        flashlightOn()
+                        Thread.sleep(600)
+                        flashlightOff()
+                        Thread.sleep(200)
+                    }
+                    ' ' -> {
+                        Thread.sleep(600)
+                    }
+                    else -> {
+                        val morseChar = textToMorse(char.toString())
+                        for (mc in morseChar) {
+                            if (mc == '.') {
+                                flashlightOn()
+                                Thread.sleep(200)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            } else if (mc == '-') {
+                                flashlightOn()
+                                Thread.sleep(600)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            }
+                        }
+                        Thread.sleep(600) // Space between characters
+                    }
+                }
+            }
+            runOnUiThread {
+                Toast.makeText(this, "Code transmission complete", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun flashlightOn() {
+        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        try {
+            val cameraId = cameraManager.cameraIdList[0]
+            cameraManager.setTorchMode(cameraId, true)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun flashlightOff() {
+        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        try {
+            val cameraId = cameraManager.cameraIdList[0]
+            cameraManager.setTorchMode(cameraId, false)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
         }
     }
 
     private fun generateRandomCode(): String {
-        val chars = ('A'..'Z') + ('0'..'9')
-        return (1..8).map { chars.random() }.joinToString("")
-    }
-
-    private fun getReadableMorseCode(input: String): String {
-        return input.uppercase()
-    }
-
-    private fun convertToMorseCode(input: String): List<Long> {
-        val morseCodeMap = mapOf(
-            'A' to ".-", 'B' to "-...", 'C' to "-.-.", 'D' to "-..", 'E' to ".",
-            'F' to "..-.", 'G' to "--.", 'H' to "....", 'I' to "..", 'J' to ".---",
-            'K' to "-.-", 'L' to ".-..", 'M' to "--", 'N' to "-.", 'O' to "---",
-            'P' to ".--.", 'Q' to "--.-", 'R' to ".-.", 'S' to "...", 'T' to "-",
-            'U' to "..-", 'V' to "...-", 'W' to ".--", 'X' to "-..-", 'Y' to "-.--",
-            'Z' to "--..", '1' to ".----", '2' to "..---", '3' to "...--",
-            '4' to "....-", '5' to ".....", '6' to "-....", '7' to "--...",
-            '8' to "---..", '9' to "----.", '0' to "-----"
-        )
-
-        val unitTime = 70L // Base time unit in milliseconds
-
-        return input.uppercase().flatMap { char ->
-            val morse = morseCodeMap[char] ?: return@flatMap emptyList<Long>()
-            val signalDurations = morse.map { signal ->
-                if (signal == '.') unitTime else unitTime * 3
-            } + listOf(unitTime) // Add pause after each letter
-            signalDurations
-        } + listOf(unitTime * 3) // Add extra pause at the end
-    }
-
-    private fun playMorseCodeSequence(context: Context, sequence: List<Long>) {
-        thread {
-            try {
-                for (duration in sequence) {
-                    if (duration > 200) {
-                        toggleFlashlight(context, true)
-                        Thread.sleep(duration)
-                        toggleFlashlight(context, false)
-                    } else {
-                        Thread.sleep(duration) // Pause between signals
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                runOnUiThread {
-                    Toast.makeText(context, "Error playing Morse code: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun toggleFlashlight(context: Context, turnOn: Boolean) {
-        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            for (cameraId in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                if (hasFlash) {
-                    cameraManager.setTorchMode(cameraId, turnOn)
-                    break
-                }
-            }
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-            runOnUiThread {
-                Toast.makeText(context, "Error accessing camera flash: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun showExitConfirmationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Exit LIMO Safe App")
-            .setMessage("Are you sure you want to exit the LIMO Safe App?")
-            .setPositiveButton("Yes") { _, _ ->
-                finishAffinity() // This will close the entire app
-            }
-            .setNegativeButton("No", null)  // This will dismiss the dialog and stay on MC page
-            .show()
-    }
-
-    private fun showMaximumTriesReachedDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Maximum Tries Reached")
-            .setMessage("You have used all available tries. Please wait the cooldown to generate code again.")
-            .setCancelable(false)
-            .setPositiveButton("OK") { _, _ ->
-                // Reset tries for next time
-                remainingTries = MAX_TRIES
-            }
-            .show()
+        val allowedChars = ('A'..'Z') + ('0'..'9')
+        return (1..6)
+            .map { allowedChars.random() }
+            .joinToString("")
     }
 
     private fun updateGeneratedCodeText() {
+        generatedCodeText.text = "Generated Code: "
         codeDisplayText.text = currentCode
     }
 
@@ -402,11 +463,11 @@ class MCActivity : AppCompatActivity() {
                 val ssid = ssidInput.text.toString()
                 val password = passwordInput.text.toString()
                 if (ssid.isNotEmpty() && password.isNotEmpty()) {
+                    dialog.dismiss()
                     transmitWifiCredentials(ssid, password)
                 } else {
                     Toast.makeText(this, "Please fill in both fields", Toast.LENGTH_SHORT).show()
                 }
-                dialog.dismiss()
             }
             .setNegativeButton("Cancel") { dialog, _ ->
                 dialog.dismiss()
@@ -416,60 +477,110 @@ class MCActivity : AppCompatActivity() {
     }
 
     private fun transmitWifiCredentials(ssid: String, password: String) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setTitle("Transmitting Data")
+            .setMessage("Please remain in the app and align your flashlight at the sensor while transmitting data.\nThank you.")
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
         // First, transmit SSID
-        Toast.makeText(this, "Transmitting SSID...", Toast.LENGTH_SHORT).show()
-        transmitMorseCode(ssid) {
-            // After SSID is done, transmit password with shorter delay
-            Handler(Looper.getMainLooper()).postDelayed({
-                Toast.makeText(this, "Transmitting Password...", Toast.LENGTH_SHORT).show()
-                transmitMorseCode(password) {
-                    Toast.makeText(this, "WiFi credentials transmission complete", Toast.LENGTH_SHORT).show()
-                }
-            }, 500) // Shorter delay between SSID and password (was 1000)
-        }
-    }
-
-    private fun transmitMorseCode(text: String, onComplete: () -> Unit) {
-        val morseCode = textToMorse(text)
-        var currentIndex = 0
-        val handler = Handler(Looper.getMainLooper())
-
-        fun transmitNextSymbol() {
-            if (currentIndex < morseCode.length) {
-                when (morseCode[currentIndex]) {
+        thread {
+            runOnUiThread {
+                Toast.makeText(this, "Transmitting SSID...", Toast.LENGTH_SHORT).show()
+            }
+            
+            // Transmit SSID
+            for (char in ssid) {
+                when (char) {
                     '.' -> {
                         flashlightOn()
-                        handler.postDelayed({
-                            flashlightOff()
-                            handler.postDelayed({
-                                currentIndex++
-                                transmitNextSymbol()
-                            }, DOT_DURATION)
-                        }, DOT_DURATION)
+                        Thread.sleep(200)
+                        flashlightOff()
+                        Thread.sleep(200)
                     }
                     '-' -> {
                         flashlightOn()
-                        handler.postDelayed({
-                            flashlightOff()
-                            handler.postDelayed({
-                                currentIndex++
-                                transmitNextSymbol()
-                            }, DASH_DURATION)
-                        }, DASH_DURATION)
+                        Thread.sleep(600)
+                        flashlightOff()
+                        Thread.sleep(200)
                     }
                     ' ' -> {
-                        handler.postDelayed({
-                            currentIndex++
-                            transmitNextSymbol()
-                        }, WORD_SPACE_DURATION)
+                        Thread.sleep(600)
+                    }
+                    else -> {
+                        val morseChar = textToMorse(char.toString())
+                        for (mc in morseChar) {
+                            if (mc == '.') {
+                                flashlightOn()
+                                Thread.sleep(200)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            } else if (mc == '-') {
+                                flashlightOn()
+                                Thread.sleep(600)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            }
+                        }
+                        Thread.sleep(600) // Space between characters
                     }
                 }
-            } else {
-                onComplete()
+            }
+
+            Thread.sleep(1000) // Pause between SSID and password
+
+            runOnUiThread {
+                Toast.makeText(this, "Transmitting Password...", Toast.LENGTH_SHORT).show()
+            }
+
+            // Transmit password
+            for (char in password) {
+                when (char) {
+                    '.' -> {
+                        flashlightOn()
+                        Thread.sleep(200)
+                        flashlightOff()
+                        Thread.sleep(200)
+                    }
+                    '-' -> {
+                        flashlightOn()
+                        Thread.sleep(600)
+                        flashlightOff()
+                        Thread.sleep(200)
+                    }
+                    ' ' -> {
+                        Thread.sleep(600)
+                    }
+                    else -> {
+                        val morseChar = textToMorse(char.toString())
+                        for (mc in morseChar) {
+                            if (mc == '.') {
+                                flashlightOn()
+                                Thread.sleep(200)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            } else if (mc == '-') {
+                                flashlightOn()
+                                Thread.sleep(600)
+                                flashlightOff()
+                                Thread.sleep(200)
+                            }
+                        }
+                        Thread.sleep(600) // Space between characters
+                    }
+                }
+            }
+
+            runOnUiThread {
+                progressDialog.dismiss()
+                Toast.makeText(this, "WiFi credentials transmission complete", Toast.LENGTH_SHORT).show()
+                // Change WiFi icon to green
+                wifiButton.setImageResource(R.drawable.wifi_icon_green)
+                isWifiTransmitted = true
             }
         }
-
-        transmitNextSymbol()
     }
 
     private fun textToMorse(text: String): String {
@@ -491,60 +602,13 @@ class MCActivity : AppCompatActivity() {
         }.joinToString(" ")
     }
 
-    private fun flashlightOn() {
-        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            for (cameraId in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                if (hasFlash) {
-                    cameraManager.setTorchMode(cameraId, true)
-                    break
-                }
-            }
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-            runOnUiThread {
-                Toast.makeText(this, "Error accessing camera flash: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun flashlightOff() {
-        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            for (cameraId in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                if (hasFlash) {
-                    cameraManager.setTorchMode(cameraId, false)
-                    break
-                }
-            }
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-            runOnUiThread {
-                Toast.makeText(this, "Error accessing camera flash: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     override fun onResume() {
         super.onResume()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        countDownTimer?.cancel()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        sessionManager.endSession()
-        try {
-            toggleFlashlight(this, false)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        // Restore WiFi icon state
+        if (isWifiTransmitted) {
+            wifiButton.setImageResource(R.drawable.wifi_icon_green)
+        } else {
+            wifiButton.setImageResource(R.drawable.ic_wifi)
         }
     }
 }
