@@ -2,11 +2,15 @@ package com.example.limo_safe
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.util.Patterns
 import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.auth.FirebaseAuth
 
@@ -16,6 +20,7 @@ class SignUpActivity : AppCompatActivity() {
     private lateinit var confirmPasswordEditText: EditText
     private lateinit var signUpButton: Button
     private lateinit var backButton: Button
+    private lateinit var wifiButton: ImageButton
     private lateinit var auth: FirebaseAuth
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,8 +36,13 @@ class SignUpActivity : AppCompatActivity() {
         confirmPasswordEditText = findViewById(R.id.confirmPasswordEditText)
         signUpButton = findViewById(R.id.signUpButton)
         backButton = findViewById(R.id.backButton)
+        wifiButton = findViewById(R.id.wifiButton)
 
         // Set click listeners
+        wifiButton.setOnClickListener {
+            showWifiCredentialsDialog()
+        }
+
         signUpButton.setOnClickListener {
             attemptSignUp()
         }
@@ -87,5 +97,54 @@ class SignUpActivity : AppCompatActivity() {
                         Toast.LENGTH_SHORT).show()
                 }
             }
+    }
+
+    private fun showWifiCredentialsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 30, 50, 30)
+        }
+
+        val ssidInput = EditText(this).apply {
+            hint = "SSID"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 20
+            }
+        }
+
+        val passwordInput = EditText(this).apply {
+            hint = "Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        layout.addView(ssidInput)
+        layout.addView(passwordInput)
+
+        AlertDialog.Builder(this)
+            .setTitle("EPS Credentials")
+            .setView(layout)
+            .setPositiveButton("Enter") { dialog, _ ->
+                val ssid = ssidInput.text.toString()
+                val password = passwordInput.text.toString()
+                if (ssid.isNotEmpty() && password.isNotEmpty()) {
+                    // TODO: Handle the WiFi credentials
+                    Toast.makeText(this, "WiFi credentials saved", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Please fill in both fields", Toast.LENGTH_SHORT).show()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .create()
+            .show()
     }
 } 

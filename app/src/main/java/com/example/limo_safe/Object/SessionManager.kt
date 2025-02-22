@@ -20,8 +20,11 @@ class SessionManager(
     private var warningRunnable: Runnable? = null
     private val SESSION_TIMEOUT = 180000L // 3 minute in milliseconds
     private val WARNING_TIME = 170000L // Show warning 10 seconds before timeout (3 minutes - 10 seconds)
+    private val PREFS_NAME = "LIMOSafePrefs"
+    private val LAST_GENERATE_TIME_KEY = "last_generate_time"
 
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val sharedPreferences = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
         activity.lifecycle.addObserver(this)
@@ -89,5 +92,13 @@ class SessionManager(
     fun endSession() {
         sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         warningRunnable?.let { handler.removeCallbacks(it) }
+    }
+
+    fun setLastGenerateTime(time: Long) {
+        sharedPreferences.edit().putLong(LAST_GENERATE_TIME_KEY, time).apply()
+    }
+
+    fun getLastGenerateTime(): Long {
+        return sharedPreferences.getLong(LAST_GENERATE_TIME_KEY, 0L)
     }
 }
