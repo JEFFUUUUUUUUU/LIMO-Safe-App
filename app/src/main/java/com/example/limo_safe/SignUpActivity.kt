@@ -36,12 +36,8 @@ class SignUpActivity : AppCompatActivity() {
         confirmPasswordEditText = findViewById(R.id.confirmPasswordEditText)
         signUpButton = findViewById(R.id.signUpButton)
         backButton = findViewById(R.id.backButton)
-        wifiButton = findViewById(R.id.wifiButton)
 
-        // Set click listeners
-        wifiButton.setOnClickListener {
-            showWifiCredentialsDialog()
-        }
+
 
         signUpButton.setOnClickListener {
             attemptSignUp()
@@ -84,8 +80,8 @@ class SignUpActivity : AppCompatActivity() {
                     user?.sendEmailVerification()
                         ?.addOnCompleteListener { verificationTask ->
                             if (verificationTask.isSuccessful) {
-                                val toast = Toast.makeText(this, 
-                                    "Registration successful! Please check your email for verification.", 
+                                val toast = Toast.makeText(this,
+                                    "Registration successful! Please check your email for verification.",
                                     Toast.LENGTH_LONG)
                                 toast.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 150)
                                 toast.show()
@@ -93,7 +89,7 @@ class SignUpActivity : AppCompatActivity() {
                             }
                         }
                 } else {
-                    Toast.makeText(this, "Registration failed: ${task.exception?.message}", 
+                    Toast.makeText(this, "Registration failed: ${task.exception?.message}",
                         Toast.LENGTH_SHORT).show()
                 }
             }
