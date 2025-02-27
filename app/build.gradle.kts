@@ -47,6 +47,7 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.androidx.camera.core)
+    implementation(libs.firebase.database.ktx)
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
