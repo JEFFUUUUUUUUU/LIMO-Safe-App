@@ -1,5 +1,6 @@
 package com.example.limo_safe
 
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -30,8 +31,9 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         // Check if user is already logged in
         if (savedInstanceState == null) {
             val currentUser = auth.currentUser
-            if (currentUser != null && currentUser.isEmailVerified) {
-                navigateToMC()
+            if (currentUser != null && !currentUser.isEmailVerified) {
+                // If email is not verified, show login screen
+                navigateToLogin()
             }
         }
     }
