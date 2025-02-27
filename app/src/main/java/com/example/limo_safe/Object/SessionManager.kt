@@ -77,9 +77,16 @@ class SessionManager(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     fun onAppBackgrounded() {
+        // Keep session active when app is minimized
+        sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        warningRunnable?.let { handler.removeCallbacks(it) }
+    }
+
+    @OnLifecycleEvent(Lifecycle.Event.ON_START)
+    fun onAppForegrounded() {
+        // Restore session timeout when app is brought back to foreground
         if (isUserSignedIn()) {
-            firebaseAuth.signOut()
-            activity.finishAffinity()
+            resetSessionTimeout()
         }
     }
 
