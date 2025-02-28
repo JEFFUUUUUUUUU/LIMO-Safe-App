@@ -25,16 +25,16 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".LoginActivity"
+            android:name=".LoginFragment"
             android:exported="false" />
         <activity
-            android:name=".SignUpActivity"
+            android:name=".SignUpFragment"
             android:exported="false" />
         <activity
-             android:name=".MCActivity"
+             android:name=".MCFragment"
              android:exported="false" />
         <activity
-            android:name=".MonActivity"
+            android:name=".MonitoringFragment"
              android:exported="false" />
     </application>
 

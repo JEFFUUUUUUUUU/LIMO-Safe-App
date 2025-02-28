@@ -449,6 +449,7 @@ class MCFragment : Fragment() {
 
             override fun onFinish() {
                 activity?.runOnUiThread {
+                    cooldownText.text = "No cooldown - Ready to play"
                     playButton.isEnabled = true // Re-enable the button after cooldown
                 }
             }
