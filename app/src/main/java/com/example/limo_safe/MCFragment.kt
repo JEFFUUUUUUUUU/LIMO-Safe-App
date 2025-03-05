@@ -14,17 +14,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
 import android.Manifest
 import android.graphics.Typeface
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.StyleSpan
 import android.widget.LinearLayout
+import android.widget.Toast
 import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.Object.PersistentTimer
 import kotlin.concurrent.thread
@@ -55,7 +56,6 @@ class MCFragment : Fragment() {
     private var generateCooldownEndTime: Long = 0
     private var morseCooldownEndTime: Long = 0
 
-    private lateinit var playButton: Button
     private lateinit var cooldownText: TextView
     private lateinit var dialog: AlertDialog
 
@@ -255,6 +255,12 @@ class MCFragment : Fragment() {
     private fun navigateToMonitoring() {
         val monitoringFragment = MonitoringFragment.newInstance()
         parentFragmentManager.beginTransaction()
+            .setCustomAnimations(
+                R.anim.slide_in_right,  // Enter animation
+                R.anim.fade_in,         // Exit animation
+                R.anim.fade_in,         // Pop enter animation
+                R.anim.slide_in_right   // Pop exit animation
+            )
             .replace(R.id.fragmentContainer, monitoringFragment)
             .addToBackStack(null)
             .commit()
@@ -275,194 +281,128 @@ class MCFragment : Fragment() {
             .show()
     }
 
-    private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
-        if (remainingTries <= 0) {
-            showMaxTriesDialog() // Show max tries dialog if no tries left
-            return
-        }
-
-        // Cancel any existing timer
-        morseTimer?.cancel()
-
-        // Create a custom layout for the dialog
-        val layout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 30)
-        }
-
-        // Code display text
-        val codeDisplayTextView = TextView(requireContext()).apply {
-            val fullText = "Code: $code"
-            val spannableString = SpannableString(fullText)
-            val startIndex = fullText.indexOf(code)
-            spannableString.setSpan(
-                StyleSpan(Typeface.BOLD),
-                startIndex,
-                startIndex + code.length,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-            text = spannableString
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(resources.getColor(android.R.color.black))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 30
-            }
-        }
-
-        // Main instruction text
-        val instructionText = TextView(requireContext()).apply {
-            text = "Align first your phone flashlight to the Sensor of your LIMO-Safe while transmitting data. Thank you"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 30
-            }
-        }
-
-        // Remaining tries text
-        val triesText = TextView(requireContext()).apply {
-            text = "Remaining tries: $remainingTries"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(resources.getColor(android.R.color.darker_gray))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // Cooldown text
-        cooldownText = TextView(requireContext()).apply {
-            visibility = View.VISIBLE
-            text = if (remainingCooldown > 0) "Please wait ${remainingCooldown / 1000} seconds before next try" else ""
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(resources.getColor(android.R.color.holo_orange_dark))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = 10
-            }
-        }
-
-        layout.addView(codeDisplayTextView)
-        layout.addView(instructionText)
-        layout.addView(triesText)
-        layout.addView(cooldownText)
-
-        dialog = AlertDialog.Builder(requireContext())
-            .setTitle("Play Morse Code")
-            .setView(layout)
-            .setCancelable(false)
-            .create()
-
-        // Create custom button layout
-        val buttonLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setPadding(50, 20, 50, 20)
-        }
-
-        playButton = Button(requireContext()).apply {
-            text = "Play Morse Code"
-            isEnabled = remainingCooldown <= 0
-            alpha = if (remainingCooldown <= 0) 1.0f else 0.5f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        buttonLayout.addView(playButton)
-        layout.addView(buttonLayout)
-
-        playButton.setOnClickListener {
-            // Check if the user has remaining tries
-            if (remainingTries <= 0) {
-                showMaxTriesDialog() // Show max tries dialog if no tries left
-                return@setOnClickListener
-            }
-
-            // Decrement remaining tries
-            remainingTries--
-            triesText.text = "Remaining tries: $remainingTries" // Update remaining tries text
-
-            // If this is the last try, close the dialog and show max tries dialog
-            if (remainingTries < 1) {
-                dialog.dismiss() // Close the current dialog
-                showMaxTriesDialog() // Show max tries dialog immediately
-                return@setOnClickListener
-            }
-
-            // Start cooldown immediately after the first click
-            lastMorsePlayTime = System.currentTimeMillis()
-            saveState() // Save the updated state
-
-            // Disable the play button during cooldown
-            playButton.isEnabled = false
-            cooldownText.text = "Please wait ${MORSE_COOLDOWN / 1000} seconds before next try"
-            startMorseCooldown(MORSE_COOLDOWN)
-
-            // Play Morse code in background
-            thread {
-                playMorseCode(code)
-                // Do not close the dialog here; it will remain open for first and second tries
-            }
-        }
-
-        // If there's remaining cooldown, start the timer
-        if (remainingCooldown > 0 && remainingTries < 3) {
-            startMorseCooldown(remainingCooldown)
-        } else {
-            playButton.isEnabled = true
-            playButton.alpha = 1.0f
-        }
-
-        dialog.show()
-    }
-
     private fun startMorseCooldown(duration: Long) {
         morseTimer?.cancel()
-
-        playButton.isEnabled = false // Disable the button during cooldown
-        cooldownText.text = "Please wait ${duration / 1000} seconds before next try" // Initial message
-
+        
+        val currentDialog = dialog
+        val playButton = currentDialog?.findViewById<Button>(R.id.playButton)
+        val cooldownText = currentDialog?.findViewById<TextView>(R.id.cooldownText)
+        
+        playButton?.isEnabled = false
+        playButton?.alpha = 0.5f
+        
         morseTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 val seconds = millisUntilFinished / 1000
                 activity?.runOnUiThread {
-                    cooldownText.text = "Please wait ${seconds} seconds before next try"
+                    cooldownText?.text = "Please wait $seconds seconds before next try"
                 }
             }
 
             override fun onFinish() {
                 activity?.runOnUiThread {
-                    cooldownText.text = "No cooldown - Ready to play"
-                    playButton.isEnabled = true // Re-enable the button after cooldown
+                    cooldownText?.text = "Ready to play"
+                    playButton?.isEnabled = true
+                    playButton?.alpha = 1.0f
+                    lastMorsePlayTime = 0
                 }
             }
         }.start()
     }
 
-    private fun showMaxTriesDialog() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("Maximum Tries Reached")
-            .setMessage("You have reached the maximum number of tries.")
-            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+    private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
+        dialog = AlertDialog.Builder(requireContext())
+            .setTitle("Play Morse Code")
+            .setView(R.layout.dialog_morse_code)
+            .setCancelable(false)
             .create()
-            .show()
+
+        dialog.setOnShowListener {
+            val playButton = dialog.findViewById<Button>(R.id.playButton)
+            val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
+            val triesText = dialog.findViewById<TextView>(R.id.triesText)
+            val codeDisplayText = dialog.findViewById<TextView>(R.id.codeDisplayText)
+
+            // Set up the code display
+            codeDisplayText?.text = "Code: $code"
+            triesText?.text = "Remaining tries: $remainingTries"
+            cooldownText?.text = if (remainingCooldown > 0) {
+                "Please wait ${remainingCooldown / 1000} seconds before next try"
+            } else {
+                "Ready to play"
+            }
+
+            playButton?.setOnClickListener {
+                // Check cooldown only for first and second tries
+                if (remainingTries > 1) {  // Only check when we have 2 or 3 tries left
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastMorsePlayTime < MORSE_COOLDOWN) {
+                        return@setOnClickListener
+                    }
+                }
+
+                remainingTries--
+                lastMorsePlayTime = System.currentTimeMillis()
+                triesText?.text = "Remaining tries: $remainingTries"
+                saveState()
+
+                if (remainingTries <= 0) {
+                    // For the last try (third click)
+                    // Disable button during transmission
+                    playButton.isEnabled = false
+                    playButton.alpha = 0.5f
+
+                    thread {
+                        // Play morse code first
+                        playMorseCode(code)
+                        
+                        // After transmission is complete, handle dialogs
+                        activity?.runOnUiThread {
+                            // Dismiss morse code dialog
+                            dialog.dismiss()
+                            
+                            // Show maximum tries dialog
+                            val maxTriesDialog = AlertDialog.Builder(requireContext())
+                                .setTitle("Maximum Tries Reached")
+                                .setMessage("You have used all tries. Please wait for the Generate Code button to be available again to get a new code.")
+                                .setCancelable(false)
+                                .create()
+
+                            maxTriesDialog.show()
+                            
+                            // Clear the morse state
+                            requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean(KEY_MORSE_STATE_ACTIVE, false)
+                                .apply()
+
+                            // Auto-dismiss max tries dialog after 3 seconds
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                maxTriesDialog.dismiss()
+                            }, 3000)
+                        }
+                    }
+                } else {
+                    // For first and second clicks
+                    thread {
+                        playMorseCode(code)
+                    }
+                    // Start 30-second cooldown after first and second tries
+                    startMorseCooldown(MORSE_COOLDOWN)
+                }
+            }
+
+            // If there's remaining cooldown and it's not the last try
+            if (remainingCooldown > 0 && remainingTries > 1) {
+                startMorseCooldown(remainingCooldown)
+            } else {
+                cooldownText?.text = "Ready to play"
+                playButton?.isEnabled = true
+                playButton?.alpha = 1.0f
+            }
+        }
+
+        dialog.show()
     }
 
     private fun playMorseCode(code: String) {

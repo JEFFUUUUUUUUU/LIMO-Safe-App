@@ -52,6 +52,8 @@ class LoginFragment : Fragment() {
 
             if (email.isEmpty() || password.isEmpty()) {
                 Toast.makeText(requireContext(), "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                if (email.isEmpty()) emailEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
+                if (password.isEmpty()) passwordEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
                 return@setOnClickListener
             }
 
@@ -63,6 +65,8 @@ class LoginFragment : Fragment() {
                         Toast.makeText(requireContext(),
                             "Login failed: ${task.exception?.message}",
                             Toast.LENGTH_LONG).show()
+                        emailEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
+                        passwordEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
                     }
                 }
         }
@@ -97,6 +101,7 @@ class LoginFragment : Fragment() {
     private fun navigateToMC() {
         val mcFragment = MCFragment()
         parentFragmentManager.beginTransaction()
+            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
             .replace(R.id.fragmentContainer, mcFragment)
             .commit()
     }
@@ -104,6 +109,7 @@ class LoginFragment : Fragment() {
     private fun navigateToSignUp() {
         val signUpFragment = SignUpFragment.newInstance()
         parentFragmentManager.beginTransaction()
+            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
             .replace(R.id.fragmentContainer, signUpFragment)
             .addToBackStack(null)
             .commit()

@@ -15,14 +15,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.example.limo_safe.Object.SessionManager
+import com.google.android.material.tabs.TabLayout
 import java.text.SimpleDateFormat
 import java.util.*
 
 class MonitoringFragment : Fragment() {
     private lateinit var backButton: Button
     private lateinit var monitoringTable: TableLayout
-    private lateinit var lastUpdateText: TextView
     private lateinit var sessionManager: SessionManager
+    private lateinit var tabLayout: TabLayout
     private var countDownTimer: CountDownTimer? = null
     private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
@@ -44,32 +45,55 @@ class MonitoringFragment : Fragment() {
         }
 
         initializeViews(view)
-        loadMonitoringData()
-        updateLastUpdateTime()
+        setupTabLayout()
+        loadSafeMonitoringData() // Load initial data
         continueCountdownIfRunning()
     }
 
     private fun initializeViews(view: View) {
         backButton = view.findViewById(R.id.backButton)
         monitoringTable = view.findViewById(R.id.monitoringTable)
-        lastUpdateText = view.findViewById(R.id.lastUpdateText)
+        tabLayout = view.findViewById(R.id.tabLayout)
 
         backButton.setOnClickListener {
             parentFragmentManager.popBackStack()
         }
     }
 
-    private fun loadMonitoringData() {
+    private fun setupTabLayout() {
+        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab?) {
+                when (tab?.position) {
+                    0 -> {
+                        monitoringTable.removeAllViews()
+                        loadSafeMonitoringData()
+                    }
+                    1 -> {
+                        monitoringTable.removeAllViews()
+                        loadDeviceMonitoringData()
+                    }
+                }
+                // Apply fade-in animation to the table
+                monitoringTable.startAnimation(
+                    android.view.animation.AnimationUtils.loadAnimation(context, R.anim.fade_in)
+                )
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab?) {}
+            override fun onTabReselected(tab: TabLayout.Tab?) {}
+        })
+    }
+
+    private fun loadSafeMonitoringData() {
         // Add table header
-        addTableRow("Date", "Time", "Status", true)
+        addTableRow("Date", "Time", "Status", true, isSafeMonitoring = true)
         
-        // Add sample data - in real app, this would come from a database
+        // Add sample data for Safe Monitoring (reduced to 3 rows)
         val currentTime = System.currentTimeMillis()
         val calendar = Calendar.getInstance()
         
-        // Add some sample entries with different statuses
-        for (i in 0..5) {
-            calendar.timeInMillis = currentTime - (i * 3600000) // Subtract hours
+        for (i in 0..2) {
+            calendar.timeInMillis = currentTime - (i * 3600000)
             val date = dateFormat.format(calendar.time)
             val time = timeFormat.format(calendar.time)
             val status = when (i % 3) {
@@ -77,17 +101,27 @@ class MonitoringFragment : Fragment() {
                 1 -> "Warning"
                 else -> "Inactive"
             }
-            addTableRow(date, time, status)
+            addTableRow(date, time, status, isSafeMonitoring = true)
         }
     }
 
-    private fun updateLastUpdateTime() {
-        val currentTime = System.currentTimeMillis()
-        val formattedTime = timeFormat.format(Date(currentTime))
-        lastUpdateText.text = "Last Updated: $formattedTime"
+    private fun loadDeviceMonitoringData() {
+        // Add table header for device monitoring
+        addTableRow("Device Name", "Status", "Registered Acc", true, isSafeMonitoring = false)
+        
+        // Sample device data (3 rows)
+        val devices = listOf(
+            Triple("LIMO Safe Device 1", "Online", "john.doe@email.com"),
+            Triple("LIMO Safe Device 2", "Low Battery", "jane.smith@email.com"),
+            Triple("LIMO Safe Device 3", "Offline", "admin@limosafe.com")
+        )
+        
+        devices.forEach { (deviceName, status, account) ->
+            addTableRow(deviceName, status, account, isSafeMonitoring = false)
+        }
     }
 
-    private fun addTableRow(date: String, time: String, status: String, isHeader: Boolean = false) {
+    private fun addTableRow(col1: String, col2: String, col3: String, isHeader: Boolean = false, isSafeMonitoring: Boolean) {
         val tableRow = TableRow(requireContext()).apply {
             setPadding(8, 12, 8, 12)
             if (!isHeader) {
@@ -101,18 +135,19 @@ class MonitoringFragment : Fragment() {
             layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)
             setTextColor(when {
                 isHeader -> Color.parseColor("#FFA500")
-                isStatus -> getStatusColor(text)
+                isStatus && isSafeMonitoring -> getStatusColor(text)
+                isStatus && !isSafeMonitoring -> getDeviceStatusColor(text)
                 else -> Color.BLACK
             })
-            if (isHeader || isStatus) {
+            if (isHeader) {
                 setTypeface(null, Typeface.BOLD)
             }
             setPadding(4, 4, 4, 4)
         }
 
-        tableRow.addView(createTextView(date))
-        tableRow.addView(createTextView(time))
-        tableRow.addView(createTextView(status, true))
+        tableRow.addView(createTextView(col1))
+        tableRow.addView(createTextView(col2, isStatus = true))
+        tableRow.addView(createTextView(col3))
 
         monitoringTable.addView(tableRow)
         
@@ -139,6 +174,15 @@ class MonitoringFragment : Fragment() {
             "active" -> Color.parseColor("#4CAF50")  // Green
             "warning" -> Color.parseColor("#FFA500")  // Orange
             "inactive" -> Color.parseColor("#F44336")  // Red
+            else -> Color.BLACK
+        }
+    }
+
+    private fun getDeviceStatusColor(status: String): Int {
+        return when (status.toLowerCase(Locale.getDefault())) {
+            "online" -> Color.parseColor("#4CAF50")  // Green
+            "low battery" -> Color.parseColor("#FFA500")  // Orange
+            "offline" -> Color.parseColor("#F44336")  // Red
             else -> Color.BLACK
         }
     }
