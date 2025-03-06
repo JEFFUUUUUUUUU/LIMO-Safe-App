@@ -13,62 +13,85 @@
         android:layout_height="50dp"
         android:background="#FFA500"/>
 
-    <Button
-        android:id="@+id/backButton"
-        android:layout_width="wrap_content"
+    <!-- Title -->
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BACK"
-        android:layout_margin="16dp"
+        android:text="LIMOnitoring"
+        android:textSize="24sp"
+        android:textStyle="bold"
         android:textColor="#FFFFFF"
-        android:background="#000000"/>
+        android:gravity="center"
+        android:padding="8dp"/>
 
     <!-- Content Container with white background -->
-    <LinearLayout
+    <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical"
         android:layout_marginHorizontal="16dp"
-        android:background="#FFFFFF">
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
 
-        <com.google.android.material.tabs.TabLayout
-            android:id="@+id/tabLayout"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:tabMode="fixed"
-            app:tabGravity="fill"
-            android:background="#FFFFFF"
-            app:tabIndicatorColor="#800000"
-            app:tabSelectedTextColor="#800000"
-            app:tabTextColor="#666666">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="#FFFFFF">
 
-            <com.google.android.material.tabs.TabItem
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Device List" />
-
-            <com.google.android.material.tabs.TabItem
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Logs" />
-
-        </com.google.android.material.tabs.TabLayout>
-
-        <FrameLayout
-            android:id="@+id/fragmentContainer"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/deviceListRecyclerView"
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/tabLayout"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_margin="16dp"/>
+                android:layout_height="wrap_content"
+                app:tabMode="fixed"
+                app:tabGravity="fill"
+                android:background="#FFFFFF"
+                app:tabIndicatorColor="#800000"
+                app:tabSelectedTextColor="#800000"
+                app:tabTextColor="#666666">
 
-        </FrameLayout>
+                <com.google.android.material.tabs.TabItem
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Device List" />
 
-    </LinearLayout>
+                <com.google.android.material.tabs.TabItem
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Logs" />
+
+            </com.google.android.material.tabs.TabLayout>
+
+            <FrameLayout
+                android:id="@+id/fragmentContainer"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/deviceListRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_margin="16dp"/>
+
+            </FrameLayout>
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+
+    <!-- Back Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/backButton"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:text="Back"
+        android:layout_marginTop="16dp"
+        android:layout_gravity="center"
+        android:background="@drawable/button_bg"
+        android:padding="16dp"
+        android:textColor="@android:color/white" />
 
     <!-- Bottom Orange Bar -->
     <View

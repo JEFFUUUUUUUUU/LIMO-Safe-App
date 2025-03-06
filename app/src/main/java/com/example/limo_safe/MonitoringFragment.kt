@@ -1,6 +1,7 @@
 package com.example.limo_safe
 
 import android.app.Dialog
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -10,9 +11,11 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.widget.PopupMenu
+import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -32,7 +35,7 @@ class MonitoringFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
         
-        // Initialize views
+        // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
@@ -73,9 +76,11 @@ class MonitoringFragment : Fragment() {
                 when (tab?.position) {
                     0 -> { // Device List
                         deviceListRecyclerView.visibility = View.VISIBLE
-                        childFragmentManager.beginTransaction()
-                            .remove(logsFragment)
-                            .commit()
+                        if (logsFragment.isAdded) {
+                            childFragmentManager.beginTransaction()
+                                .remove(logsFragment)
+                                .commit()
+                        }
                     }
                     1 -> { // Logs
                         deviceListRecyclerView.visibility = View.GONE
@@ -103,7 +108,7 @@ data class Device(
     val isOnline: Boolean,
     val isLocked: Boolean,
     val isSecure: Boolean,
-    val users: List<String>
+    var users: List<String>
 )
 
 class DeviceAdapter(private val devices: List<Device>) :
@@ -187,7 +192,6 @@ class DeviceAdapter(private val devices: List<Device>) :
 
         // Add users with options buttons
         device.users.forEach { userEmail ->
-            // Create horizontal layout for user row
             val userRow = LinearLayout(holder.itemView.context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
@@ -198,20 +202,16 @@ class DeviceAdapter(private val devices: List<Device>) :
                 }
             }
 
-            // Add user email
-            val userTextView = TextView(holder.itemView.context).apply {
-                text = "• $userEmail"
+            val userEmailText = TextView(holder.itemView.context).apply {
+                text = userEmail
                 layoutParams = LinearLayout.LayoutParams(
                     0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     1f
                 )
-                textSize = 14f
-                setPadding(0, 4, 0, 4)
+                setPadding(8, 4, 8, 4)
             }
-            userRow.addView(userTextView)
 
-            // Add options button
             val optionsButton = ImageButton(holder.itemView.context).apply {
                 setImageResource(R.drawable.ic_more_vert)
                 background = null
@@ -219,38 +219,60 @@ class DeviceAdapter(private val devices: List<Device>) :
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                setOnClickListener { view ->
-                    showUserOptionsMenu(view, userEmail)
+                setOnClickListener {
+                    showUserOptionsMenu(this, position, userEmail)
                 }
             }
-            userRow.addView(optionsButton)
 
-            // Add the complete row to the container
+            userRow.addView(userEmailText)
+            userRow.addView(optionsButton)
             holder.usersContainer.addView(userRow)
         }
     }
 
-    private fun showUserOptionsMenu(view: View, userEmail: String) {
-        PopupMenu(view.context, view).apply {
-            inflate(R.menu.user_options_menu)
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    R.id.action_delete_user -> {
-                        Toast.makeText(view.context, "Delete user: $userEmail", Toast.LENGTH_SHORT).show()
-                        true
-                    }
-                    R.id.action_promote_user -> {
-                        Toast.makeText(view.context, "Promote user: $userEmail", Toast.LENGTH_SHORT).show()
-                        true
-                    }
-                    R.id.action_demote_user -> {
-                        Toast.makeText(view.context, "Demote user: $userEmail", Toast.LENGTH_SHORT).show()
-                        true
-                    }
-                    else -> false
+    private fun showUserOptionsMenu(view: View, devicePosition: Int, userEmail: String) {
+        val popup = PopupMenu(view.context, view)
+        popup.menuInflater.inflate(R.menu.user_options_menu, popup.menu)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_remove_user -> {
+                    val device = devices[devicePosition]
+                    device.users = device.users.filter { it != userEmail }
+                    notifyItemChanged(devicePosition)
+                    Toast.makeText(view.context, "User removed: $userEmail", Toast.LENGTH_SHORT).show()
+                    true
                 }
+                R.id.action_edit_permissions -> {
+                    showEditPermissionsDialog(view.context, userEmail)
+                    true
+                }
+                else -> false
             }
-            show()
         }
+        popup.show()
+    }
+
+    private fun showEditPermissionsDialog(context: Context, userEmail: String) {
+        val dialog = Dialog(context)
+        dialog.setContentView(R.layout.dialog_edit_permissions)
+        dialog.setTitle("Edit Permissions")
+
+        // Get dialog views
+        val adminSwitch = dialog.findViewById<SwitchCompat>(R.id.adminSwitch)
+        val viewOnlySwitch = dialog.findViewById<SwitchCompat>(R.id.viewOnlySwitch)
+        val saveButton = dialog.findViewById<Button>(R.id.saveButton)
+        val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+        saveButton.setOnClickListener {
+            // TODO: Implement permission saving logic
+            Toast.makeText(context, "Permissions updated for: $userEmail", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        cancelButton.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 }
