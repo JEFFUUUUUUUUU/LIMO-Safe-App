@@ -17,6 +17,8 @@ import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.tabs.TabLayout
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.*
 
 class MonitoringFragment : Fragment() {
     private lateinit var deviceListRecyclerView: RecyclerView
@@ -25,33 +27,51 @@ class MonitoringFragment : Fragment() {
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
 
+    private lateinit var database: DatabaseReference
+    private lateinit var deviceListListener: ValueEventListener
+    private val deviceStatusListeners = mutableMapOf<String, ValueEventListener>()
+    private val deviceUsersListeners = mutableMapOf<String, ValueEventListener>()
+
+    private val devices = mutableListOf<Device>()
+    private val currentUserId: String
+        get() = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
-        
+
         // Initialize views
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
-        
+
+        // Initialize Firebase
+        database = FirebaseDatabase.getInstance().reference
+
         setupRecyclerView()
         setupBackButton()
         setupTabs()
-        
+        fetchUserDevices()
+
         return view
     }
 
-    private fun setupRecyclerView() {
-        val devices = listOf(
-            Device("Device 1", true, true, true, listOf("example.acc1@email.com", "example.acc2@email.com")),
-            Device("Device 2", false, false, false, listOf("example.acc3@email.com")),
-            Device("Device 3", true, false, true, listOf("example.acc4@email.com"))
-        )
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Clean up all listeners
+        removeAllListeners()
+    }
 
-        deviceAdapter = DeviceAdapter(devices)
+    private fun setupRecyclerView() {
+        deviceAdapter = DeviceAdapter(devices,
+            onUserAdded = { deviceId, email -> addUserToDevice(deviceId, email) },
+            onUserDeleted = { deviceId, email -> deleteUserFromDevice(deviceId, email) },
+            onUserPromoted = { deviceId, email -> promoteUser(deviceId, email) },
+            onUserDemoted = { deviceId, email -> demoteUser(deviceId, email) }
+        )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
             adapter = deviceAdapter
@@ -91,6 +111,203 @@ class MonitoringFragment : Fragment() {
         })
     }
 
+    private fun fetchUserDevices() {
+        // Remove previous listener if exists
+        if (::deviceListListener.isInitialized) {
+            database.child("users").child(currentUserId).child("registeredDevices")
+                .removeEventListener(deviceListListener)
+        }
+
+        deviceListListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                // Clear previous device listeners
+                removeAllDeviceListeners()
+                devices.clear()
+
+                for (deviceSnapshot in snapshot.children) {
+                    val deviceId = deviceSnapshot.key ?: continue
+                    // Create placeholder device
+                    val device = Device(
+                        id = deviceId,
+                        name = deviceId, // Temporary name until we get details
+                        isOnline = false,
+                        isLocked = false,
+                        isSecure = false,
+                        users = emptyList()
+                    )
+                    devices.add(device)
+
+                    // Fetch device status and users
+                    fetchDeviceStatus(deviceId)
+                    fetchDeviceUsers(deviceId)
+                }
+
+                deviceAdapter.notifyDataSetChanged()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(context, "Failed to load devices: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        database.child("users").child(currentUserId).child("registeredDevices")
+            .addValueEventListener(deviceListListener)
+    }
+
+    private fun fetchDeviceStatus(deviceId: String) {
+        // Remove previous listener if exists
+        deviceStatusListeners[deviceId]?.let { listener ->
+            database.child("devices").child(deviceId).child("status")
+                .removeEventListener(listener)
+        }
+
+        val statusListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val isOnline = snapshot.child("online").getValue(Boolean::class.java) ?: false
+                val isLocked = snapshot.child("locked").getValue(Boolean::class.java) ?: false
+                val isSecure = snapshot.child("secure").getValue(Boolean::class.java) ?: false
+                val name = snapshot.child("name").getValue(String::class.java) ?: deviceId
+
+                // Find and update device in our list
+                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
+                if (deviceIndex >= 0) {
+                    val device = devices[deviceIndex]
+                    devices[deviceIndex] = device.copy(
+                        name = name,
+                        isOnline = isOnline,
+                        isLocked = isLocked,
+                        isSecure = isSecure
+                    )
+                    deviceAdapter.notifyItemChanged(deviceIndex)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(context, "Failed to load device status: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        database.child("devices").child(deviceId).child("status")
+            .addValueEventListener(statusListener)
+
+        deviceStatusListeners[deviceId] = statusListener
+    }
+
+    private fun fetchDeviceUsers(deviceId: String) {
+        // Remove previous listener if exists
+        deviceUsersListeners[deviceId]?.let { listener ->
+            database.child("devices").child(deviceId).child("registeredUsers")
+                .removeEventListener(listener)
+        }
+
+        val usersListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val userList = mutableListOf<String>()
+
+                for (userSnapshot in snapshot.children) {
+                    val userEmail = userSnapshot.key ?: continue
+                    userList.add(userEmail)
+                }
+
+                // Find and update device in our list
+                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
+                if (deviceIndex >= 0) {
+                    val device = devices[deviceIndex]
+                    devices[deviceIndex] = device.copy(users = userList)
+                    deviceAdapter.notifyItemChanged(deviceIndex)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(context, "Failed to load device users: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        database.child("devices").child(deviceId).child("registeredUsers")
+            .addValueEventListener(usersListener)
+
+        deviceUsersListeners[deviceId] = usersListener
+    }
+
+    private fun addUserToDevice(deviceId: String, email: String) {
+        // Add user to device's registered users
+        database.child("devices").child(deviceId).child("registeredUsers")
+            .child(email.replace(".", ",")) // Firebase doesn't allow dots in keys
+            .setValue(true)
+            .addOnSuccessListener {
+                Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun deleteUserFromDevice(deviceId: String, email: String) {
+        // Remove user from device's registered users
+        database.child("devices").child(deviceId).child("registeredUsers")
+            .child(email.replace(".", ",")) // Firebase doesn't allow dots in keys
+            .removeValue()
+            .addOnSuccessListener {
+                Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to remove user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun promoteUser(deviceId: String, email: String) {
+        // Set user as admin
+        database.child("devices").child(deviceId).child("registeredUsers")
+            .child(email.replace(".", ","))
+            .setValue("admin")
+            .addOnSuccessListener {
+                Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun demoteUser(deviceId: String, email: String) {
+        // Set user as regular user
+        database.child("devices").child(deviceId).child("registeredUsers")
+            .child(email.replace(".", ","))
+            .setValue(true)
+            .addOnSuccessListener {
+                Toast.makeText(context, "User demoted to regular user", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun removeAllDeviceListeners() {
+        // Remove all device status listeners
+        for ((deviceId, listener) in deviceStatusListeners) {
+            database.child("devices").child(deviceId).child("status")
+                .removeEventListener(listener)
+        }
+        deviceStatusListeners.clear()
+
+        // Remove all device users listeners
+        for ((deviceId, listener) in deviceUsersListeners) {
+            database.child("devices").child(deviceId).child("registeredUsers")
+                .removeEventListener(listener)
+        }
+        deviceUsersListeners.clear()
+    }
+
+    private fun removeAllListeners() {
+        // Remove device list listener
+        if (::deviceListListener.isInitialized) {
+            database.child("users").child(currentUserId).child("registeredDevices")
+                .removeEventListener(deviceListListener)
+        }
+
+        // Remove all device-specific listeners
+        removeAllDeviceListeners()
+    }
+
     companion object {
         fun newInstance(): MonitoringFragment {
             return MonitoringFragment()
@@ -99,6 +316,7 @@ class MonitoringFragment : Fragment() {
 }
 
 data class Device(
+    val id: String,
     val name: String,
     val isOnline: Boolean,
     val isLocked: Boolean,
@@ -106,10 +324,17 @@ data class Device(
     val users: List<String>
 )
 
-class DeviceAdapter(private val devices: List<Device>) :
-    RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
+// DeviceAdapter also needs to be updated to handle the callbacks
+class DeviceAdapter(
+    private val devices: List<Device>,
+    private val onUserAdded: (String, String) -> Unit,
+    private val onUserDeleted: (String, String) -> Unit,
+    private val onUserPromoted: (String, String) -> Unit,
+    private val onUserDemoted: (String, String) -> Unit
+) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        // Same as before
         val deviceHeader: LinearLayout = itemView.findViewById(R.id.deviceHeader)
         val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
         val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
@@ -128,12 +353,16 @@ class DeviceAdapter(private val devices: List<Device>) :
             }
 
             addUserButton.setOnClickListener {
-                showAddUserDialog(itemView, adapterPosition)
+                val position = adapterPosition
+                if (position != RecyclerView.NO_POSITION) {
+                    showAddUserDialog(itemView, position)
+                }
             }
         }
     }
 
     private fun showAddUserDialog(view: View, position: Int) {
+        val deviceId = devices[position].id
         val context = view.context
         val dialog = Dialog(context)
         dialog.setContentView(R.layout.dialog_add_user)
@@ -145,8 +374,7 @@ class DeviceAdapter(private val devices: List<Device>) :
         enterButton.setOnClickListener {
             val email = emailInput.text.toString()
             if (email.isNotEmpty()) {
-                // TODO: Implement actual user addition logic
-                Toast.makeText(context, "Adding user: $email", Toast.LENGTH_SHORT).show()
+                onUserAdded(deviceId, email)
                 dialog.dismiss()
             } else {
                 Toast.makeText(context, "Please enter an email", Toast.LENGTH_SHORT).show()
@@ -220,7 +448,7 @@ class DeviceAdapter(private val devices: List<Device>) :
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener { view ->
-                    showUserOptionsMenu(view, userEmail)
+                    showUserOptionsMenu(view, device.id, userEmail)
                 }
             }
             userRow.addView(optionsButton)
@@ -230,21 +458,21 @@ class DeviceAdapter(private val devices: List<Device>) :
         }
     }
 
-    private fun showUserOptionsMenu(view: View, userEmail: String) {
+    private fun showUserOptionsMenu(view: View, deviceId: String, userEmail: String) {
         PopupMenu(view.context, view).apply {
             inflate(R.menu.user_options_menu)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_delete_user -> {
-                        Toast.makeText(view.context, "Delete user: $userEmail", Toast.LENGTH_SHORT).show()
+                        onUserDeleted(deviceId, userEmail)
                         true
                     }
                     R.id.action_promote_user -> {
-                        Toast.makeText(view.context, "Promote user: $userEmail", Toast.LENGTH_SHORT).show()
+                        onUserPromoted(deviceId, userEmail)
                         true
                     }
                     R.id.action_demote_user -> {
-                        Toast.makeText(view.context, "Demote user: $userEmail", Toast.LENGTH_SHORT).show()
+                        onUserDemoted(deviceId, userEmail)
                         true
                     }
                     else -> false
