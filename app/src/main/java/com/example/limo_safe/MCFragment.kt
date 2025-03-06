@@ -1,33 +1,29 @@
 package com.example.limo_safe
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import android.Manifest
-import android.graphics.Typeface
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.StyleSpan
-import android.widget.LinearLayout
-import android.widget.Toast
-import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.Object.PersistentTimer
+import com.example.limo_safe.Object.SessionManager
+import com.example.limo_safe.utils.MorseCodeHelper
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import kotlin.concurrent.thread
 
 class MCFragment : Fragment() {
@@ -58,6 +54,7 @@ class MCFragment : Fragment() {
 
     private lateinit var cooldownText: TextView
     private lateinit var dialog: AlertDialog
+    private lateinit var database: DatabaseReference
 
     private fun saveState() {
         val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -134,6 +131,8 @@ class MCFragment : Fragment() {
             generateCodeButton.isEnabled = false
             generateCodeButton.alpha = 0.5f
         }
+
+        database = FirebaseDatabase.getInstance().reference
     }
 
     override fun onPause() {
@@ -242,7 +241,41 @@ class MCFragment : Fragment() {
 
     private fun generateRandomCode(): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return (1..6).map { chars.random() }.joinToString("")
+        val randomCode = (1..6).map { chars.random() }.joinToString("")
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return randomCode
+
+        // First, get the user's tag from Firebase
+        database.child("users").child(userId).child("tag").get()
+            .addOnSuccessListener { tagSnapshot ->
+                val userTag = tagSnapshot.value as? String ?: ""
+                // Take only the first character if tag exists
+                val tagChar = if (userTag.isNotEmpty()) userTag.first().toString() else ""
+                val fullCode = tagChar + randomCode
+
+                // Store the full code (with tag) in Firebase with expiry
+                val otpData = mapOf(
+                    "code" to fullCode,
+                    "created_at" to ServerValue.TIMESTAMP,
+                    "expires_at" to (System.currentTimeMillis() + 30000) // 30 seconds
+                )
+
+                database.child("users").child(userId).child("otp").setValue(otpData)
+                    .addOnSuccessListener {
+                        // Update the UI with the full code
+                        activity?.runOnUiThread {
+                            currentCode = fullCode
+                            updateGeneratedCodeText()
+                        }
+
+                        // Auto-delete after 30 seconds
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            database.child("users").child(userId).child("otp").removeValue()
+                        }, 45000)
+                    }
+            }
+
+        // Return the random code initially, it will be updated when we get the tag
+        return randomCode
     }
 
     private fun navigateToLogin() {
@@ -406,80 +439,18 @@ class MCFragment : Fragment() {
     }
 
     private fun playMorseCode(code: String) {
-        for (char in code) {
-            when (char) {
-                '.' -> {
-                    flashlightOn()
-                    Thread.sleep(70)
-                    flashlightOff()
-                    Thread.sleep(70)
-                }
-                '-' -> {
-                    flashlightOn()
-                    Thread.sleep(210)  // 3x dot duration for dash
-                    flashlightOff()
-                    Thread.sleep(70)
-                }
-                ' ' -> {
-                    Thread.sleep(210)  // 3x dot duration for word space
-                }
-                else -> {
-                    val morseChar = textToMorse(char.toString())
-                    for (mc in morseChar) {
-                        if (mc == '.') {
-                            flashlightOn()
-                            Thread.sleep(70)
-                            flashlightOff()
-                            Thread.sleep(70)
-                        } else if (mc == '-') {
-                            flashlightOn()
-                            Thread.sleep(210)  // 3x dot duration for dash
-                            flashlightOff()
-                            Thread.sleep(70)
-                        }
-                    }
-                    Thread.sleep(210)  // 3x dot duration between characters
-                }
-            }
-        }
+        val transmitCode = codeDisplayText.text.toString() // Contains tag+code
+        val pulses = MorseCodeHelper.convertToMorsePulseSequence(transmitCode)
+        MorseCodeHelper.playMorsePulseSequence(requireContext(), pulses)
+        
         activity?.runOnUiThread {
             Toast.makeText(requireContext(), "Code transmission complete", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun flashlightOn() {
-        val cameraManager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            val cameraId = cameraManager.cameraIdList[0]
-            cameraManager.setTorchMode(cameraId, true)
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun flashlightOff() {
-        val cameraManager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            val cameraId = cameraManager.cameraIdList[0]
-            cameraManager.setTorchMode(cameraId, false)
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun textToMorse(text: String): String {
-        val morseMap = mapOf(
-            'A' to ".-", 'B' to "-...", 'C' to "-.-.", 'D' to "-..", 'E' to ".",
-            'F' to "..-.", 'G' to "--.", 'H' to "....", 'I' to "..", 'J' to ".---",
-            'K' to "-.-", 'L' to ".-..", 'M' to "--", 'N' to "-.", 'O' to "---",
-            'P' to ".--.", 'Q' to "--.-", 'R' to ".-.", 'S' to "...", 'T' to "-",
-            'U' to "..-", 'V' to "...-", 'W' to ".--", 'X' to "-..-", 'Y' to "-.--",
-            'Z' to "--..", '0' to "-----", '1' to ".----", '2' to "..---", '3' to "...--",
-            '4' to "....-", '5' to ".....", '6' to "-....", '7' to "--...", '8' to "---..",
-            '9' to "----."
-        )
-        return text.uppercase().map { morseMap[it] ?: "" }.joinToString(" ")
-    }
+    private fun flashlightOn() = Unit
+    private fun flashlightOff() = Unit
+    private fun textToMorse(text: String) = ""
 
     private fun checkCameraPermission() {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
