@@ -1,82 +1,89 @@
 package com.example.limo_safe
 
-import android.graphics.Color
-import android.graphics.Typeface
+import android.app.Dialog
 import android.os.Bundle
-import android.os.CountDownTimer
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.TableLayout
-import android.widget.TableRow
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
-import com.example.limo_safe.Object.SessionManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.tabs.TabLayout
-import java.text.SimpleDateFormat
-import java.util.*
 
 class MonitoringFragment : Fragment() {
+    private lateinit var deviceListRecyclerView: RecyclerView
+    private lateinit var deviceAdapter: DeviceAdapter
     private lateinit var backButton: Button
-    private lateinit var monitoringTable: TableLayout
-    private lateinit var sessionManager: SessionManager
     private lateinit var tabLayout: TabLayout
-    private var countDownTimer: CountDownTimer? = null
-    private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private lateinit var logsFragment: LogsFragment
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_monitoring, container, false)
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        sessionManager = SessionManager(requireActivity()) {
-            Toast.makeText(requireContext(), "Logging out due to inactivity", Toast.LENGTH_LONG).show()
-            navigateToLogin()
-        }
-
-        initializeViews(view)
-        setupTabLayout()
-        loadSafeMonitoringData() // Load initial data
-        continueCountdownIfRunning()
-    }
-
-    private fun initializeViews(view: View) {
+        val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
+        
+        // Initialize views
+        deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
-        monitoringTable = view.findViewById(R.id.monitoringTable)
         tabLayout = view.findViewById(R.id.tabLayout)
+        
+        setupRecyclerView()
+        setupBackButton()
+        setupTabs()
+        
+        return view
+    }
 
+    private fun setupRecyclerView() {
+        val devices = listOf(
+            Device("Device 1", true, true, true, listOf("example.acc1@email.com", "example.acc2@email.com")),
+            Device("Device 2", false, false, false, listOf("example.acc3@email.com")),
+            Device("Device 3", true, false, true, listOf("example.acc4@email.com"))
+        )
+
+        deviceAdapter = DeviceAdapter(devices)
+        deviceListRecyclerView.apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = deviceAdapter
+        }
+    }
+
+    private fun setupBackButton() {
         backButton.setOnClickListener {
             parentFragmentManager.popBackStack()
         }
     }
 
-    private fun setupTabLayout() {
+    private fun setupTabs() {
+        // Create logs fragment instance
+        logsFragment = LogsFragment.newInstance()
+
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
                 when (tab?.position) {
-                    0 -> {
-                        monitoringTable.removeAllViews()
-                        loadSafeMonitoringData()
+                    0 -> { // Device List
+                        deviceListRecyclerView.visibility = View.VISIBLE
+                        childFragmentManager.beginTransaction()
+                            .remove(logsFragment)
+                            .commit()
                     }
-                    1 -> {
-                        monitoringTable.removeAllViews()
-                        loadDeviceMonitoringData()
+                    1 -> { // Logs
+                        deviceListRecyclerView.visibility = View.GONE
+                        childFragmentManager.beginTransaction()
+                            .replace(R.id.fragmentContainer, logsFragment)
+                            .commit()
                     }
                 }
-                // Apply fade-in animation to the table
-                monitoringTable.startAnimation(
-                    android.view.animation.AnimationUtils.loadAnimation(context, R.anim.fade_in)
-                )
             }
 
             override fun onTabUnselected(tab: TabLayout.Tab?) {}
@@ -84,148 +91,166 @@ class MonitoringFragment : Fragment() {
         })
     }
 
-    private fun loadSafeMonitoringData() {
-        // Add table header
-        addTableRow("Date", "Time", "Status", true, isSafeMonitoring = true)
-        
-        // Add sample data for Safe Monitoring (reduced to 3 rows)
-        val currentTime = System.currentTimeMillis()
-        val calendar = Calendar.getInstance()
-        
-        for (i in 0..2) {
-            calendar.timeInMillis = currentTime - (i * 3600000)
-            val date = dateFormat.format(calendar.time)
-            val time = timeFormat.format(calendar.time)
-            val status = when (i % 3) {
-                0 -> "Active"
-                1 -> "Warning"
-                else -> "Inactive"
-            }
-            addTableRow(date, time, status, isSafeMonitoring = true)
-        }
-    }
-
-    private fun loadDeviceMonitoringData() {
-        // Add table header for device monitoring
-        addTableRow("Device Name", "Status", "Registered Acc", true, isSafeMonitoring = false)
-        
-        // Sample device data (3 rows)
-        val devices = listOf(
-            Triple("LIMO Safe Device 1", "Online", "john.doe@email.com"),
-            Triple("LIMO Safe Device 2", "Low Battery", "jane.smith@email.com"),
-            Triple("LIMO Safe Device 3", "Offline", "admin@limosafe.com")
-        )
-        
-        devices.forEach { (deviceName, status, account) ->
-            addTableRow(deviceName, status, account, isSafeMonitoring = false)
-        }
-    }
-
-    private fun addTableRow(col1: String, col2: String, col3: String, isHeader: Boolean = false, isSafeMonitoring: Boolean) {
-        val tableRow = TableRow(requireContext()).apply {
-            setPadding(8, 12, 8, 12)
-            if (!isHeader) {
-                setBackgroundResource(R.drawable.table_row_bg)
-            }
-        }
-
-        fun createTextView(text: String, isStatus: Boolean = false) = TextView(requireContext()).apply {
-            this.text = text
-            gravity = Gravity.CENTER
-            layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)
-            setTextColor(when {
-                isHeader -> Color.parseColor("#FFA500")
-                isStatus && isSafeMonitoring -> getStatusColor(text)
-                isStatus && !isSafeMonitoring -> getDeviceStatusColor(text)
-                else -> Color.BLACK
-            })
-            if (isHeader) {
-                setTypeface(null, Typeface.BOLD)
-            }
-            setPadding(4, 4, 4, 4)
-        }
-
-        tableRow.addView(createTextView(col1))
-        tableRow.addView(createTextView(col2, isStatus = true))
-        tableRow.addView(createTextView(col3))
-
-        monitoringTable.addView(tableRow)
-        
-        // Add a divider after each row except the header
-        if (!isHeader) {
-            addDivider()
-        }
-    }
-
-    private fun addDivider() {
-        val dividerRow = TableRow(requireContext())
-        val dividerView = View(requireContext()).apply {
-            layoutParams = TableRow.LayoutParams(TableRow.LayoutParams.MATCH_PARENT, 1).apply {
-                span = 3
-            }
-            setBackgroundColor(Color.parseColor("#E0E0E0"))
-        }
-        dividerRow.addView(dividerView)
-        monitoringTable.addView(dividerRow)
-    }
-
-    private fun getStatusColor(status: String): Int {
-        return when (status.toLowerCase(Locale.getDefault())) {
-            "active" -> Color.parseColor("#4CAF50")  // Green
-            "warning" -> Color.parseColor("#FFA500")  // Orange
-            "inactive" -> Color.parseColor("#F44336")  // Red
-            else -> Color.BLACK
-        }
-    }
-
-    private fun getDeviceStatusColor(status: String): Int {
-        return when (status.toLowerCase(Locale.getDefault())) {
-            "online" -> Color.parseColor("#4CAF50")  // Green
-            "low battery" -> Color.parseColor("#FFA500")  // Orange
-            "offline" -> Color.parseColor("#F44336")  // Red
-            else -> Color.BLACK
-        }
-    }
-
-    private fun continueCountdownIfRunning() {
-        if (TimerState.isTimerRunning && TimerState.timeRemaining > 0) {
-            startCountdown(TimerState.timeRemaining)
-        }
-    }
-
-    private fun startCountdown(duration: Long) {
-        countDownTimer?.cancel()
-        countDownTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                TimerState.timeRemaining = millisUntilFinished
-            }
-
-            override fun onFinish() {
-                TimerState.isTimerRunning = false
-                TimerState.timeRemaining = 0
-            }
-        }.start()
-    }
-
-    private fun navigateToLogin() {
-        val loginFragment = LoginFragment.newInstance()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commit()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        countDownTimer?.cancel()
-        sessionManager.endSession()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        sessionManager.userActivityDetected()
-    }
-
     companion object {
-        fun newInstance() = MonitoringFragment()
+        fun newInstance(): MonitoringFragment {
+            return MonitoringFragment()
+        }
+    }
+}
+
+data class Device(
+    val name: String,
+    val isOnline: Boolean,
+    val isLocked: Boolean,
+    val isSecure: Boolean,
+    val users: List<String>
+)
+
+class DeviceAdapter(private val devices: List<Device>) :
+    RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
+
+    inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val deviceHeader: LinearLayout = itemView.findViewById(R.id.deviceHeader)
+        val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
+        val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
+        val expandableContent: LinearLayout = itemView.findViewById(R.id.expandableContent)
+        val onlineStatusText: TextView = itemView.findViewById(R.id.onlineStatusText)
+        val lockStatusText: TextView = itemView.findViewById(R.id.lockStatusText)
+        val secureStatusText: TextView = itemView.findViewById(R.id.secureStatusText)
+        val usersContainer: LinearLayout = itemView.findViewById(R.id.usersContainer)
+        val addUserButton: ImageButton = itemView.findViewById(R.id.addUserButton)
+
+        init {
+            deviceHeader.setOnClickListener {
+                val isExpanded = expandableContent.visibility == View.VISIBLE
+                expandableContent.visibility = if (isExpanded) View.GONE else View.VISIBLE
+                expandIcon.rotation = if (isExpanded) 0f else 180f
+            }
+
+            addUserButton.setOnClickListener {
+                showAddUserDialog(itemView, adapterPosition)
+            }
+        }
+    }
+
+    private fun showAddUserDialog(view: View, position: Int) {
+        val context = view.context
+        val dialog = Dialog(context)
+        dialog.setContentView(R.layout.dialog_add_user)
+
+        val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
+        val enterButton = dialog.findViewById<Button>(R.id.enterButton)
+        val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+        enterButton.setOnClickListener {
+            val email = emailInput.text.toString()
+            if (email.isNotEmpty()) {
+                // TODO: Implement actual user addition logic
+                Toast.makeText(context, "Adding user: $email", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            } else {
+                Toast.makeText(context, "Please enter an email", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        cancelButton.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DeviceViewHolder {
+        val view = LayoutInflater.from(parent.context)
+            .inflate(R.layout.item_device, parent, false)
+        return DeviceViewHolder(view)
+    }
+
+    override fun getItemCount() = devices.size
+
+    override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
+        val device = devices[position]
+        holder.deviceNameText.text = device.name
+
+        // Set status texts with bullet points
+        holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
+        holder.onlineStatusText.setTextColor(if (device.isOnline) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
+
+        holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
+        holder.lockStatusText.setTextColor(if (device.isLocked) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
+
+        holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
+        holder.secureStatusText.setTextColor(if (device.isSecure) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
+
+        // Clear existing users
+        holder.usersContainer.removeAllViews()
+
+        // Add users with options buttons
+        device.users.forEach { userEmail ->
+            // Create horizontal layout for user row
+            val userRow = LinearLayout(holder.itemView.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 8
+                }
+            }
+
+            // Add user email
+            val userTextView = TextView(holder.itemView.context).apply {
+                text = "• $userEmail"
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+                textSize = 14f
+                setPadding(0, 4, 0, 4)
+            }
+            userRow.addView(userTextView)
+
+            // Add options button
+            val optionsButton = ImageButton(holder.itemView.context).apply {
+                setImageResource(R.drawable.ic_more_vert)
+                background = null
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener { view ->
+                    showUserOptionsMenu(view, userEmail)
+                }
+            }
+            userRow.addView(optionsButton)
+
+            // Add the complete row to the container
+            holder.usersContainer.addView(userRow)
+        }
+    }
+
+    private fun showUserOptionsMenu(view: View, userEmail: String) {
+        PopupMenu(view.context, view).apply {
+            inflate(R.menu.user_options_menu)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_delete_user -> {
+                        Toast.makeText(view.context, "Delete user: $userEmail", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    R.id.action_promote_user -> {
+                        Toast.makeText(view.context, "Promote user: $userEmail", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    R.id.action_demote_user -> {
+                        Toast.makeText(view.context, "Demote user: $userEmail", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            show()
+        }
     }
 }
