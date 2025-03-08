@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MorsePulse(val flash: Boolean, val duration: Long)
 
@@ -59,7 +60,11 @@ object MorseCodeHelper {
 
     // Plays Morse pulses using flashlight
     fun playMorsePulseSequence(context: Context, pulses: List<MorsePulse>) {
-        CoroutineScope(Dispatchers.Main).launch {
+        CoroutineScope(Dispatchers.Default).launch {
+            // Calculate total duration
+            val totalDuration = pulses.sumOf { it.duration }
+            
+            // Execute all pulses
             for (pulse in pulses) {
                 if (pulse.flash) {
                     toggleFlashlight(context, true)
@@ -68,6 +73,12 @@ object MorseCodeHelper {
                 } else {
                     delay(pulse.duration)
                 }
+            }
+
+            // After all pulses are complete, show toast on main thread
+            withContext(Dispatchers.Main) {
+                delay(100) // Small delay to ensure all flashes are complete
+                Toast.makeText(context, "Code Transmission complete", Toast.LENGTH_SHORT).show()
             }
         }
     }

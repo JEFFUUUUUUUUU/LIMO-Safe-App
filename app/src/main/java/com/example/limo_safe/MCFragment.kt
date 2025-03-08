@@ -114,6 +114,12 @@ class MCFragment : Fragment() {
         sessionManager = SessionManager(requireActivity()) {
             // Logout callback
             Toast.makeText(requireContext(), "Session expired. Please log in again.", Toast.LENGTH_LONG).show()
+            // Save current state before navigating
+            saveState()
+            // Dismiss any active dialog
+            if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.dismiss()
+            }
             navigateToLogin()
         }
 
@@ -130,6 +136,21 @@ class MCFragment : Fragment() {
             startCountdown(persistentTimer.getRemainingTime(), false)
             generateCodeButton.isEnabled = false
             generateCodeButton.alpha = 0.5f
+        }
+
+        // If there was an active morse code session, restore it
+        val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val isStateActive = prefs.getBoolean(KEY_MORSE_STATE_ACTIVE, false)
+        if (isStateActive && currentCode.isNotEmpty() && remainingTries > 0) {
+            // Calculate remaining morse cooldown time if any
+            val currentTime = System.currentTimeMillis()
+            val remainingCooldown = if (lastMorsePlayTime > 0) {
+                val elapsed = currentTime - lastMorsePlayTime
+                if (elapsed < MORSE_COOLDOWN) MORSE_COOLDOWN - elapsed else 0
+            } else 0
+
+            // Show morse code dialog with saved state
+            showMorseCodeDialog(currentCode, remainingCooldown)
         }
 
         database = FirebaseDatabase.getInstance().reference
@@ -365,7 +386,14 @@ class MCFragment : Fragment() {
                 "Ready to play"
             }
 
+            // Add touch listener to update session activity
+            dialog.window?.decorView?.setOnTouchListener { _, _ ->
+                sessionManager.userActivityDetected()
+                false
+            }
+
             playButton?.setOnClickListener {
+                sessionManager.userActivityDetected()
                 // Check cooldown only for first and second tries
                 if (remainingTries > 1) {  // Only check when we have 2 or 3 tries left
                     val currentTime = System.currentTimeMillis()
@@ -435,6 +463,11 @@ class MCFragment : Fragment() {
             }
         }
 
+        // Set dialog dismiss listener to handle session timeout
+        dialog.setOnDismissListener {
+            sessionManager.userActivityDetected()
+        }
+
         dialog.show()
     }
 
@@ -442,10 +475,6 @@ class MCFragment : Fragment() {
         val transmitCode = codeDisplayText.text.toString() // Contains tag+code
         val pulses = MorseCodeHelper.convertToMorsePulseSequence(transmitCode)
         MorseCodeHelper.playMorsePulseSequence(requireContext(), pulses)
-        
-        activity?.runOnUiThread {
-            Toast.makeText(requireContext(), "Code transmission complete", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun flashlightOn() = Unit

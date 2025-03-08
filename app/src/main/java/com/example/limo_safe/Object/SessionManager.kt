@@ -22,6 +22,7 @@ class SessionManager(
     private val WARNING_TIME = 290000L // Show warning 10 seconds before timeout (5 minutes - 10 seconds)
     private val PREFS_NAME = "LIMOSafePrefs"
     private val LAST_GENERATE_TIME_KEY = "last_generate_time"
+    private val KEY_MORSE_STATE_ACTIVE = "morse_state_active"
 
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
     private val sharedPreferences = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -54,6 +55,13 @@ class SessionManager(
         // Create timeout runnable
         sessionTimeoutRunnable = Runnable {
             if (isUserSignedIn()) {
+                // Save morse code state before logout
+                val morseStateActive = sharedPreferences.getBoolean(KEY_MORSE_STATE_ACTIVE, false)
+                if (morseStateActive) {
+                    // Keep the morse state active so it can be restored after login
+                    sharedPreferences.edit().putBoolean(KEY_MORSE_STATE_ACTIVE, true).apply()
+                }
+                
                 Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
                 onLogout.invoke()
             }
