@@ -63,7 +63,7 @@ object MorseCodeHelper {
         CoroutineScope(Dispatchers.Default).launch {
             // Calculate total duration
             val totalDuration = pulses.sumOf { it.duration }
-            
+
             // Execute all pulses
             for (pulse in pulses) {
                 if (pulse.flash) {

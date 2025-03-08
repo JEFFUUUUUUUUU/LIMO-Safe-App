@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 
 class PersistentTimer(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("timer_prefs", Context.MODE_PRIVATE)
-    
+
     companion object {
         private const val KEY_END_TIME = "timer_end_time"
         private const val KEY_CURRENT_CODE = "current_code"
@@ -25,7 +25,7 @@ class PersistentTimer(context: Context) {
     fun getRemainingTime(): Long {
         val endTime = prefs.getLong(KEY_END_TIME, 0)
         if (endTime == 0L) return 0
-        
+
         val remaining = endTime - System.currentTimeMillis()
         return if (remaining > 0) remaining else 0
     }

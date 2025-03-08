@@ -84,23 +84,23 @@ class LogsAdapter(private val logs: List<LogEntry>) :
 
     override fun onBindViewHolder(holder: LogViewHolder, position: Int) {
         val log = logs[position]
-        
+
         // Set text and colors
         holder.deviceNameText.apply {
             text = log.deviceName
             setTextColor(0xFF000000.toInt()) // Black text
         }
-        
+
         holder.dateText.apply {
             text = dateFormat.format(log.timestamp)
             setTextColor(0xFF000000.toInt())
         }
-        
+
         holder.timeText.apply {
             text = timeFormat.format(log.timestamp)
             setTextColor(0xFF000000.toInt())
         }
-        
+
         holder.statusText.apply {
             text = log.status
             setTextColor(if (log.status == "Online") 0xFF00FF00.toInt() else 0xFFFF0000.toInt())

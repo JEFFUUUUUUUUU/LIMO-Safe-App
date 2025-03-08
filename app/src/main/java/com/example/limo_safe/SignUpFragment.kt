@@ -124,7 +124,7 @@ class SignUpFragment : Fragment() {
     private fun generateUserTag(callback: (String) -> Unit) {
         // Single character A-Z, 0-9
         val characters = ('A'..'Z') + ('0'..'9')
-        
+
         fun attemptTagGeneration() {
             val newTag = characters.random().toString()
 

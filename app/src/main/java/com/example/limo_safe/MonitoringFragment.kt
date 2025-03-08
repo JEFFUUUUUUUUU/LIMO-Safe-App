@@ -34,16 +34,16 @@ class MonitoringFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
-        
+
         // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
-        
+
         setupRecyclerView()
         setupBackButton()
         setupTabs()
-        
+
         return view
     }
 

@@ -337,14 +337,14 @@ class MCFragment : Fragment() {
 
     private fun startMorseCooldown(duration: Long) {
         morseTimer?.cancel()
-        
+
         val currentDialog = dialog
         val playButton = currentDialog?.findViewById<Button>(R.id.playButton)
         val cooldownText = currentDialog?.findViewById<TextView>(R.id.cooldownText)
-        
+
         playButton?.isEnabled = false
         playButton?.alpha = 0.5f
-        
+
         morseTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 val seconds = millisUntilFinished / 1000
@@ -416,12 +416,12 @@ class MCFragment : Fragment() {
                     thread {
                         // Play morse code first
                         playMorseCode(code)
-                        
+
                         // After transmission is complete, handle dialogs
                         activity?.runOnUiThread {
                             // Dismiss morse code dialog
                             dialog.dismiss()
-                            
+
                             // Show maximum tries dialog
                             val maxTriesDialog = AlertDialog.Builder(requireContext())
                                 .setTitle("Maximum Tries Reached")
@@ -430,7 +430,7 @@ class MCFragment : Fragment() {
                                 .create()
 
                             maxTriesDialog.show()
-                            
+
                             // Clear the morse state
                             requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                                 .edit()

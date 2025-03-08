@@ -40,7 +40,7 @@ class SessionManager(
         // Remove existing callbacks
         sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         warningRunnable?.let { handler.removeCallbacks(it) }
-        
+
         // Create warning runnable
         warningRunnable = Runnable {
             if (isUserSignedIn()) {
@@ -61,7 +61,7 @@ class SessionManager(
                     // Keep the morse state active so it can be restored after login
                     sharedPreferences.edit().putBoolean(KEY_MORSE_STATE_ACTIVE, true).apply()
                 }
-                
+
                 Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
                 onLogout.invoke()
             }
@@ -71,7 +71,7 @@ class SessionManager(
         warningRunnable?.let {
             handler.postDelayed(it, WARNING_TIME)
         }
-        
+
         sessionTimeoutRunnable?.let {
             handler.postDelayed(it, SESSION_TIMEOUT)
         }

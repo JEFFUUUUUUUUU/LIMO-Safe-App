@@ -84,7 +84,7 @@ class LoginFragment : Fragment() {
             val isMorseStateActive = prefs.getBoolean("morse_state_active", false)
             val lastMorseTime = prefs.getLong("last_morse_time", 0)
             val currentTime = System.currentTimeMillis()
-            
+
             if (isMorseStateActive && (currentTime - lastMorseTime) < 30000) {
                 // If there's an active session and we're still within the cooldown period
                 navigateToMC()

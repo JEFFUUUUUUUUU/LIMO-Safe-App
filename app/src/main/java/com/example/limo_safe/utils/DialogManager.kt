@@ -43,7 +43,7 @@ class DialogManager(private val context: Context) {
         val codeDisplayTextView = TextView(context).apply {
             val otp = code.drop(1)  // Remove tag character
             val fullText = "Code: $otp"
-            
+
             val spannableString = SpannableString(fullText)
             spannableString.setSpan(
                 StyleSpan(Typeface.BOLD),
@@ -51,7 +51,7 @@ class DialogManager(private val context: Context) {
                 fullText.indexOf(otp) + otp.length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
-            
+
             text = spannableString
             textSize = 24f
             gravity = Gravity.CENTER
@@ -156,7 +156,7 @@ class DialogManager(private val context: Context) {
         AlertDialog.Builder(context)
             .setTitle("Maximum Tries Reached")
             .setMessage("You have reached the maximum number of tries.")
-            .setPositiveButton("OK") { dialog, _ -> 
+            .setPositiveButton("OK") { dialog, _ ->
                 dialog.dismiss()
             }
             .create()
@@ -182,7 +182,7 @@ class DialogManager(private val context: Context) {
         AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("OK") { dialog, _ -> 
+            .setPositiveButton("OK") { dialog, _ ->
                 dialog.dismiss()
             }
             .create()
