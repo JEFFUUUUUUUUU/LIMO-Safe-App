@@ -10,8 +10,13 @@
     <View
         android:id="@+id/topBar"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="60dp"
         android:background="#FFA500"/>
+
+    <!-- Spacer -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="16dp" />
 
     <!-- Title -->
     <TextView
@@ -25,12 +30,18 @@
         android:gravity="center"
         android:padding="8dp"/>
 
+    <!-- Spacer -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="16dp" />
+
     <!-- Content Container with white background -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
         app:cardCornerRadius="8dp"
         app:cardElevation="4dp">
 
@@ -87,7 +98,6 @@
         android:layout_width="250dp"
         android:layout_height="wrap_content"
         android:text="Back"
-        android:layout_marginTop="16dp"
         android:layout_gravity="center"
         android:background="@drawable/button_bg"
         android:padding="16dp"
@@ -96,7 +106,7 @@
     <!-- Bottom Orange Bar -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="60dp"
         android:background="#FFA500"
         android:layout_marginTop="16dp"/>
 

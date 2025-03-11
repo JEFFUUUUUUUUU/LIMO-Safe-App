@@ -9,8 +9,11 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
+import com.example.limo_safe.R
 
 class DialogManager(private val context: Context) {
 
@@ -202,5 +205,61 @@ class DialogManager(private val context: Context) {
             }
             .create()
             .show()
+    }
+
+    fun createLoadingDialog(title: String = "Loading..."): AlertDialog {
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 30, 50, 30)
+            gravity = Gravity.CENTER
+        }
+
+        // Progress Bar
+        val progressBar = ProgressBar(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 30
+            }
+            indeterminateTintList = ContextCompat.getColorStateList(context, R.color.orange)
+        }
+
+        // Loading text
+        val loadingText = TextView(context).apply {
+            text = title
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(ContextCompat.getColor(context, R.color.maroon))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        layout.apply {
+            addView(progressBar)
+            addView(loadingText)
+        }
+
+        val dialog = AlertDialog.Builder(context)
+            .setView(layout)
+            .setCancelable(false)
+            .create()
+
+        // Store as active dialog for session management
+        activeDialog = dialog
+        return dialog
+    }
+
+    fun dismissActiveDialog() {
+        activeDialog?.dismiss()
+        activeDialog = null
+    }
+
+    companion object {
+        fun createLoadingDialog(context: Context): AlertDialog {
+            return DialogManager(context).createLoadingDialog()
+        }
     }
 }

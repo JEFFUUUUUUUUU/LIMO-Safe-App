@@ -11,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.google.firebase.auth.FirebaseAuth
+import com.example.limo_safe.utils.DialogManager
 
 class LoginFragment : Fragment() {
     private lateinit var auth: FirebaseAuth
@@ -18,6 +19,8 @@ class LoginFragment : Fragment() {
     private lateinit var passwordEditText: EditText
     private lateinit var loginButton: Button
     private lateinit var signUpText: TextView
+    private lateinit var forgotPasswordText: TextView
+    private lateinit var dialogManager: DialogManager
 
     companion object {
         fun newInstance() = LoginFragment()
@@ -34,6 +37,7 @@ class LoginFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         auth = FirebaseAuth.getInstance()
+        dialogManager = DialogManager(requireContext())
         initializeViews(view)
         setupClickListeners()
     }
@@ -43,6 +47,7 @@ class LoginFragment : Fragment() {
         passwordEditText = view.findViewById(R.id.passwordEditText)
         loginButton = view.findViewById(R.id.loginButton)
         signUpText = view.findViewById(R.id.signUpText)
+        forgotPasswordText = view.findViewById(R.id.forgotPasswordText)
     }
 
     private fun setupClickListeners() {
@@ -57,8 +62,13 @@ class LoginFragment : Fragment() {
                 return@setOnClickListener
             }
 
+            // Show loading dialog with session management
+            val loadingDialog = dialogManager.createLoadingDialog("Logging in...")
+            loadingDialog.show()
+
             auth.signInWithEmailAndPassword(email, password)
                 .addOnCompleteListener { task ->
+                    dialogManager.dismissActiveDialog()
                     if (task.isSuccessful) {
                         handleSuccessfulLogin()
                     } else {
@@ -73,6 +83,10 @@ class LoginFragment : Fragment() {
 
         signUpText.setOnClickListener {
             navigateToSignUp()
+        }
+
+        forgotPasswordText.setOnClickListener {
+            navigateToForgotPassword()
         }
     }
 
@@ -113,5 +127,20 @@ class LoginFragment : Fragment() {
             .replace(R.id.fragmentContainer, signUpFragment)
             .addToBackStack(null)
             .commit()
+    }
+
+    private fun navigateToForgotPassword() {
+        val forgotPasswordFragment = ForgotPasswordFragment()
+        parentFragmentManager.beginTransaction()
+            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
+            .replace(R.id.fragmentContainer, forgotPasswordFragment)
+            .addToBackStack(null)
+            .commit()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Ensure any active dialogs are dismissed
+        dialogManager.dismissActiveDialog()
     }
 }
