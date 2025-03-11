@@ -22,7 +22,7 @@
             android:layout_weight="1.2"
             android:textColor="@color/maroon"
             android:textSize="14sp"
-            android:gravity="start"
+            android:gravity="center_horizontal"
             android:paddingEnd="8dp"
             android:singleLine="true" />
 
@@ -33,7 +33,7 @@
             android:layout_weight="1"
             android:textColor="@color/maroon"
             android:textSize="14sp"
-            android:gravity="start"
+            android:gravity="center_horizontal"
             android:paddingEnd="8dp"
             android:singleLine="true" />
 
@@ -41,10 +41,10 @@
             android:id="@+id/userText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1.8"
+            android:layout_weight="1"
             android:textColor="@color/maroon"
             android:textSize="14sp"
-            android:gravity="start"
+            android:gravity="center_horizontal"
             android:paddingEnd="8dp"
             android:ellipsize="end"
             android:singleLine="true" />
@@ -56,7 +56,7 @@
             android:layout_weight="0.8"
             android:textColor="@color/maroon"
             android:textSize="14sp"
-            android:gravity="start"
+            android:gravity="center_horizontal"
             android:paddingEnd="8dp"
             android:singleLine="true" />
 
@@ -68,7 +68,7 @@
             android:textColor="@color/maroon"
             android:textStyle="bold"
             android:textSize="14sp"
-            android:gravity="start"
+            android:gravity="center_horizontal"
             android:singleLine="true" />
 
     </LinearLayout>
