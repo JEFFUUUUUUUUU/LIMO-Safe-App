@@ -418,79 +418,105 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun promoteUser(deviceId: String, userInfo: String) {
-        // Parse the userInfo which should be in format "email: role"
+        // Log the input data for debugging
+        Log.d("PromoteUser", "Promoting user with deviceId: $deviceId, userInfo: $userInfo")
+
+        // Parse the userInfo which should now be in format "email: role"
         val parts = userInfo.split(":", limit = 2)
         if (parts.size != 2) {
             Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val email = parts[0].trim()
+        val email = parts[1].trim() // The email is now in the second part after the colon
+        Log.d("PromoteUser", "Parsed email from userInfo: $email")
 
         // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
             .equalTo(email)
-            .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
-                if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key ?: return@addOnSuccessListener
+                Log.d("PromoteUser", "Query result exists: ${snapshot.exists()}")
 
-                    // Update the role to "admin" for this user's device entry
-                    database.child("users").child(userId).child("registeredDevices")
-                        .child(deviceId)
-                        .setValue("admin")
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
-                        }
-                        .addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key
+                    Log.d("PromoteUser", "Found userId: $userId")
+
+                    if (userId != null) {
+                        // Update the role to "admin" for this user's device entry
+                        database.child("users").child(userId).child("registeredDevices")
+                            .child(deviceId)
+                            .setValue("admin")
+                            .addOnSuccessListener {
+                                Log.d("PromoteUser", "Successfully updated role to admin")
+                                Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("PromoteUser", "Failed to update role: ${e.message}")
+                                Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                    } else {
+                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
-                    Toast.makeText(context, "User not found", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
                 }
             }
             .addOnFailureListener { e ->
+                Log.e("PromoteUser", "Error querying for user: ${e.message}")
                 Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 
     private fun demoteUser(deviceId: String, userInfo: String) {
-        // Parse the userInfo which should be in format "email: role"
+        // Log the input data for debugging
+        Log.d("DemoteUser", "Demoting user with deviceId: $deviceId, userInfo: $userInfo")
+
+        // Parse the userInfo which should be in format "tag: email"
         val parts = userInfo.split(":", limit = 2)
         if (parts.size != 2) {
             Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val email = parts[0].trim()
+        val email = parts[1].trim() // The email is now in the second part after the colon
+        Log.d("DemoteUser", "Parsed email from userInfo: $email")
 
         // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
             .equalTo(email)
-            .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
-                if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key ?: return@addOnSuccessListener
+                Log.d("DemoteUser", "Query result exists: ${snapshot.exists()}")
 
-                    // Update the role to "user" for this user's device entry
-                    database.child("users").child(userId).child("registeredDevices")
-                        .child(deviceId)
-                        .setValue("user")
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "User demoted to user", Toast.LENGTH_SHORT).show()
-                        }
-                        .addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key
+                    Log.d("DemoteUser", "Found userId: $userId")
+
+                    if (userId != null) {
+                        // Update the role to "user" for this user's device entry
+                        database.child("users").child(userId).child("registeredDevices")
+                            .child(deviceId)
+                            .setValue("user")
+                            .addOnSuccessListener {
+                                Log.d("DemoteUser", "Successfully updated role to user")
+                                Toast.makeText(context, "User demoted to regular user", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("DemoteUser", "Failed to update role: ${e.message}")
+                                Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                    } else {
+                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
-                    Toast.makeText(context, "User not found", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
                 }
             }
             .addOnFailureListener { e ->
+                Log.e("DemoteUser", "Error querying for user: ${e.message}")
                 Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
