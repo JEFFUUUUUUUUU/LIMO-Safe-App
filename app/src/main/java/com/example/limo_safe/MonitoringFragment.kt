@@ -15,11 +15,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.limo_safe.utils.DialogManager
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
+import java.util.UUID
 
 class MonitoringFragment : Fragment() {
     private lateinit var deviceListRecyclerView: RecyclerView
@@ -27,11 +30,13 @@ class MonitoringFragment : Fragment() {
     private lateinit var backButton: Button
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
+    private lateinit var dialogManager: DialogManager
 
     private lateinit var database: DatabaseReference
     private lateinit var deviceListListener: ValueEventListener
     private val deviceStatusListeners = mutableMapOf<String, ValueEventListener>()
     private val deviceUsersListeners = mutableMapOf<String, ValueEventListener>()
+    private val connectedDevices = mutableSetOf<String>()
 
     private val devices = mutableListOf<Device>()
     private val currentUserId: String
@@ -48,6 +53,7 @@ class MonitoringFragment : Fragment() {
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
+        dialogManager = DialogManager(requireContext())
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
@@ -71,7 +77,8 @@ class MonitoringFragment : Fragment() {
             onUserAdded = { deviceId, email -> addUserToDevice(deviceId, email) },
             onUserDeleted = { deviceId, userInfo -> deleteUserFromDevice(deviceId, userInfo) },
             onUserPromoted = { deviceId, userInfo -> promoteUser(deviceId, userInfo) },
-            onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) }
+            onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) },
+            onWifiClicked = { deviceId -> showWifiDialog(deviceId) }
         )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
@@ -203,8 +210,7 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun fetchDeviceUsers(deviceId: String) {
-        Log.d("UserDebug", "Starting to fetch users for device: $deviceId")
-
+        // Remove previous listener if exists
         deviceUsersListeners[deviceId]?.let { listener ->
             database.child("devices").child(deviceId).child("registeredUsers")
                 .removeEventListener(listener)
@@ -212,16 +218,12 @@ class MonitoringFragment : Fragment() {
 
         val usersListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                Log.d("UserDebug", "Got registeredUsers snapshot for device $deviceId: ${snapshot.value}")
-
-                // Check if snapshot exists and has children
                 if (!snapshot.exists()) {
-                    Log.d("UserDebug", "No registered users found for device $deviceId")
                     updateDeviceWithUsers(deviceId, emptyList())
                     return
                 }
 
-                val userList = mutableListOf<String>()
+                val userList = mutableListOf<UserInfo>()
                 var pendingFetches = snapshot.childrenCount.toInt()
 
                 Log.d("UserDebug", "Found ${pendingFetches} registered users for device $deviceId")
@@ -235,9 +237,7 @@ class MonitoringFragment : Fragment() {
                     val tag = userSnapshot.key ?: continue
                     val userId = userSnapshot.getValue(String::class.java) ?: continue
 
-                    Log.d("UserDebug", "Processing user with tag=$tag, userId=$userId")
-
-                    // Get email directly
+                    // Get user's email from their profile
                     database.child("users").child(userId).child("email")
                         .get()
                         .addOnSuccessListener { emailSnapshot ->
@@ -245,27 +245,39 @@ class MonitoringFragment : Fragment() {
                             Log.d("UserDebug", "Retrieved email for userId=$userId: $email")
 
                             if (email != null) {
-                                val userEntry = "$tag: $email"
-                                Log.d("UserDebug", "Adding user to list: $userEntry")
-                                userList.add(userEntry)
+                                // Get user's role
+                                database.child("devices").child(deviceId).child("roles")
+                                    .child(userId)
+                                    .get()
+                                    .addOnSuccessListener { roleSnapshot ->
+                                        val role = roleSnapshot.getValue(String::class.java) ?: "user"
+                                        val userInfo = UserInfo(email, role)
+                                        userList.add(userInfo)
+
+                                        pendingFetches--
+                                        if (pendingFetches == 0) {
+                                            updateDeviceWithUsers(deviceId, userList)
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("UserDebug", "Error getting role for user $userId: ${e.message}")
+                                        pendingFetches--
+                                        if (pendingFetches == 0) {
+                                            updateDeviceWithUsers(deviceId, userList)
+                                        }
+                                    }
                             } else {
-                                Log.d("UserDebug", "Email was null for userId=$userId")
-                            }
-
-                            pendingFetches--
-                            Log.d("UserDebug", "Remaining fetches: $pendingFetches")
-
-                            if (pendingFetches <= 0) {
-                                Log.d("UserDebug", "All user fetches complete for device $deviceId. User list: $userList")
-                                updateDeviceWithUsers(deviceId, userList)
+                                Log.d("UserDebug", "Email is null for userId=$userId")
+                                pendingFetches--
+                                if (pendingFetches == 0) {
+                                    updateDeviceWithUsers(deviceId, userList)
+                                }
                             }
                         }
-                        .addOnFailureListener { error ->
-                            Log.e("UserDebug", "Failed to get email for userId=$userId: ${error.message}")
+                        .addOnFailureListener { e ->
+                            Log.e("UserDebug", "Error getting email for user $userId: ${e.message}")
                             pendingFetches--
-
-                            if (pendingFetches <= 0) {
-                                Log.d("UserDebug", "All user fetches complete (with failures) for device $deviceId. User list: $userList")
+                            if (pendingFetches == 0) {
                                 updateDeviceWithUsers(deviceId, userList)
                             }
                         }
@@ -273,51 +285,74 @@ class MonitoringFragment : Fragment() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e("UserDebug", "Database error when fetching users for device $deviceId: ${error.message}")
-                updateDeviceWithUsers(deviceId, emptyList())
+                Toast.makeText(context, "Failed to load users: ${error.message}", Toast.LENGTH_SHORT).show()
             }
         }
 
         database.child("devices").child(deviceId).child("registeredUsers")
             .addValueEventListener(usersListener)
-
         deviceUsersListeners[deviceId] = usersListener
     }
 
-    private fun fetchUserEmailById(userId: String, callback: (String?) -> Unit) {
-        database.child("users").child(userId).child("email")
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val email = snapshot.getValue(String::class.java)
-                Log.d("FirebaseDebug", "Fetched email for UID $userId: $email") // DEBUG LOG
-                callback(email)
-            }
-            .addOnFailureListener { error ->
-                Log.e("FirebaseDebug", "Error fetching email for UID $userId: ${error.message}")
-                callback(null)
-            }
-    }
-
-    private fun updateDeviceWithUsers(deviceId: String, userList: List<String>) {
+    private fun updateDeviceWithUsers(deviceId: String, userList: List<UserInfo>) {
         Log.d("UserDebug", "Updating device $deviceId with users: $userList")
 
         val deviceIndex = devices.indexOfFirst { it.id == deviceId }
-        if (deviceIndex == -1) {
-            Log.e("UserDebug", "Device $deviceId not found in local list")
-            return
-        }
-
-        val device = devices[deviceIndex]
-        devices[deviceIndex] = device.copy(users = userList)
-
-        // Ensure UI update happens on main thread
-        activity?.runOnUiThread {
+        if (deviceIndex >= 0) {
+            val device = devices[deviceIndex]
+            devices[deviceIndex] = device.copy(users = userList)
             deviceAdapter.notifyItemChanged(deviceIndex)
-            Log.d("UserDebug", "Notified adapter of change for device at position $deviceIndex")
         }
     }
 
     private fun addUserToDevice(deviceId: String, email: String) {
+        // First find the user ID from the email
+        database.child("users")
+            .orderByChild("email")
+            .equalTo(email)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key
+                    if (userId != null) {
+                        // Generate a unique tag for this user
+                        val tag = UUID.randomUUID().toString().substring(0, 8)
+
+                        // Add user to device's registered users
+                        database.child("devices").child(deviceId).child("registeredUsers")
+                            .child(tag)
+                            .setValue(userId)
+                            .addOnSuccessListener {
+                                // Store the tag in the user's profile for future reference
+                                database.child("users").child(userId).child("tag")
+                                    .setValue(tag)
+                                    .addOnSuccessListener {
+                                        Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Toast.makeText(context, "Failed to store user tag: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                            }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                    } else {
+                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun deleteUserFromDevice(deviceId: String, userInfo: UserInfo) {
+        // Parse the userInfo which should be in format "tag: email"
+        val email = userInfo.email
+
+        // Remove user from device's registered users using the tag
         database.child("users")
             .orderByChild("email")
             .equalTo(email)
@@ -338,48 +373,18 @@ class MonitoringFragment : Fragment() {
                                 // Use the existing tag
                                 Log.d("FirebaseDebug", "Using existing tag: $existingTag for user: $userId")
 
-                                // Store the user ID under this tag
+                                // Remove user from device's registered users using the tag
                                 database.child("devices").child(deviceId).child("registeredUsers")
                                     .child(existingTag)
-                                    .setValue(userId)
+                                    .removeValue()
                                     .addOnSuccessListener {
-                                        Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
                                     }
                                     .addOnFailureListener { e ->
-                                        Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Failed to remove user: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
                             } else {
-                                // If user doesn't have a tag, generate a new one as before
-                                database.child("devices").child(deviceId).child("registeredUsers")
-                                    .get()
-                                    .addOnSuccessListener { usersSnapshot ->
-                                        // Find the highest existing tag number
-                                        var highestTag = 0
-                                        for (userSnapshot in usersSnapshot.children) {
-                                            val tag = userSnapshot.key?.toIntOrNull() ?: continue
-                                            if (tag > highestTag) {
-                                                highestTag = tag
-                                            }
-                                        }
-
-                                        // Use the next available tag
-                                        val newTag = (highestTag + 1).toString()
-
-                                        // Save this new tag to the user's profile
-                                        database.child("users").child(userId).child("tag")
-                                            .setValue(newTag)
-
-                                        // Store the user ID under this tag
-                                        database.child("devices").child(deviceId).child("registeredUsers")
-                                            .child(newTag)
-                                            .setValue(userId)
-                                            .addOnSuccessListener {
-                                                Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
-                                            }
-                                            .addOnFailureListener { e ->
-                                                Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                    }
+                                Toast.makeText(context, "User does not have a tag", Toast.LENGTH_SHORT).show()
                             }
                         }
                         .addOnFailureListener { e ->
@@ -395,130 +400,150 @@ class MonitoringFragment : Fragment() {
             }
     }
 
-    private fun deleteUserFromDevice(deviceId: String, userInfo: String) {
-        // Parse the userInfo which should be in format "tag: email"
-        val parts = userInfo.split(":", limit = 2)
-        if (parts.size != 2) {
-            Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val tag = parts[0].trim()
-
-        // Remove user from device's registered users using the tag
-        database.child("devices").child(deviceId).child("registeredUsers")
-            .child(tag)
-            .removeValue()
-            .addOnSuccessListener {
-                Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
-            }
-            .addOnFailureListener { e ->
-                Toast.makeText(context, "Failed to remove user: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-    }
-
-    private fun promoteUser(deviceId: String, userInfo: String) {
+    private fun promoteUser(deviceId: String, userInfo: UserInfo) {
         // Log the input data for debugging
         Log.d("PromoteUser", "Promoting user with deviceId: $deviceId, userInfo: $userInfo")
-
-        // Parse the userInfo which should now be in format "email: role"
-        val parts = userInfo.split(":", limit = 2)
-        if (parts.size != 2) {
-            Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val email = parts[1].trim() // The email is now in the second part after the colon
-        Log.d("PromoteUser", "Parsed email from userInfo: $email")
 
         // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
-            .equalTo(email)
+            .equalTo(userInfo.email)
             .get()
             .addOnSuccessListener { snapshot ->
                 Log.d("PromoteUser", "Query result exists: ${snapshot.exists()}")
-
                 if (snapshot.exists()) {
                     val userId = snapshot.children.first().key
-                    Log.d("PromoteUser", "Found userId: $userId")
-
                     if (userId != null) {
-                        // Update the role to "admin" for this user's device entry
-                        database.child("users").child(userId).child("registeredDevices")
-                            .child(deviceId)
+                        // Update user's role to admin
+                        database.child("devices").child(deviceId).child("roles")
+                            .child(userId)
                             .setValue("admin")
                             .addOnSuccessListener {
-                                Log.d("PromoteUser", "Successfully updated role to admin")
+                                // Update local state
+                                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
+                                if (deviceIndex >= 0) {
+                                    val device = devices[deviceIndex]
+                                    val updatedUsers = device.users.map { user ->
+                                        if (user.email == userInfo.email) {
+                                            user.copy(role = "admin")
+                                        } else {
+                                            user
+                                        }
+                                    }
+                                    devices[deviceIndex] = device.copy(users = updatedUsers)
+                                    deviceAdapter.notifyItemChanged(deviceIndex)
+                                }
                                 Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
                             }
                             .addOnFailureListener { e ->
-                                Log.e("PromoteUser", "Failed to update role: ${e.message}")
                                 Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                     } else {
                         Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "User with email ${userInfo.email} not found", Toast.LENGTH_SHORT).show()
                 }
             }
             .addOnFailureListener { e ->
-                Log.e("PromoteUser", "Error querying for user: ${e.message}")
-                Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 
-    private fun demoteUser(deviceId: String, userInfo: String) {
+    private fun demoteUser(deviceId: String, userInfo: UserInfo) {
         // Log the input data for debugging
         Log.d("DemoteUser", "Demoting user with deviceId: $deviceId, userInfo: $userInfo")
-
-        // Parse the userInfo which should be in format "tag: email"
-        val parts = userInfo.split(":", limit = 2)
-        if (parts.size != 2) {
-            Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val email = parts[1].trim() // The email is now in the second part after the colon
-        Log.d("DemoteUser", "Parsed email from userInfo: $email")
 
         // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
-            .equalTo(email)
+            .equalTo(userInfo.email)
             .get()
             .addOnSuccessListener { snapshot ->
                 Log.d("DemoteUser", "Query result exists: ${snapshot.exists()}")
-
                 if (snapshot.exists()) {
                     val userId = snapshot.children.first().key
-                    Log.d("DemoteUser", "Found userId: $userId")
-
                     if (userId != null) {
-                        // Update the role to "user" for this user's device entry
-                        database.child("users").child(userId).child("registeredDevices")
-                            .child(deviceId)
+                        // Update user's role to user
+                        database.child("devices").child(deviceId).child("roles")
+                            .child(userId)
                             .setValue("user")
                             .addOnSuccessListener {
-                                Log.d("DemoteUser", "Successfully updated role to user")
-                                Toast.makeText(context, "User demoted to regular user", Toast.LENGTH_SHORT).show()
+                                // Update local state
+                                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
+                                if (deviceIndex >= 0) {
+                                    val device = devices[deviceIndex]
+                                    val updatedUsers = device.users.map { user ->
+                                        if (user.email == userInfo.email) {
+                                            user.copy(role = "user")
+                                        } else {
+                                            user
+                                        }
+                                    }
+                                    devices[deviceIndex] = device.copy(users = updatedUsers)
+                                    deviceAdapter.notifyItemChanged(deviceIndex)
+                                }
+                                Toast.makeText(context, "User demoted to user", Toast.LENGTH_SHORT).show()
                             }
                             .addOnFailureListener { e ->
-                                Log.e("DemoteUser", "Failed to update role: ${e.message}")
                                 Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                     } else {
                         Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "User with email ${userInfo.email} not found", Toast.LENGTH_SHORT).show()
                 }
             }
             .addOnFailureListener { e ->
-                Log.e("DemoteUser", "Error querying for user: ${e.message}")
-                Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+    }
+
+    private fun showWifiDialog(deviceId: String) {
+        val dialog = dialogManager.createCustomDialog(R.layout.dialog_wifi_connection)
+        val ssidInput = dialog.findViewById<EditText>(R.id.ssidInput)
+        val passwordInput = dialog.findViewById<EditText>(R.id.passwordInput)
+        val connectButton = dialog.findViewById<Button>(R.id.connectButton)
+        val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+        // Apply theme colors
+        connectButton?.setBackgroundColor(resources.getColor(R.color.orange))
+        connectButton?.setTextColor(android.graphics.Color.WHITE)
+        cancelButton?.setTextColor(resources.getColor(R.color.maroon))
+
+        connectButton?.setOnClickListener {
+            val ssid = ssidInput?.text.toString()
+            val password = passwordInput?.text.toString()
+
+            if (ssid.isNotEmpty() && password.isNotEmpty()) {
+                // Update device's WiFi connection status
+                database.child("devices").child(deviceId).child("wifi").setValue(mapOf(
+                    "ssid" to ssid,
+                    "password" to password,
+                    "connected" to true
+                )).addOnSuccessListener {
+                    connectedDevices.add(deviceId)
+                    deviceAdapter.notifyDataSetChanged()
+                    dialog.dismiss()
+                    Toast.makeText(context, "WiFi settings updated", Toast.LENGTH_SHORT).show()
+                }.addOnFailureListener {
+                    Toast.makeText(context, "Failed to update WiFi settings", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        cancelButton?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    fun isDeviceConnected(deviceId: String): Boolean {
+        return connectedDevices.contains(deviceId)
     }
 
     private fun removeAllDeviceListeners() {
@@ -561,19 +586,26 @@ data class Device(
     val isOnline: Boolean,
     val isLocked: Boolean,
     val isSecure: Boolean,
-    val users: List<String>
+    val users: List<UserInfo>
+)
+
+data class UserInfo(
+    val email: String,
+    val role: String
 )
 
 // DeviceAdapter also needs to be updated to handle the callbacks
 class DeviceAdapter(
     private val devices: List<Device>,
     private val onUserAdded: (String, String) -> Unit,
-    private val onUserDeleted: (String, String) -> Unit,
-    private val onUserPromoted: (String, String) -> Unit,
-    private val onUserDemoted: (String, String) -> Unit
+    private val onUserDeleted: (String, UserInfo) -> Unit,
+    private val onUserPromoted: (String, UserInfo) -> Unit,
+    private val onUserDemoted: (String, UserInfo) -> Unit,
+    private val onWifiClicked: (String) -> Unit
 ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
         val deviceHeader: LinearLayout = itemView.findViewById(R.id.deviceHeader)
         val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
         val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
@@ -583,18 +615,30 @@ class DeviceAdapter(
         val secureStatusText: TextView = itemView.findViewById(R.id.secureStatusText)
         val usersContainer: LinearLayout = itemView.findViewById(R.id.usersContainer)
         val addUserButton: ImageButton = itemView.findViewById(R.id.addUserButton)
+        val wifiButton: ImageButton = itemView.findViewById(R.id.wifiButton)
 
         init {
             deviceHeader.setOnClickListener {
-                val isExpanded = expandableContent.visibility == View.VISIBLE
-                expandableContent.visibility = if (isExpanded) View.GONE else View.VISIBLE
-                expandIcon.rotation = if (isExpanded) 0f else 180f
+                expandableContent.visibility = if (expandableContent.visibility == View.VISIBLE) {
+                    expandIcon.rotation = 0f
+                    View.GONE
+                } else {
+                    expandIcon.rotation = 180f
+                    View.VISIBLE
+                }
             }
 
             addUserButton.setOnClickListener {
                 val position = adapterPosition
                 if (position != RecyclerView.NO_POSITION) {
                     showAddUserDialog(itemView, position)
+                }
+            }
+
+            wifiButton.setOnClickListener {
+                val position = adapterPosition
+                if (position != RecyclerView.NO_POSITION) {
+                    onWifiClicked(devices[position].id)
                 }
             }
         }
@@ -638,88 +682,61 @@ class DeviceAdapter(
     override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
         val device = devices[position]
         holder.deviceNameText.text = device.name
-
-        // Set status texts with bullet points
         holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
-        holder.onlineStatusText.setTextColor(if (device.isOnline) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
-
+        holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
+        
         holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
-        holder.lockStatusText.setTextColor(if (device.isLocked) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
-
+        holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
+        
         holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
-        holder.secureStatusText.setTextColor(if (device.isSecure) 0xFF00FF00.toInt() else 0xFFFF0000.toInt())
+        holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
 
-        // Clear existing users before adding new ones
+        // Update WiFi button color based on connection status
+        val isConnected = (holder.itemView.context as? FragmentActivity)?.supportFragmentManager?.fragments?.firstOrNull { it is MonitoringFragment }?.let {
+            (it as MonitoringFragment).isDeviceConnected(device.id)
+        } ?: false
+
+        holder.wifiButton.setColorFilter(
+            holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
+        )
+
+        // Clear previous users
         holder.usersContainer.removeAllViews()
 
-        // Add users with options buttons
-        device.users.forEach { userEmail ->
-            Log.d("DeviceAdapter", "Adding user to view: $userEmail") // DEBUG LOG
+        // Add user views
+        device.users.forEach { userInfo ->
+            val userView = LayoutInflater.from(holder.itemView.context)
+                .inflate(R.layout.item_user, holder.usersContainer, false)
 
-            // Create horizontal layout for user row
-            val userRow = LinearLayout(holder.itemView.context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = 8
-                }
+            val userText = userView.findViewById<TextView>(R.id.userText)
+            val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
+
+            userText.text = "• ${userInfo.email} (${userInfo.role})"
+            userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
+
+            userOptionsButton.setOnClickListener {
+                showUserOptionsMenu(it, device.id, userInfo)
             }
 
-            // Add user email - Parse to remove tag
-            val email = if (userEmail.contains(":")) {
-                userEmail.split(":", limit = 2)[1].trim()
-            } else {
-                userEmail
-            }
-
-            val userTextView = TextView(holder.itemView.context).apply {
-                text = "• $email"
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
-                textSize = 14f
-                setPadding(0, 4, 0, 4)
-            }
-            userRow.addView(userTextView)
-
-            // Add options button
-            val optionsButton = ImageButton(holder.itemView.context).apply {
-                setImageResource(R.drawable.ic_more_vert)
-                background = null
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                setOnClickListener { view ->
-                    showUserOptionsMenu(view, device.id, userEmail)
-                }
-            }
-            userRow.addView(optionsButton)
-
-            // Add the complete row to the container
-            holder.usersContainer.addView(userRow)
+            holder.usersContainer.addView(userView)
         }
     }
 
-    private fun showUserOptionsMenu(view: View, deviceId: String, userEmail: String) {
+    private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
         PopupMenu(view.context, view).apply {
             inflate(R.menu.user_options_menu)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_delete_user -> {
-                        onUserDeleted(deviceId, userEmail)
+                        onUserDeleted(deviceId, userInfo)
                         true
                     }
                     R.id.action_promote_user -> {
-                        onUserPromoted(deviceId, userEmail)
+                        onUserPromoted(deviceId, userInfo)
                         true
                     }
                     R.id.action_demote_user -> {
-                        onUserDemoted(deviceId, userEmail)
+                        onUserDemoted(deviceId, userInfo)
                         true
                     }
                     else -> false

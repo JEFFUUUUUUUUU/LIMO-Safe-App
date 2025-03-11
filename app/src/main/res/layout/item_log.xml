@@ -4,15 +4,15 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="8dp"
-    android:layout_marginVertical="2dp"
+    android:layout_marginVertical="4dp"
     app:cardCornerRadius="4dp"
-    app:cardElevation="1dp">
+    app:cardElevation="2dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="4dp"
+        android:padding="8dp"
         android:background="@color/white">
 
         <TextView
@@ -21,9 +21,9 @@
             android:layout_height="wrap_content"
             android:layout_weight="1.2"
             android:textColor="@color/maroon"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:gravity="start"
-            android:paddingEnd="4dp"
+            android:paddingEnd="8dp"
             android:singleLine="true" />
 
         <TextView
@@ -32,9 +32,9 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textColor="@color/maroon"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:gravity="start"
-            android:paddingEnd="4dp"
+            android:paddingEnd="8dp"
             android:singleLine="true" />
 
         <TextView
@@ -43,9 +43,9 @@
             android:layout_height="wrap_content"
             android:layout_weight="1.8"
             android:textColor="@color/maroon"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:gravity="start"
-            android:paddingEnd="4dp"
+            android:paddingEnd="8dp"
             android:ellipsize="end"
             android:singleLine="true" />
 
@@ -55,9 +55,9 @@
             android:layout_height="wrap_content"
             android:layout_weight="0.8"
             android:textColor="@color/maroon"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:gravity="start"
-            android:paddingEnd="4dp"
+            android:paddingEnd="8dp"
             android:singleLine="true" />
 
         <TextView
@@ -65,8 +65,9 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="0.6"
+            android:textColor="@color/maroon"
             android:textStyle="bold"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:gravity="start"
             android:singleLine="true" />
 

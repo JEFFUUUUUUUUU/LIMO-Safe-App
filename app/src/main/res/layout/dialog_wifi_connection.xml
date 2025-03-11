@@ -11,33 +11,37 @@
         android:text="ESP WiFi Connection"
         android:textSize="20sp"
         android:textStyle="bold"
-        android:textColor="#000000"
+        android:textColor="@color/maroon"
         android:layout_marginBottom="16dp"
         android:gravity="center"/>
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="8dp"
+        android:textColorHint="@color/maroon">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/ssidInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="SSID"
+            android:textColor="@color/maroon"
             android:inputType="text"/>
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="16dp"
+        android:textColorHint="@color/maroon">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/passwordInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Password"
+            android:textColor="@color/maroon"
             android:inputType="textPassword"/>
     </com.google.android.material.textfield.TextInputLayout>
 
@@ -53,12 +57,15 @@
             android:layout_height="wrap_content"
             android:text="Cancel"
             android:layout_marginEnd="8dp"
+            android:textColor="@color/maroon"
             style="@style/Widget.MaterialComponents.Button.TextButton"/>
 
         <Button
             android:id="@+id/connectButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Connect"/>
+            android:text="Connect"
+            android:backgroundTint="@color/orange"
+            android:textColor="@android:color/white"/>
     </LinearLayout>
 </LinearLayout>

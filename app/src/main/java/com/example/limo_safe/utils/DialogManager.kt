@@ -6,6 +6,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -141,6 +142,20 @@ class DialogManager(private val context: Context) {
             .setView(layout)
             .setCancelable(false)
             .create()
+    }
+
+    fun createCustomDialog(layoutResId: Int): AlertDialog {
+        val dialogView = LayoutInflater.from(context).inflate(layoutResId, null)
+        val dialog = AlertDialog.Builder(context)
+            .setView(dialogView)
+            .create()
+        
+        // Apply theme colors to the dialog
+        dialog.window?.setBackgroundDrawableResource(android.R.color.white)
+        
+        // Store as active dialog for session management
+        activeDialog = dialog
+        return dialog
     }
 
     fun updateRemainingTries(tries: Int) {

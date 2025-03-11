@@ -24,13 +24,13 @@
             <EditText
                 android:id="@+id/searchInput"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_margin="8dp"
+                android:layout_height="48dp"
+                android:layout_margin="12dp"
                 android:background="@android:color/white"
                 android:hint="Search logs..."
-                android:padding="8dp"
+                android:padding="12dp"
                 android:textColor="@color/maroon"
-                android:textSize="14sp"
+                android:textSize="16sp"
                 android:textColorHint="#80800000" />
 
             <!-- Column Headers -->
@@ -38,7 +38,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:padding="4dp"
+                android:padding="12dp"
                 android:background="#FFA500">
 
                 <TextView
@@ -48,9 +48,9 @@
                     android:text="Date"
                     android:textColor="@android:color/white"
                     android:textStyle="bold"
-                    android:textSize="12sp"
-                    android:gravity="start"
-                    android:paddingEnd="4dp"
+                    android:textSize="16sp"
+                    android:gravity="center_horizontal"
+                    android:paddingEnd="8dp"
                     android:singleLine="true" />
 
                 <TextView
@@ -60,22 +60,22 @@
                     android:text="Time"
                     android:textColor="@android:color/white"
                     android:textStyle="bold"
-                    android:textSize="12sp"
-                    android:gravity="start"
-                    android:paddingEnd="4dp"
+                    android:textSize="16sp"
+                    android:gravity="center_horizontal"
+                    android:paddingEnd="8dp"
                     android:singleLine="true" />
 
                 <TextView
-                    android:layout_width="0dp"
+                    android:layout_width="1dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1.8"
+                    android:layout_weight="1"
+                    android:paddingEnd="8dp"
+                    android:singleLine="true"
                     android:text="User"
+                    android:gravity="center_horizontal"
                     android:textColor="@android:color/white"
-                    android:textStyle="bold"
-                    android:textSize="12sp"
-                    android:gravity="start"
-                    android:paddingEnd="4dp"
-                    android:singleLine="true" />
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="0dp"
@@ -84,9 +84,9 @@
                     android:text="Device"
                     android:textColor="@android:color/white"
                     android:textStyle="bold"
-                    android:textSize="12sp"
-                    android:gravity="start"
-                    android:paddingEnd="4dp"
+                    android:textSize="16sp"
+                    android:gravity="center_horizontal"
+                    android:paddingEnd="8dp"
                     android:singleLine="true" />
 
                 <TextView
@@ -96,8 +96,8 @@
                     android:text="Event"
                     android:textColor="@android:color/white"
                     android:textStyle="bold"
-                    android:textSize="12sp"
-                    android:gravity="start"
+                    android:textSize="16sp"
+                    android:gravity="center_horizontal"
                     android:singleLine="true" />
 
             </LinearLayout>
@@ -108,7 +108,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
-                android:padding="4dp"
+                android:padding="8dp"
                 android:clipToPadding="false"
                 android:background="#FFFFFF" />
 

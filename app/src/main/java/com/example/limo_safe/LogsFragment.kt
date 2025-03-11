@@ -34,7 +34,7 @@ class LogsFragment : Fragment() {
         val view = inflater.inflate(R.layout.fragment_logs, container, false)
         logsRecyclerView = view.findViewById(R.id.logsRecyclerView)
         searchInput = view.findViewById(R.id.searchInput)
-        
+
         database = FirebaseDatabase.getInstance().reference
         setupSearchBar()
         setupRecyclerView()
@@ -42,7 +42,7 @@ class LogsFragment : Fragment() {
 
         // Add sample data for demonstration
         addSampleData()
-        
+
         return view
     }
 
@@ -101,10 +101,10 @@ class LogsFragment : Fragment() {
         } else {
             val filteredLogs = allLogs.filter { log ->
                 log.deviceName.contains(query, ignoreCase = true) ||
-                log.status.contains(query, ignoreCase = true) ||
-                log.userName.contains(query, ignoreCase = true) ||
-                dateFormat.format(log.timestamp).contains(query, ignoreCase = true) ||
-                timeFormat.format(log.timestamp).contains(query, ignoreCase = true)
+                        log.status.contains(query, ignoreCase = true) ||
+                        log.userName.contains(query, ignoreCase = true) ||
+                        dateFormat.format(log.timestamp).contains(query, ignoreCase = true) ||
+                        timeFormat.format(log.timestamp).contains(query, ignoreCase = true)
             }
             logsAdapter.updateLogs(filteredLogs)
         }
@@ -124,7 +124,7 @@ class LogsFragment : Fragment() {
         logsListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 allLogs.clear()
-                
+
                 for (logSnapshot in snapshot.children) {
                     val deviceName = logSnapshot.child("deviceName").getValue(String::class.java)?.replace(" ", "") ?: continue
                     val timestamp = logSnapshot.child("timestamp").getValue(Long::class.java)?.let { Date(it) } ?: continue
@@ -136,7 +136,7 @@ class LogsFragment : Fragment() {
 
                 // Sort logs by timestamp, newest first
                 allLogs.sortByDescending { it.timestamp }
-                
+
                 // Apply current search filter
                 filterLogs(searchInput.text.toString())
             }
