@@ -415,8 +415,8 @@ class MonitoringFragment : Fragment() {
                     val userId = snapshot.children.first().key
                     if (userId != null) {
                         // Update user's role to admin
-                        database.child("devices").child(deviceId).child("roles")
-                            .child(userId)
+                        database.child("users").child(userId).child("registeredDevices")
+                            .child(deviceId)
                             .setValue("admin")
                             .addOnSuccessListener {
                                 // Update local state
@@ -465,8 +465,8 @@ class MonitoringFragment : Fragment() {
                     val userId = snapshot.children.first().key
                     if (userId != null) {
                         // Update user's role to user
-                        database.child("devices").child(deviceId).child("roles")
-                            .child(userId)
+                        database.child("users").child(userId).child("registeredDevices")
+                            .child(deviceId)
                             .setValue("user")
                             .addOnSuccessListener {
                                 // Update local state
@@ -501,11 +501,15 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun showWifiDialog(deviceId: String) {
-        val dialog = dialogManager.createCustomDialog(R.layout.dialog_wifi_connection)
+        val dialog = Dialog(requireContext()) // ✅ Ensures non-null Context
+        dialog.setContentView(R.layout.dialog_wifi_connection)
+        dialog.setCancelable(true)
         val ssidInput = dialog.findViewById<EditText>(R.id.ssidInput)
         val passwordInput = dialog.findViewById<EditText>(R.id.passwordInput)
         val connectButton = dialog.findViewById<Button>(R.id.connectButton)
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+        Log.d("WiFiDialog", "SSID Input: $ssidInput, Password Input: $passwordInput, Connect Button: $connectButton, Cancel Button: $cancelButton")
 
         // Apply theme colors
         connectButton?.setBackgroundColor(resources.getColor(R.color.orange))
@@ -513,29 +517,52 @@ class MonitoringFragment : Fragment() {
         cancelButton?.setTextColor(resources.getColor(R.color.maroon))
 
         connectButton?.setOnClickListener {
+            Log.d("WiFiDialog", "⚡ Connect button clicked")
             val ssid = ssidInput?.text.toString()
             val password = passwordInput?.text.toString()
 
             if (ssid.isNotEmpty() && password.isNotEmpty()) {
-                // Update device's WiFi connection status
-                database.child("devices").child(deviceId).child("wifi").setValue(mapOf(
+                // 🔍 Debug: Log values before sending
+                Log.d("WiFiSetup", "Sending WiFi settings: SSID=$ssid, Password=$password")
+
+                val wifiUpdates = mapOf(
                     "ssid" to ssid,
                     "password" to password,
                     "connected" to true
-                )).addOnSuccessListener {
-                    connectedDevices.add(deviceId)
-                    deviceAdapter.notifyDataSetChanged()
-                    dialog.dismiss()
-                    Toast.makeText(context, "WiFi settings updated", Toast.LENGTH_SHORT).show()
-                }.addOnFailureListener {
-                    Toast.makeText(context, "Failed to update WiFi settings", Toast.LENGTH_SHORT).show()
-                }
+                )
+
+                database.child("devices").child(deviceId).child("wifi").updateChildren(wifiUpdates)
+                    .addOnSuccessListener {
+                        Log.d("WiFiSetup", "✅ Successfully updated WiFi settings in Firebase")
+                        connectedDevices.add(deviceId)
+
+                        // ✅ Efficient UI update
+                        val index = devices.indexOfFirst { it.id == deviceId }
+                        if (index >= 0) {
+                            deviceAdapter.notifyItemChanged(index)
+                        }
+
+                        dialog.dismiss()
+                        context?.let {
+                            Toast.makeText(it, "WiFi settings updated", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("WiFiSetup", "❌ Failed to update WiFi: ${e.message}")
+                        context?.let {
+                            Toast.makeText(it, "Failed to update WiFi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
             } else {
-                Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                Log.w("WiFiSetup", "⚠️ SSID or Password is empty")
+                context?.let {
+                    Toast.makeText(it, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
         cancelButton?.setOnClickListener {
+            Log.d("WiFiDialog", "❌ Cancel button clicked")
             dialog.dismiss()
         }
 
@@ -711,7 +738,7 @@ class DeviceAdapter(
             val userText = userView.findViewById<TextView>(R.id.userText)
             val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
 
-            userText.text = "• ${userInfo.email} (${userInfo.role})"
+            userText.text = "• ${userInfo.email}"
             userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
 
             userOptionsButton.setOnClickListener {
