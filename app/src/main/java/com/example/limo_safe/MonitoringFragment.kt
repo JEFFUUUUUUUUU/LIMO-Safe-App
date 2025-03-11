@@ -128,21 +128,27 @@ class MonitoringFragment : Fragment() {
                 devices.clear()
 
                 for (deviceSnapshot in snapshot.children) {
-                    val deviceId = deviceSnapshot.getValue(String::class.java) ?: continue
-                    // Create placeholder device
-                    val device = Device(
-                        id = deviceId,
-                        name = deviceId, // Temporary name until we get details
-                        isOnline = false,
-                        isLocked = false,
-                        isSecure = false,
-                        users = emptyList()
-                    )
-                    devices.add(device)
+                    // The key is now the deviceId, and the value is the role
+                    val deviceId = deviceSnapshot.key ?: continue
+                    val role = deviceSnapshot.getValue(String::class.java) ?: "user"
 
-                    // Fetch device status and users
-                    fetchDeviceStatus(deviceId)
-                    fetchDeviceUsers(deviceId)
+                    // Only process devices where the user is an admin
+                    if (role == "admin") {
+                        // Create placeholder device
+                        val device = Device(
+                            id = deviceId,
+                            name = deviceId, // Temporary name until we get details
+                            isOnline = false,
+                            isLocked = false,
+                            isSecure = false,
+                            users = emptyList()
+                        )
+                        devices.add(device)
+
+                        // Fetch device status and users
+                        fetchDeviceStatus(deviceId)
+                        fetchDeviceUsers(deviceId)
+                    }
                 }
 
                 deviceAdapter.notifyDataSetChanged()
@@ -412,95 +418,80 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun promoteUser(deviceId: String, userInfo: String) {
-        // Parse the userInfo which should be in format "tag: email"
+        // Parse the userInfo which should be in format "email: role"
         val parts = userInfo.split(":", limit = 2)
         if (parts.size != 2) {
             Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val tag = parts[0].trim()
+        val email = parts[0].trim()
 
-        // Get the user ID first
-        database.child("devices").child(deviceId).child("registeredUsers")
-            .child(tag)
+        // First find the user ID from the email
+        database.child("users")
+            .orderByChild("email")
+            .equalTo(email)
+            .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
-                val userId = snapshot.getValue(String::class.java) ?: return@addOnSuccessListener
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key ?: return@addOnSuccessListener
 
-                // Store the user ID with "admin" tag
-                database.child("devices").child(deviceId).child("registeredUsers")
-                    .child("admin")
-                    .setValue(userId)
-                    .addOnSuccessListener {
-                        // Remove the regular user entry
-                        database.child("devices").child(deviceId).child("registeredUsers")
-                            .child(tag)
-                            .removeValue()
-                            .addOnSuccessListener {
-                                Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
-                            }
-                    }
-                    .addOnFailureListener { e ->
-                        Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
+                    // Update the role to "admin" for this user's device entry
+                    database.child("users").child(userId).child("registeredDevices")
+                        .child(deviceId)
+                        .setValue("admin")
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                } else {
+                    Toast.makeText(context, "User not found", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 
     private fun demoteUser(deviceId: String, userInfo: String) {
-        // Parse the userInfo which should be in format "admin: email" (or similar)
+        // Parse the userInfo which should be in format "email: role"
         val parts = userInfo.split(":", limit = 2)
         if (parts.size != 2) {
             Toast.makeText(context, "Invalid user format", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val tag = parts[0].trim()
-        if (tag != "admin") {
-            Toast.makeText(context, "Only admins can be demoted", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val email = parts[0].trim()
 
-        // Get the admin user ID first
-        database.child("devices").child(deviceId).child("registeredUsers")
-            .child("admin")
+        // First find the user ID from the email
+        database.child("users")
+            .orderByChild("email")
+            .equalTo(email)
+            .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
-                val userId = snapshot.getValue(String::class.java) ?: return@addOnSuccessListener
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key ?: return@addOnSuccessListener
 
-                // Get the next available tag number
-                database.child("devices").child(deviceId).child("registeredUsers")
-                    .get()
-                    .addOnSuccessListener { usersSnapshot ->
-                        // Find the highest existing numeric tag
-                        var highestTag = 0
-                        for (userSnapshot in usersSnapshot.children) {
-                            val existingTag = userSnapshot.key?.toIntOrNull() ?: continue
-                            if (existingTag > highestTag) {
-                                highestTag = existingTag
-                            }
+                    // Update the role to "user" for this user's device entry
+                    database.child("users").child(userId).child("registeredDevices")
+                        .child(deviceId)
+                        .setValue("user")
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "User demoted to user", Toast.LENGTH_SHORT).show()
                         }
-
-                        // Use the next available tag
-                        val newTag = (highestTag + 1).toString()
-
-                        // Store the user ID under the new numeric tag
-                        database.child("devices").child(deviceId).child("registeredUsers")
-                            .child(newTag)
-                            .setValue(userId)
-                            .addOnSuccessListener {
-                                // Remove the admin entry
-                                database.child("devices").child(deviceId).child("registeredUsers")
-                                    .child("admin")
-                                    .removeValue()
-                                    .addOnSuccessListener {
-                                        Toast.makeText(context, "User demoted from admin", Toast.LENGTH_SHORT).show()
-                                    }
-                            }
-                            .addOnFailureListener { e ->
-                                Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                    }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                } else {
+                    Toast.makeText(context, "User not found", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 

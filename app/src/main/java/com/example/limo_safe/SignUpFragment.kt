@@ -107,7 +107,6 @@ class SignUpFragment : Fragment() {
             val userMap = mapOf(
                 "email" to email,
                 "tag" to userTag,
-                "device_registered" to false,
                 "created_at" to System.currentTimeMillis()
             )
 
