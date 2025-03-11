@@ -1,124 +1,135 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical">
+    android:layout_margin="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="4dp">
 
-    <!-- Device Header -->
     <LinearLayout
-        android:id="@+id/deviceHeader"
+        android:id="@+id/deviceContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="16dp"
-        android:background="#FFFFFF">
+        android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/deviceNameText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="#000000"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <ImageView
-            android:id="@+id/expandIcon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:src="@android:drawable/arrow_down_float" />
-    </LinearLayout>
-
-    <!-- Expandable Content -->
-    <LinearLayout
-        android:id="@+id/expandableContent"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:background="#FFFFFF"
-        android:visibility="gone">
-
-        <!-- Status Section -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Status"
-            android:textStyle="bold"
-            android:textSize="16sp"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:id="@+id/onlineStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="32dp"
-            android:layout_marginBottom="4dp"
-            android:text="• Online/Offline"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/lockStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="32dp"
-            android:layout_marginBottom="4dp"
-            android:text="• Locked/Unlocked"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/secureStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="32dp"
-            android:layout_marginBottom="8dp"
-            android:text="• Secure/Tamper Detected"
-            android:textSize="14sp" />
-
-        <!-- Users Section -->
+        <!-- Device Header -->
         <LinearLayout
+            android:id="@+id/deviceHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp">
+            android:padding="16dp"
+            android:background="@color/orange">
 
             <TextView
+                android:id="@+id/deviceNameText"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="USERS"
-                android:textStyle="bold"
+                android:textColor="@android:color/white"
                 android:textSize="16sp"
-                android:layout_marginStart="16dp" />
+                android:textStyle="bold" />
 
-            <ImageButton
-                android:id="@+id/addUserButton"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginEnd="8dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_input_add" />
+            <ImageView
+                android:id="@+id/expandIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/arrow_down_float"
+                android:tint="@android:color/white" />
         </LinearLayout>
 
-        <!-- Users List -->
+        <!-- Expandable Content -->
         <LinearLayout
-            android:id="@+id/usersContainer"
+            android:id="@+id/expandableContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="16dp" />
+            android:background="@android:color/white"
+            android:visibility="gone">
 
+            <!-- Status Section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Status"
+                android:textStyle="bold"
+                android:textColor="@color/maroon"
+                android:textSize="16sp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/onlineStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="32dp"
+                android:layout_marginBottom="4dp"
+                android:text="• Online/Offline"
+                android:textColor="@color/maroon"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/lockStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="32dp"
+                android:layout_marginBottom="4dp"
+                android:text="• Locked/Unlocked"
+                android:textColor="@color/maroon"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/secureStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="32dp"
+                android:layout_marginBottom="8dp"
+                android:text="• Secure/Tamper Detected"
+                android:textColor="@color/maroon"
+                android:textSize="14sp" />
+
+            <!-- Users Section -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@color/orange"
+                android:padding="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="USERS"
+                    android:textStyle="bold"
+                    android:textSize="16sp"
+                    android:textColor="@android:color/white"
+                    android:layout_marginStart="16dp" />
+
+                <ImageButton
+                    android:id="@+id/addUserButton"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_input_add"
+                    android:tint="@android:color/white" />
+            </LinearLayout>
+
+            <!-- Users List -->
+            <LinearLayout
+                android:id="@+id/usersContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginStart="32dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="16dp" />
+
+        </LinearLayout>
     </LinearLayout>
-
-    <!-- Bottom Border -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#CCCCCC" />
-
-</LinearLayout>
+</androidx.cardview.widget.CardView>

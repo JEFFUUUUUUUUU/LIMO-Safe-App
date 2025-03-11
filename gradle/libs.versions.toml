@@ -1,19 +1,19 @@
 [versions]
-agp = "8.7.3"
-kotlin = "1.9.24"
-coreKtx = "1.15.0"
+agp = "8.2.2" # Updated to match project version
+kotlin = "1.9.22" # Updated to match project version
+coreKtx = "1.12.0"
 junit = "4.13.2"
-junitVersion = "1.2.1"
-espressoCore = "3.6.1"
-appcompat = "1.7.0"
-material = "1.12.0"
-activity = "1.10.0"
-constraintlayout = "2.2.0"
-firebaseCommonKtx = "21.0.0"
-firebaseAuthKtx = "23.2.0"
-firebaseFirestoreKtx = "25.1.2"
-cameraCore = "1.4.1"
-firebaseDatabaseKtx = "21.0.0"
+junitVersion = "1.1.5"
+espressoCore = "3.5.1"
+appcompat = "1.6.1"
+material = "1.11.0"
+activity = "1.8.2"
+constraintlayout = "2.1.4"
+firebaseCommonKtx = "20.4.2"
+firebaseAuthKtx = "22.3.1"
+firebaseFirestoreKtx = "24.10.2"
+cameraCore = "1.3.1"
+firebaseDatabaseKtx = "20.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,4 +33,3 @@ firebase-database-ktx = { group = "com.google.firebase", name = "firebase-databa
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-

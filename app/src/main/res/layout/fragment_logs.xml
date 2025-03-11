@@ -1,85 +1,117 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#800000">
+    android:background="#FFFFFF">
 
-    <!-- Search Bar with margin top -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:layout_marginTop="0dp"
-        android:background="#FFFFFF">
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_gravity="center_vertical"
-            android:src="@android:drawable/ic_search_category_default" />
-
-        <EditText
-            android:id="@+id/searchInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@null"
-            android:hint="Search logs..."
-            android:textColor="#000000"
-            android:textColorHint="#757575"
-            android:inputType="text"
-            android:padding="8dp" />
-    </LinearLayout>
-
-    <!-- Header -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="12dp"
-        android:layout_marginTop="0dp"
-        android:background="#FFFFFF">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Device"
-            android:textColor="#000000"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Date"
-            android:textColor="#000000"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Time"
-            android:textColor="#000000"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Status"
-            android:textColor="#000000"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- Log List with white background -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/logsRecyclerView"
+    <!-- Content Container with white background -->
+    <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#FFFFFF" />
+        android:layout_margin="16dp"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="#FFFFFF">
+
+            <!-- Search Bar -->
+            <EditText
+                android:id="@+id/searchInput"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_margin="8dp"
+                android:background="@android:color/white"
+                android:hint="Search logs..."
+                android:padding="8dp"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:textColorHint="#80800000" />
+
+            <!-- Column Headers -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="4dp"
+                android:background="#FFA500">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.2"
+                    android:text="Date"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:paddingEnd="4dp"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Time"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:paddingEnd="4dp"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.8"
+                    android:text="User"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:paddingEnd="4dp"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="0.8"
+                    android:text="Device"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:paddingEnd="4dp"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="0.6"
+                    android:text="Event"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:singleLine="true" />
+
+            </LinearLayout>
+
+            <!-- Log List with white background -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/logsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:padding="4dp"
+                android:clipToPadding="false"
+                android:background="#FFFFFF" />
+
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
 </LinearLayout>
