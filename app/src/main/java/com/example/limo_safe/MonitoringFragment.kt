@@ -19,11 +19,14 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.utils.DialogManager
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
-import java.util.UUID
+import com.google.firebase.database.ktx.database
+import com.google.firebase.ktx.Firebase
+import com.example.limo_safe.LoginFragment
 
 class MonitoringFragment : Fragment() {
     private lateinit var deviceListRecyclerView: RecyclerView
@@ -32,6 +35,7 @@ class MonitoringFragment : Fragment() {
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
     private lateinit var dialogManager: DialogManager
+    private lateinit var sessionManager: SessionManager
 
     private lateinit var database: DatabaseReference
     private lateinit var deviceListListener: ValueEventListener
@@ -54,7 +58,18 @@ class MonitoringFragment : Fragment() {
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
+        
+        // Initialize managers
         dialogManager = DialogManager(requireContext())
+        sessionManager = com.example.limo_safe.Object.SessionManager(requireActivity()) {
+            // Logout callback
+            Toast.makeText(
+                requireContext(),
+                "Session expired. Please log in again.",
+                Toast.LENGTH_LONG
+            ).show()
+            navigateToLogin()
+        }
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
@@ -63,6 +78,12 @@ class MonitoringFragment : Fragment() {
         setupBackButton()
         setupTabs()
         fetchUserDevices()
+
+        // Add touch listener for session activity
+        view.setOnTouchListener { _, _ ->
+            sessionManager.userActivityDetected()
+            false
+        }
 
         return view
     }
@@ -523,68 +544,48 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun showWifiDialog(deviceId: String) {
-        val dialog = Dialog(requireContext()) // ✅ Ensures non-null Context
+        val dialog = Dialog(requireContext()) // Ensures a non-null context
         dialog.setContentView(R.layout.dialog_wifi_connection)
         dialog.setCancelable(true)
+
+
         val ssidInput = dialog.findViewById<EditText>(R.id.ssidInput)
         val passwordInput = dialog.findViewById<EditText>(R.id.passwordInput)
         val connectButton = dialog.findViewById<Button>(R.id.connectButton)
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
-        Log.d("WiFiDialog", "SSID Input: $ssidInput, Password Input: $passwordInput, Connect Button: $connectButton, Cancel Button: $cancelButton")
 
-        // Apply theme colors
-        connectButton?.setBackgroundColor(resources.getColor(R.color.orange))
-        connectButton?.setTextColor(android.graphics.Color.WHITE)
-        cancelButton?.setTextColor(resources.getColor(R.color.maroon))
 
         connectButton?.setOnClickListener {
-            Log.d("WiFiDialog", "⚡ Connect button clicked")
-            val ssid = ssidInput?.text.toString()
-            val password = passwordInput?.text.toString()
+            sessionManager.userActivityDetected()
+            val ssid = ssidInput?.text.toString().trim()
+            val password = passwordInput?.text.toString().trim()
 
-            if (ssid.isNotEmpty() && password.isNotEmpty()) {
-                // 🔍 Debug: Log values before sending
-                Log.d("WiFiSetup", "Sending WiFi settings: SSID=$ssid, Password=$password")
-
-                val wifiUpdates = mapOf(
-                    "ssid" to ssid,
-                    "password" to password,
-                    "connected" to true
-                )
-
-                database.child("devices").child(deviceId).child("wifi").updateChildren(wifiUpdates)
-                    .addOnSuccessListener {
-                        Log.d("WiFiSetup", "✅ Successfully updated WiFi settings in Firebase")
-                        connectedDevices.add(deviceId)
-
-                        // ✅ Efficient UI update
-                        val index = devices.indexOfFirst { it.id == deviceId }
-                        if (index >= 0) {
-                            deviceAdapter.notifyItemChanged(index)
-                        }
-
-                        dialog.dismiss()
-                        context?.let {
-                            Toast.makeText(it, "WiFi settings updated", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("WiFiSetup", "❌ Failed to update WiFi: ${e.message}")
-                        context?.let {
-                            Toast.makeText(it, "Failed to update WiFi: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-            } else {
-                Log.w("WiFiSetup", "⚠️ SSID or Password is empty")
-                context?.let {
-                    Toast.makeText(it, "Please fill in all fields", Toast.LENGTH_SHORT).show()
-                }
+            if (ssid.isEmpty()) {
+                Toast.makeText(context, "Please enter SSID", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+
+            // Update WiFi credentials in Firebase
+            val wifiUpdates = hashMapOf(
+                "ssid" to ssid,
+                "password" to password,
+                "timestamp" to ServerValue.TIMESTAMP
+            )
+
+            database.child("devices").child(deviceId).child("wifi")
+                .updateChildren(wifiUpdates)
+                .addOnSuccessListener {
+                    Toast.makeText(context, "WiFi credentials updated", Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
+                }
+                .addOnFailureListener { e ->
+                    Toast.makeText(context, "Failed to update WiFi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
         }
 
         cancelButton?.setOnClickListener {
-            Log.d("WiFiDialog", "❌ Cancel button clicked")
+            sessionManager.userActivityDetected()
             dialog.dismiss()
         }
 
@@ -622,6 +623,13 @@ class MonitoringFragment : Fragment() {
         removeAllDeviceListeners()
     }
 
+    private fun navigateToLogin() {
+        val loginFragment = LoginFragment.newInstance()
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, loginFragment)
+            .commit()
+    }
+
     companion object {
         fun newInstance(): MonitoringFragment {
             return MonitoringFragment()
@@ -655,6 +663,9 @@ class DeviceAdapter(
 ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
 
     private val dialogManager = DialogManager(context)
+    private val sessionManager = SessionManager(context as FragmentActivity) {
+        // Logout callback - will be handled by parent fragment
+    }
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
@@ -709,6 +720,7 @@ class DeviceAdapter(
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
         addButton?.setOnClickListener {
+            sessionManager.userActivityDetected()
             val email = emailInput?.text.toString().trim()
             if (email.isNotEmpty()) {
                 onUserAdded(deviceId, email)
@@ -719,11 +731,14 @@ class DeviceAdapter(
         }
 
         cancelButton?.setOnClickListener {
+            sessionManager.userActivityDetected()
             dialog.dismiss()
         }
 
-        dialog.setOnDismissListener {
-            emailInput?.text?.clear() // Clear input field on dismiss
+        // Add touch listener for session activity
+        dialog.window?.decorView?.setOnTouchListener { _, _ ->
+            sessionManager.userActivityDetected()
+            false
         }
 
         dialog.show()
@@ -781,7 +796,7 @@ class DeviceAdapter(
     }
 
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
-        PopupMenu(view.context, view).apply {
+        val popupMenu = PopupMenu(view.context, view).apply {
             inflate(R.menu.user_options_menu)
 
             // Set text color for all menu items
@@ -791,25 +806,28 @@ class DeviceAdapter(
                 spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
                 item.title = spanString
             }
-
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    R.id.action_delete_user -> {
-                        onUserDeleted(deviceId, userInfo)
-                        true
-                    }
-                    R.id.action_promote_user -> {
-                        onUserPromoted(deviceId, userInfo)
-                        true
-                    }
-                    R.id.action_demote_user -> {
-                        onUserDemoted(deviceId, userInfo)
-                        true
-                    }
-                    else -> false
-                }
-            }
-            show()
         }
+
+        // Add touch listener for session activity
+        popupMenu.setOnMenuItemClickListener { item ->
+            sessionManager.userActivityDetected()
+            when (item.itemId) {
+                R.id.action_delete_user -> {
+                    onUserDeleted(deviceId, userInfo)
+                    true
+                }
+                R.id.action_promote_user -> {
+                    onUserPromoted(deviceId, userInfo)
+                    true
+                }
+                R.id.action_demote_user -> {
+                    onUserDemoted(deviceId, userInfo)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        popupMenu.show()
     }
 }

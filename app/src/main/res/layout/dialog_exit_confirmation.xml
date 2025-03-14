@@ -4,39 +4,40 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="24dp"
+    android:gravity="center"
     android:background="@drawable/dialog_background">
 
     <TextView
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Are you sure you want to exit?"
-        android:textSize="16sp"
-        android:textColor="#800000"
-        android:layout_marginBottom="24dp"
+        android:text="Are you sure you want to log out?"
+        android:textSize="18sp"
+        android:textColor="@color/maroon"
+        android:layout_marginBottom="32dp"
         android:gravity="center"/>
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="end">
+        android:gravity="center">
 
         <Button
             android:id="@+id/noButton"
-            android:layout_width="wrap_content"
+            android:layout_width="100dp"
             android:layout_height="wrap_content"
-            android:text="CANCEL"
-            android:backgroundTint="#800000"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="8dp"/>
+            android:text="No"
+            android:backgroundTint="@color/maroon"
+            android:textColor="@android:color/white"
+            android:layout_marginEnd="16dp"/>
 
         <Button
             android:id="@+id/yesButton"
-            android:layout_width="wrap_content"
+            android:layout_width="100dp"
             android:layout_height="wrap_content"
-            android:text="EXIT"
-            android:backgroundTint="#800000"
-            android:textColor="#FFFFFF"/>
+            android:text="Yes"
+            android:backgroundTint="@color/maroon"
+            android:textColor="@android:color/white"/>
 
     </LinearLayout>
 

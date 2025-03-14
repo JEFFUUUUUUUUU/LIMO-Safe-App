@@ -10,19 +10,19 @@
         <item name="colorPrimary">@color/black</item>
         <item name="colorPrimaryVariant">@color/black</item>
         <item name="colorOnPrimary">@color/white</item>
-        
+
         <!-- Secondary brand color. -->
         <item name="colorSecondary">@color/black</item>
         <item name="colorSecondaryVariant">@color/black</item>
         <item name="colorOnSecondary">@color/white</item>
-        
+
         <!-- Status bar color. -->
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        
+
         <!-- EditText style -->
         <item name="editTextStyle">@style/BlackTextEditText</item>
         <item name="android:editTextStyle">@style/BlackTextEditText</item>
-        
+
         <!-- Button style -->
         <item name="materialButtonStyle">@style/BlackButton</item>
     </style>

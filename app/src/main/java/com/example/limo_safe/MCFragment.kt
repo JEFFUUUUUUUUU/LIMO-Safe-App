@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.limo_safe.Object.PersistentTimer
 import com.example.limo_safe.Object.SessionManager
+import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.MorseCodeHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DatabaseReference
@@ -33,6 +34,7 @@ class MCFragment : Fragment() {
     private lateinit var generatedCodeText: TextView
     private lateinit var codeDisplayText: TextView
     private lateinit var sessionManager: SessionManager
+    private lateinit var dialogManager: DialogManager
     private lateinit var persistentTimer: PersistentTimer
     private var countDownTimer: CountDownTimer? = null
     private var morseTimer: CountDownTimer? = null
@@ -123,6 +125,7 @@ class MCFragment : Fragment() {
             navigateToLogin()
         }
 
+        dialogManager = DialogManager(requireContext())
         persistentTimer = PersistentTimer(requireContext())
         initializeViews(view)
         setupClickListeners()
@@ -321,18 +324,62 @@ class MCFragment : Fragment() {
     }
 
     private fun showExitConfirmationDialog() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("Exit Confirmation")
-            .setMessage("Are you sure you want to exit?")
-            .setPositiveButton("Yes") { dialog, _ ->
-                dialog.dismiss()
-                requireActivity().finish()
+        val dialog = dialogManager.createCustomDialog(R.layout.dialog_exit_confirmation)
+        dialog.show()
+
+        // Get dialog buttons
+        val yesButton = dialog.findViewById<Button>(R.id.yesButton)
+        val noButton = dialog.findViewById<Button>(R.id.noButton)
+
+        // Set click listeners
+        yesButton?.setOnClickListener {
+            dialog.dismiss()
+            // Save state before logging out
+            saveState()
+            // Sign out from Firebase
+            FirebaseAuth.getInstance().signOut()
+            // Navigate to login
+            navigateToLogin()
+        }
+
+        noButton?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        // Session timeout handling is already managed by DialogManager
+    }
+
+    private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
+        // Use DialogManager to create morse code dialog with session handling
+        dialog = dialogManager.createMorseCodeDialog(
+            code = code,
+            remainingTries = remainingTries,
+            remainingCooldown = remainingCooldown
+        ) { playButton, cooldownText ->
+            sessionManager.userActivityDetected()
+            // Check cooldown only for first and second tries
+            if (remainingTries > 1) {  // Only check when we have 2 or 3 tries left
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastMorsePlayTime < MORSE_COOLDOWN) {
+                    return@createMorseCodeDialog
+                }
             }
-            .setNegativeButton("No") { dialog, _ ->
-                dialog.dismiss()
+
+            if (remainingTries > 0) {
+                playMorseCode(code)
+                remainingTries--
+                dialogManager.updateRemainingTries(remainingTries)
+                saveState()
+
+                if (remainingTries > 0) {
+                    lastMorsePlayTime = System.currentTimeMillis()
+                    startMorseCooldown(MORSE_COOLDOWN)
+                } else {
+                    // Show max tries dialog using DialogManager
+                    dialogManager.showMaxTriesDialog()
+                }
             }
-            .create()
-            .show()
+        }
     }
 
     private fun startMorseCooldown(duration: Long) {
@@ -362,113 +409,6 @@ class MCFragment : Fragment() {
                 }
             }
         }.start()
-    }
-
-    private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
-        dialog = AlertDialog.Builder(requireContext())
-            .setTitle("Play Morse Code")
-            .setView(R.layout.dialog_morse_code)
-            .setCancelable(false)
-            .create()
-
-        dialog.setOnShowListener {
-            val playButton = dialog.findViewById<Button>(R.id.playButton)
-            val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
-            val triesText = dialog.findViewById<TextView>(R.id.triesText)
-            val codeDisplayText = dialog.findViewById<TextView>(R.id.codeDisplayText)
-
-            // Set up the code display
-            codeDisplayText?.text = "Code: $code"
-            triesText?.text = "Remaining tries: $remainingTries"
-            cooldownText?.text = if (remainingCooldown > 0) {
-                "Please wait ${remainingCooldown / 1000} seconds before next try"
-            } else {
-                "Ready to play"
-            }
-
-            // Add touch listener to update session activity
-            dialog.window?.decorView?.setOnTouchListener { _, _ ->
-                sessionManager.userActivityDetected()
-                false
-            }
-
-            playButton?.setOnClickListener {
-                sessionManager.userActivityDetected()
-                // Check cooldown only for first and second tries
-                if (remainingTries > 1) {  // Only check when we have 2 or 3 tries left
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastMorsePlayTime < MORSE_COOLDOWN) {
-                        return@setOnClickListener
-                    }
-                }
-
-                remainingTries--
-                lastMorsePlayTime = System.currentTimeMillis()
-                triesText?.text = "Remaining tries: $remainingTries"
-                saveState()
-
-                if (remainingTries <= 0) {
-                    // For the last try (third click)
-                    // Disable button during transmission
-                    playButton.isEnabled = false
-                    playButton.alpha = 0.5f
-
-                    thread {
-                        // Play morse code first
-                        playMorseCode(code)
-
-                        // After transmission is complete, handle dialogs
-                        activity?.runOnUiThread {
-                            // Dismiss morse code dialog
-                            dialog.dismiss()
-
-                            // Show maximum tries dialog
-                            val maxTriesDialog = AlertDialog.Builder(requireContext())
-                                .setTitle("Maximum Tries Reached")
-                                .setMessage("You have used all tries. Please wait for the Generate Code button to be available again to get a new code.")
-                                .setCancelable(false)
-                                .create()
-
-                            maxTriesDialog.show()
-
-                            // Clear the morse state
-                            requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                .edit()
-                                .putBoolean(KEY_MORSE_STATE_ACTIVE, false)
-                                .apply()
-
-                            // Auto-dismiss max tries dialog after 3 seconds
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                maxTriesDialog.dismiss()
-                            }, 3000)
-                        }
-                    }
-                } else {
-                    // For first and second clicks
-                    thread {
-                        playMorseCode(code)
-                    }
-                    // Start 30-second cooldown after first and second tries
-                    startMorseCooldown(MORSE_COOLDOWN)
-                }
-            }
-
-            // If there's remaining cooldown and it's not the last try
-            if (remainingCooldown > 0 && remainingTries > 1) {
-                startMorseCooldown(remainingCooldown)
-            } else {
-                cooldownText?.text = "Ready to play"
-                playButton?.isEnabled = true
-                playButton?.alpha = 1.0f
-            }
-        }
-
-        // Set dialog dismiss listener to handle session timeout
-        dialog.setOnDismissListener {
-            sessionManager.userActivityDetected()
-        }
-
-        dialog.show()
     }
 
     private fun playMorseCode(code: String) {

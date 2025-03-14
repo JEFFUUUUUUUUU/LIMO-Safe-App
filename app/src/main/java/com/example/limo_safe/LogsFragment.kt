@@ -12,6 +12,8 @@ import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.limo_safe.Object.SessionManager
+import com.example.limo_safe.utils.DialogManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
 import java.text.SimpleDateFormat
@@ -23,6 +25,8 @@ class LogsFragment : Fragment() {
     private lateinit var logsAdapter: LogsAdapter
     private lateinit var searchInput: EditText
     private lateinit var database: DatabaseReference
+    private lateinit var sessionManager: SessionManager
+    private lateinit var dialogManager: DialogManager
     private var allLogs: MutableList<LogEntry> = mutableListOf()
     private var logsListener: ValueEventListener? = null
 
@@ -35,15 +39,45 @@ class LogsFragment : Fragment() {
         logsRecyclerView = view.findViewById(R.id.logsRecyclerView)
         searchInput = view.findViewById(R.id.searchInput)
 
+        // Initialize session manager with logout callback
+        sessionManager = SessionManager(requireActivity()) {
+            // Logout callback
+            navigateToLogin()
+        }
+
+        // Initialize dialog manager
+        dialogManager = DialogManager(requireContext())
+
         database = FirebaseDatabase.getInstance().reference
         setupSearchBar()
         setupRecyclerView()
         fetchLogs()
 
+        // Add touch listeners for session activity
+        view.setOnTouchListener { _, _ ->
+            sessionManager.userActivityDetected()
+            false
+        }
+        logsRecyclerView.setOnTouchListener { _, _ ->
+            sessionManager.userActivityDetected()
+            false
+        }
+        searchInput.setOnTouchListener { _, _ ->
+            sessionManager.userActivityDetected()
+            false
+        }
+
         // Add sample data for demonstration
         addSampleData()
 
         return view
+    }
+
+    private fun navigateToLogin() {
+        val loginFragment = LoginFragment.newInstance()
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, loginFragment)
+            .commit()
     }
 
     private fun addSampleData() {
