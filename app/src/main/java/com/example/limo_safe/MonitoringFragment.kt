@@ -443,44 +443,40 @@ class MonitoringFragment : Fragment() {
             }
     }
 
-    private fun promoteUser(deviceId: String, userInfo: UserInfo) {
-        // Log the input data for debugging
-        Log.d("PromoteUser", "Promoting user with deviceId: $deviceId, userInfo: $userInfo")
+    private fun updateUserRole(deviceId: String, userInfo: UserInfo, newRole: String) {
+        Log.d("UpdateUserRole", "Updating role for deviceId: $deviceId, userInfo: $userInfo, newRole: $newRole")
 
-        // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
             .equalTo(userInfo.email)
             .get()
             .addOnSuccessListener { snapshot ->
-                Log.d("PromoteUser", "Query result exists: ${snapshot.exists()}")
                 if (snapshot.exists()) {
                     val userId = snapshot.children.first().key
                     if (userId != null) {
-                        // Update user's role to admin
-                        database.child("users").child(userId).child("registeredDevices")
-                            .child(deviceId)
-                            .setValue("admin")
-                            .addOnSuccessListener {
-                                // Update local state
-                                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
-                                if (deviceIndex >= 0) {
-                                    val device = devices[deviceIndex]
-                                    val updatedUsers = device.users.map { user ->
-                                        if (user.email == userInfo.email) {
-                                            user.copy(role = "admin")
-                                        } else {
-                                            user
-                                        }
-                                    }
-                                    devices[deviceIndex] = device.copy(users = updatedUsers)
-                                    deviceAdapter.notifyItemChanged(deviceIndex)
+                        val userRef = database.child("users").child(userId).child("registeredDevices").child(deviceId)
+
+                        // Fetch current role before updating
+                        userRef.get().addOnSuccessListener { roleSnapshot ->
+                            val currentRole = roleSnapshot.getValue(String::class.java)
+
+                            if (currentRole == newRole) {
+                                Toast.makeText(context, "User is already $newRole", Toast.LENGTH_SHORT).show()
+                                return@addOnSuccessListener
+                            }
+
+                            // Proceed with role update
+                            userRef.setValue(newRole)
+                                .addOnSuccessListener {
+                                    updateLocalUserRole(deviceId, userInfo.email, newRole)
+                                    Toast.makeText(context, "User role updated to $newRole", Toast.LENGTH_SHORT).show()
                                 }
-                                Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
-                            }
-                            .addOnFailureListener { e ->
-                                Toast.makeText(context, "Failed to promote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                                .addOnFailureListener { e ->
+                                    Toast.makeText(context, "Failed to update role: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        }.addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to fetch current role: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     } else {
                         Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
                     }
@@ -493,54 +489,30 @@ class MonitoringFragment : Fragment() {
             }
     }
 
-    private fun demoteUser(deviceId: String, userInfo: UserInfo) {
-        // Log the input data for debugging
-        Log.d("DemoteUser", "Demoting user with deviceId: $deviceId, userInfo: $userInfo")
-
-        // First find the user ID from the email
-        database.child("users")
-            .orderByChild("email")
-            .equalTo(userInfo.email)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                Log.d("DemoteUser", "Query result exists: ${snapshot.exists()}")
-                if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key
-                    if (userId != null) {
-                        // Update user's role to user
-                        database.child("users").child(userId).child("registeredDevices")
-                            .child(deviceId)
-                            .setValue("user")
-                            .addOnSuccessListener {
-                                // Update local state
-                                val deviceIndex = devices.indexOfFirst { it.id == deviceId }
-                                if (deviceIndex >= 0) {
-                                    val device = devices[deviceIndex]
-                                    val updatedUsers = device.users.map { user ->
-                                        if (user.email == userInfo.email) {
-                                            user.copy(role = "user")
-                                        } else {
-                                            user
-                                        }
-                                    }
-                                    devices[deviceIndex] = device.copy(users = updatedUsers)
-                                    deviceAdapter.notifyItemChanged(deviceIndex)
-                                }
-                                Toast.makeText(context, "User demoted to user", Toast.LENGTH_SHORT).show()
-                            }
-                            .addOnFailureListener { e ->
-                                Toast.makeText(context, "Failed to demote user: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                    } else {
-                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
-                    }
+    // Helper function to update local state
+    private fun updateLocalUserRole(deviceId: String, email: String, newRole: String) {
+        val deviceIndex = devices.indexOfFirst { it.id == deviceId }
+        if (deviceIndex >= 0) {
+            val device = devices[deviceIndex]
+            val updatedUsers = device.users.map { user ->
+                if (user.email == email) {
+                    user.copy(role = newRole)
                 } else {
-                    Toast.makeText(context, "User with email ${userInfo.email} not found", Toast.LENGTH_SHORT).show()
+                    user
                 }
             }
-            .addOnFailureListener { e ->
-                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            devices[deviceIndex] = device.copy(users = updatedUsers)
+            deviceAdapter.notifyItemChanged(deviceIndex)
+        }
+    }
+
+    // Wrapper functions for promotion and demotion
+    private fun promoteUser(deviceId: String, userInfo: UserInfo) {
+        updateUserRole(deviceId, userInfo, "admin")
+    }
+
+    private fun demoteUser(deviceId: String, userInfo: UserInfo) {
+        updateUserRole(deviceId, userInfo, "user")
     }
 
     private fun showWifiDialog(deviceId: String) {
