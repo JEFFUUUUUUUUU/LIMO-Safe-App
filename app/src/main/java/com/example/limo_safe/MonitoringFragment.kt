@@ -245,9 +245,9 @@ class MonitoringFragment : Fragment() {
                             Log.d("UserDebug", "Retrieved email for userId=$userId: $email")
 
                             if (email != null) {
-                                // Get user's role
-                                database.child("devices").child(deviceId).child("roles")
-                                    .child(userId)
+                                // Get user's role from the user's registeredDevices node
+                                database.child("users").child(userId).child("registeredDevices")
+                                    .child(deviceId)
                                     .get()
                                     .addOnSuccessListener { roleSnapshot ->
                                         val role = roleSnapshot.getValue(String::class.java) ?: "user"
@@ -261,6 +261,11 @@ class MonitoringFragment : Fragment() {
                                     }
                                     .addOnFailureListener { e ->
                                         Log.e("UserDebug", "Error getting role for user $userId: ${e.message}")
+                                        // Fallback to using the registeredUsers value in device node if available
+                                        val defaultRole = if (tag in listOf("5", "D", "O")) "admin" else "user"
+                                        val userInfo = UserInfo(email, defaultRole)
+                                        userList.add(userInfo)
+
                                         pendingFetches--
                                         if (pendingFetches == 0) {
                                             updateDeviceWithUsers(deviceId, userList)
@@ -305,7 +310,7 @@ class MonitoringFragment : Fragment() {
         }
     }
 
-    private fun addUserToDevice(deviceId: String, email: String) {
+    private fun addUserToDevice(deviceId: String, email: String, role: String = "user") {
         // First find the user ID from the email
         database.child("users")
             .orderByChild("email")
@@ -316,24 +321,37 @@ class MonitoringFragment : Fragment() {
                     val userId = snapshot.children.first().key
                     if (userId != null) {
                         // Generate a unique tag for this user
-                        val tag = UUID.randomUUID().toString().substring(0, 8)
+                        // Or use the first character of their email as a shorthand tag
+                        val tag = email.take(1).uppercase()
 
                         // Add user to device's registered users
                         database.child("devices").child(deviceId).child("registeredUsers")
                             .child(tag)
                             .setValue(userId)
                             .addOnSuccessListener {
-                                // Store the tag in the user's profile for future reference
-                                database.child("users").child(userId).child("tag")
-                                    .setValue(tag)
+                                // Add device to user's registeredDevices with the role
+                                database.child("users").child(userId).child("registeredDevices")
+                                    .child(deviceId)
+                                    .setValue(role)
                                     .addOnSuccessListener {
-                                        Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+                                        // Update user's tag
+                                        database.child("users").child(userId).child("tag")
+                                            .setValue(tag)
+                                            .addOnSuccessListener {
+                                                Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("UserDebug", "Failed to store user tag: ${e.message}")
+                                                Toast.makeText(context, "Failed to store user tag: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
                                     }
                                     .addOnFailureListener { e ->
-                                        Toast.makeText(context, "Failed to store user tag: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Log.e("UserDebug", "Failed to add device to user: ${e.message}")
+                                        Toast.makeText(context, "Failed to add device to user: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
                             }
                             .addOnFailureListener { e ->
+                                Log.e("UserDebug", "Failed to add user to device: ${e.message}")
                                 Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                     } else {
@@ -344,6 +362,7 @@ class MonitoringFragment : Fragment() {
                 }
             }
             .addOnFailureListener { e ->
+                Log.e("UserDebug", "Failed to check user: ${e.message}")
                 Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
