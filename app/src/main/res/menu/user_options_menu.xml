@@ -2,11 +2,14 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/action_delete_user"
-        android:title="Delete User" />
+        android:title="Delete User"
+        android:textColor="#800000"/>
     <item
         android:id="@+id/action_promote_user"
-        android:title="Promote to Admin" />
+        android:title="Promote to Admin"
+        android:textColor="#800000"/>
     <item
         android:id="@+id/action_demote_user"
-        android:title="Demote to User" />
+        android:title="Demote to User"
+        android:textColor="#800000"/>
 </menu>

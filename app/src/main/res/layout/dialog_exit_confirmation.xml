@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+    android:layout_width="320dp"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="24dp"
+    android:background="@drawable/dialog_background">
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Are you sure you want to exit?"
         android:textSize="16sp"
-        android:layout_marginBottom="16dp" />
+        android:textColor="#800000"
+        android:layout_marginBottom="24dp"
+        android:gravity="center"/>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -22,14 +25,18 @@
             android:id="@+id/noButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="No" />
+            android:text="CANCEL"
+            android:backgroundTint="#800000"
+            android:textColor="#FFFFFF"
+            android:layout_marginEnd="8dp"/>
 
         <Button
             android:id="@+id/yesButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Yes" />
+            android:text="EXIT"
+            android:backgroundTint="#800000"
+            android:textColor="#FFFFFF"/>
 
     </LinearLayout>
 

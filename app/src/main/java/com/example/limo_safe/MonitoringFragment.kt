@@ -1,6 +1,7 @@
 package com.example.limo_safe
 
 import android.app.Dialog
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -73,12 +74,14 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun setupRecyclerView() {
-        deviceAdapter = DeviceAdapter(devices,
+        deviceAdapter = DeviceAdapter(
+            devices,
             onUserAdded = { deviceId, email -> addUserToDevice(deviceId, email) },
             onUserDeleted = { deviceId, userInfo -> deleteUserFromDevice(deviceId, userInfo) },
             onUserPromoted = { deviceId, userInfo -> promoteUser(deviceId, userInfo) },
             onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) },
-            onWifiClicked = { deviceId -> showWifiDialog(deviceId) }
+            onWifiClicked = { deviceId -> showWifiDialog(deviceId) },
+            context = requireContext()
         )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
@@ -647,8 +650,11 @@ class DeviceAdapter(
     private val onUserDeleted: (String, UserInfo) -> Unit,
     private val onUserPromoted: (String, UserInfo) -> Unit,
     private val onUserDemoted: (String, UserInfo) -> Unit,
-    private val onWifiClicked: (String) -> Unit
+    private val onWifiClicked: (String) -> Unit,
+    private val context: Context
 ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
+
+    private val dialogManager = DialogManager(context)
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
@@ -693,15 +699,15 @@ class DeviceAdapter(
     private fun showAddUserDialog(view: View, position: Int) {
         val deviceId = devices[position].id
         val context = view.context
-        val dialog = Dialog(context)
-        dialog.setContentView(R.layout.dialog_add_user)
+
+        val dialog = dialogManager.createCustomDialog(R.layout.dialog_add_user)
 
         val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
-        val enterButton = dialog.findViewById<Button>(R.id.enterButton)
+        val addButton = dialog.findViewById<Button>(R.id.addButton)
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
-        enterButton.setOnClickListener {
-            val email = emailInput.text.toString()
+        addButton?.setOnClickListener {
+            val email = emailInput?.text.toString()
             if (email.isNotEmpty()) {
                 onUserAdded(deviceId, email)
                 dialog.dismiss()
@@ -710,10 +716,15 @@ class DeviceAdapter(
             }
         }
 
-        cancelButton.setOnClickListener {
+        cancelButton?.setOnClickListener {
             dialog.dismiss()
         }
 
+        dialog.setOnDismissListener {
+            // Clear any session state if needed
+            emailInput?.text?.clear()
+        }
+        
         dialog.show()
     }
 
@@ -771,6 +782,15 @@ class DeviceAdapter(
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
         PopupMenu(view.context, view).apply {
             inflate(R.menu.user_options_menu)
+            
+            // Set text color for all menu items
+            for (i in 0 until menu.size()) {
+                val item = menu.getItem(i)
+                val spanString = android.text.SpannableString(item.title.toString())
+                spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
+                item.title = spanString
+            }
+
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_delete_user -> {

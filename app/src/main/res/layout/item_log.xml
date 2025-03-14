@@ -8,68 +8,78 @@
     app:cardCornerRadius="4dp"
     app:cardElevation="2dp">
 
-    <LinearLayout
+    <TableLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
+        android:stretchColumns="*"
         android:background="@color/white">
 
-        <TextView
-            android:id="@+id/dateText"
-            android:layout_width="0dp"
+        <TableRow
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1.2"
-            android:textColor="@color/maroon"
-            android:textSize="14sp"
-            android:gravity="center_horizontal"
-            android:paddingEnd="8dp"
-            android:singleLine="true" />
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp">
 
-        <TextView
-            android:id="@+id/timeText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="@color/maroon"
-            android:textSize="14sp"
-            android:gravity="center_horizontal"
-            android:paddingEnd="8dp"
-            android:singleLine="true" />
+            <TextView
+                android:id="@+id/dateText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.2"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:paddingEnd="8dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
-        <TextView
-            android:id="@+id/userText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="@color/maroon"
-            android:textSize="14sp"
-            android:gravity="center_horizontal"
-            android:paddingEnd="8dp"
-            android:ellipsize="end"
-            android:singleLine="true" />
+            <TextView
+                android:id="@+id/timeText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:paddingEnd="8dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
-        <TextView
-            android:id="@+id/deviceNameText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="0.8"
-            android:textColor="@color/maroon"
-            android:textSize="14sp"
-            android:gravity="center_horizontal"
-            android:paddingEnd="8dp"
-            android:singleLine="true" />
+            <TextView
+                android:id="@+id/userText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.5"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:paddingEnd="8dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="0.6"
-            android:textColor="@color/maroon"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:gravity="center_horizontal"
-            android:singleLine="true" />
+            <TextView
+                android:id="@+id/deviceNameText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.8"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:paddingEnd="8dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
-    </LinearLayout>
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.8"
+                android:textColor="@color/maroon"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+        </TableRow>
+    </TableLayout>
 </androidx.cardview.widget.CardView>
