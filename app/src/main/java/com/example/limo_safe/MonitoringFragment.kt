@@ -24,6 +24,7 @@ import com.example.limo_safe.utils.DialogManager
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.example.limo_safe.LoginFragment
@@ -335,7 +336,7 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun addUserToDevice(deviceId: String, email: String, role: String = "user") {
-        // First find the user ID from the email
+        // Find the user ID from the email
         database.child("users")
             .orderByChild("email")
             .equalTo(email)
@@ -344,39 +345,40 @@ class MonitoringFragment : Fragment() {
                 if (snapshot.exists()) {
                     val userId = snapshot.children.first().key
                     if (userId != null) {
-                        // Generate a unique tag for this user
-                        // Or use the first character of their email as a shorthand tag
-                        val tag = email.take(1).uppercase()
+                        // Retrieve the user's existing tag
+                        database.child("users").child(userId).child("tag")
+                            .get()
+                            .addOnSuccessListener { tagSnapshot ->
+                                val existingTag = tagSnapshot.getValue(String::class.java)
 
-                        // Add user to device's registered users
-                        database.child("devices").child(deviceId).child("registeredUsers")
-                            .child(tag)
-                            .setValue(userId)
-                            .addOnSuccessListener {
-                                // Add device to user's registeredDevices with the role
-                                database.child("users").child(userId).child("registeredDevices")
-                                    .child(deviceId)
-                                    .setValue(role)
-                                    .addOnSuccessListener {
-                                        // Update user's tag
-                                        database.child("users").child(userId).child("tag")
-                                            .setValue(tag)
-                                            .addOnSuccessListener {
-                                                Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
-                                            }
-                                            .addOnFailureListener { e ->
-                                                Log.e("UserDebug", "Failed to store user tag: ${e.message}")
-                                                Toast.makeText(context, "Failed to store user tag: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                    }
-                                    .addOnFailureListener { e ->
-                                        Log.e("UserDebug", "Failed to add device to user: ${e.message}")
-                                        Toast.makeText(context, "Failed to add device to user: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
+                                if (!existingTag.isNullOrEmpty()) {
+                                    Log.d("UserDebug", "Using existing tag: $existingTag for user: $userId")
+
+                                    // Add user to device's registered users using existing tag
+                                    val addToDevice = database.child("devices").child(deviceId).child("registeredUsers")
+                                        .child(existingTag)
+                                        .setValue(userId)
+
+                                    // Add device to user's registeredDevices with the role
+                                    val addToUser = database.child("users").child(userId).child("registeredDevices")
+                                        .child(deviceId)
+                                        .setValue(role)
+
+                                    // Execute both operations and wait for completion
+                                    Tasks.whenAllComplete(addToDevice, addToUser)
+                                        .addOnSuccessListener {
+                                            Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            Log.e("UserDebug", "Failed to add user: ${e.message}")
+                                            Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                } else {
+                                    Toast.makeText(context, "User does not have a tag", Toast.LENGTH_SHORT).show()
+                                }
                             }
                             .addOnFailureListener { e ->
-                                Log.e("UserDebug", "Failed to add user to device: ${e.message}")
-                                Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Error fetching user tag: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                     } else {
                         Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
@@ -392,10 +394,9 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun deleteUserFromDevice(deviceId: String, userInfo: UserInfo) {
-        // Parse the userInfo which should be in format "tag: email"
         val email = userInfo.email
 
-        // Remove user from device's registered users using the tag
+        // Find user ID based on email
         database.child("users")
             .orderByChild("email")
             .equalTo(email)
@@ -412,14 +413,18 @@ class MonitoringFragment : Fragment() {
                         .addOnSuccessListener { tagSnapshot ->
                             val existingTag = tagSnapshot.getValue(String::class.java)
 
-                            if (existingTag != null && existingTag.isNotEmpty()) {
-                                // Use the existing tag
+                            if (!existingTag.isNullOrEmpty()) {
                                 Log.d("FirebaseDebug", "Using existing tag: $existingTag for user: $userId")
 
-                                // Remove user from device's registered users using the tag
-                                database.child("devices").child(deviceId).child("registeredUsers")
-                                    .child(existingTag)
-                                    .removeValue()
+                                // Firebase operations to remove user from both locations
+                                val removeFromDevice = database.child("devices").child(deviceId)
+                                    .child("registeredUsers").child(existingTag).removeValue()
+
+                                val removeFromUser = database.child("users").child(userId)
+                                    .child("registeredDevices").child(deviceId).removeValue()
+
+                                // Run both deletions in parallel and wait for them to complete
+                                Tasks.whenAllComplete(removeFromDevice, removeFromUser)
                                     .addOnSuccessListener {
                                         Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
                                     }

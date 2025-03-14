@@ -16,7 +16,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="LIMO Safe"
+        android:text="LIMO-SAFE"
         android:textColor="#800000"
         android:textSize="24sp"
         android:textStyle="bold"
