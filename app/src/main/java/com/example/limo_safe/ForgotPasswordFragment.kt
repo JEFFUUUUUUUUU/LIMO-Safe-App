@@ -44,52 +44,27 @@ class ForgotPasswordFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            // Show loading dialog with session management
-            val loadingDialog = dialogManager.createLoadingDialog("Checking email...")
+            // Show loading dialog
+            val loadingDialog = dialogManager.createLoadingDialog("Sending reset email...")
             loadingDialog.show()
 
-            // First check if the email exists in Firebase Auth
-            auth.fetchSignInMethodsForEmail(email)
-                .addOnCompleteListener { fetchTask ->
-                    if (fetchTask.isSuccessful) {
-                        val signInMethods = fetchTask.result?.signInMethods ?: emptyList<String>()
-                        if (signInMethods.isNotEmpty()) {
-                            // Email exists, send password reset email
-                            auth.sendPasswordResetEmail(email)
-                                .addOnCompleteListener { resetTask ->
-                                    dialogManager.dismissActiveDialog()
-                                    if (resetTask.isSuccessful) {
-                                        Toast.makeText(
-                                            context,
-                                            "Password reset email sent. Please check your inbox.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                        // Navigate back to login
-                                        parentFragmentManager.popBackStack()
-                                    } else {
-                                        Toast.makeText(
-                                            context,
-                                            "Failed to send reset email: ${resetTask.exception?.message}",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                }
-                        } else {
-                            // Email not registered
-                            dialogManager.dismissActiveDialog()
-                            Toast.makeText(
-                                context,
-                                "This email is not registered in LIMOSafe. Please check your email or sign up.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            emailEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
-                        }
+            // Skip the verification step and directly attempt to send the reset email
+            // Firebase Auth will determine if the email exists
+            auth.sendPasswordResetEmail(email)
+                .addOnCompleteListener { resetTask ->
+                    dialogManager.dismissActiveDialog()
+                    if (resetTask.isSuccessful) {
+                        Toast.makeText(
+                            context,
+                            "Password reset email sent. Please check your inbox.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        parentFragmentManager.popBackStack()
                     } else {
-                        // Error checking email
-                        dialogManager.dismissActiveDialog()
-                        val errorMessage = when (fetchTask.exception) {
+                        // Handle the error with better specificity
+                        val errorMessage = when (resetTask.exception) {
                             is FirebaseAuthInvalidUserException -> "This email is not registered in LIMOSafe."
-                            else -> "Error checking email: ${fetchTask.exception?.message}"
+                            else -> "Unable to send reset email. Please try again later."
                         }
                         Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
                         emailEditText.startAnimation(android.view.animation.AnimationUtils.loadAnimation(context, R.anim.shake))
