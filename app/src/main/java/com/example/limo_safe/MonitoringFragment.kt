@@ -700,14 +700,16 @@ class DeviceAdapter(
         val deviceId = devices[position].id
         val context = view.context
 
-        val dialog = dialogManager.createCustomDialog(R.layout.dialog_add_user)
+        val dialog = Dialog(context) // Ensures a non-null context
+        dialog.setContentView(R.layout.dialog_add_user)
+        dialog.setCancelable(true)
 
         val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
         val addButton = dialog.findViewById<Button>(R.id.addButton)
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
         addButton?.setOnClickListener {
-            val email = emailInput?.text.toString()
+            val email = emailInput?.text.toString().trim()
             if (email.isNotEmpty()) {
                 onUserAdded(deviceId, email)
                 dialog.dismiss()
@@ -721,10 +723,9 @@ class DeviceAdapter(
         }
 
         dialog.setOnDismissListener {
-            // Clear any session state if needed
-            emailInput?.text?.clear()
+            emailInput?.text?.clear() // Clear input field on dismiss
         }
-        
+
         dialog.show()
     }
 
