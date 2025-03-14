@@ -1,71 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+    android:layout_width="320dp"
     android:layout_height="wrap_content"
+    android:background="@drawable/dialog_background"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="24dp">
 
     <TextView
+        android:id="@+id/dialogTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="LIMO-SAFE WiFi Connection"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:textColor="@color/maroon"
         android:layout_marginBottom="16dp"
-        android:gravity="center"/>
+        android:text="WiFi Connection"
+        android:textAlignment="center"
+        android:textColor="@color/maroon"
+        android:textSize="20sp"
+        android:textStyle="bold" />
 
     <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ssidInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="16dp"
+        android:hint="SSID"
         android:textColorHint="@color/maroon">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/ssidInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="SSID"
-            android:textColor="@color/maroon"
-            android:inputType="text"/>
+            android:inputType="text"
+            android:textColor="@color/maroon" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/passwordInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="24dp"
+        android:hint="Password"
         android:textColorHint="@color/maroon">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/passwordInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Password"
-            android:textColor="@color/maroon"
-            android:inputType="textPassword"/>
+            android:inputType="textPassword"
+            android:textColor="@color/maroon" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="end">
+        android:orientation="horizontal">
 
         <Button
             android:id="@+id/cancelButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Cancel"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
             android:layout_marginEnd="8dp"
-            android:textColor="@color/maroon"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+            android:layout_weight="1"
+            android:backgroundTint="@color/maroon"
+            android:text="CANCEL"
+            android:textColor="@android:color/white" />
 
         <Button
             android:id="@+id/connectButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Connect"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
             android:backgroundTint="@color/orange"
-            android:textColor="@android:color/white"/>
+            android:text="CONNECT"
+            android:textColor="@android:color/white" />
     </LinearLayout>
+
 </LinearLayout>

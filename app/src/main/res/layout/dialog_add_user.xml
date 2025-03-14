@@ -2,63 +2,69 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="320dp"
     android:layout_height="wrap_content"
+    android:background="@drawable/dialog_background"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:background="@drawable/dialog_background">
+    android:padding="24dp">
 
     <TextView
+        android:id="@+id/dialogTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
         android:text="Add User"
+        android:textAlignment="center"
+        android:textColor="@color/maroon"
         android:textSize="20sp"
-        android:textStyle="bold"
-        android:textColor="#800000"
-        android:layout_marginBottom="16dp"/>
+        android:textStyle="bold" />
 
-    <EditText
-        android:id="@+id/emailInput"
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/emailInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
         android:hint="Email"
-        android:inputType="textEmailAddress"
-        android:textSize="16sp"
-        android:textColor="#800000"
-        android:textColorHint="#80800000"
-        android:layout_marginBottom="16dp"/>
+        android:textColorHint="@color/maroon">
 
-    <EditText
-        android:id="@+id/passwordInput"
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/emailInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textEmailAddress"
+            android:textColor="@color/maroon" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/passwordInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
         android:hint="Password"
-        android:inputType="textPassword"
-        android:textSize="16sp"
-        android:textColor="#800000"
-        android:textColorHint="#80800000"
-        android:layout_marginBottom="24dp"/>
+        android:textColorHint="@color/maroon"/>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="end">
+        android:orientation="horizontal">
 
         <Button
             android:id="@+id/cancelButton"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/maroon"
             android:text="CANCEL"
-            android:backgroundTint="#800000"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="8dp"/>
+            android:textColor="@android:color/white" />
 
         <Button
             android:id="@+id/addButton"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/maroon"
             android:text="ADD"
-            android:backgroundTint="#800000"
-            android:textColor="#FFFFFF"/>
-
+            android:textColor="@android:color/white" />
     </LinearLayout>
+
 </LinearLayout>

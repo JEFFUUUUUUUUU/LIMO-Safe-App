@@ -2,24 +2,24 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="320dp"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="24dp"
+    android:background="@drawable/dialog_background"
     android:gravity="center"
-    android:background="@drawable/dialog_background">
+    android:orientation="vertical"
+    android:padding="24dp">
 
     <ProgressBar
+        android:id="@+id/loadingSpinner"
         android:layout_width="48dp"
         android:layout_height="48dp"
-        android:indeterminateTint="#800000"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="16dp"
+        android:indeterminateTint="@color/maroon" />
 
     <TextView
         android:id="@+id/loadingText"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Loading..."
-        android:textSize="16sp"
-        android:textColor="#800000"
-        android:gravity="center"/>
+        android:textColor="@color/maroon"
+        android:textSize="18sp" />
 
 </LinearLayout>

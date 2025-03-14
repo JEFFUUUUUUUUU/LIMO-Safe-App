@@ -742,10 +742,10 @@ class DeviceAdapter(
         holder.deviceNameText.text = device.name
         holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
         holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
-        
+
         holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
         holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
-        
+
         holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
         holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
 
@@ -783,7 +783,7 @@ class DeviceAdapter(
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
         PopupMenu(view.context, view).apply {
             inflate(R.menu.user_options_menu)
-            
+
             // Set text color for all menu items
             for (i in 0 until menu.size()) {
                 val item = menu.getItem(i)
