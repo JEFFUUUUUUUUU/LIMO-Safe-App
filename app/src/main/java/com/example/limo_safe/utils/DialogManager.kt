@@ -31,118 +31,43 @@ class DialogManager(private val context: Context) {
         return dialog
     }
 
-    private fun createMorseCodeDialogInternal(
+    fun createMorseCodeDialogInternal(
         code: String,
         remainingTries: Int,
         remainingCooldown: Long = 0,
         onPlayClick: (Button, TextView) -> Unit
     ): AlertDialog {
-        // Create a custom layout for the dialog
-        val layout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 30)
+        // Inflate the XML layout
+        val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
+
+        // Find views from the layout
+        val codeDisplayText = dialogView.findViewById<TextView>(R.id.codeDisplayText)
+        val triesText = dialogView.findViewById<TextView>(R.id.triesText)
+        val cooldownText = dialogView.findViewById<TextView>(R.id.cooldownText)
+        val playButton = dialogView.findViewById<Button>(R.id.playButton)
+
+        // Set values
+        codeDisplayText.text = code
+        triesText.text = "Remaining tries: $remainingTries"
+
+        // Initialize cooldown if needed
+        if (remainingCooldown > 0) {
+            cooldownText.text = "Please wait ${remainingCooldown / 1000} seconds before next try"
+            playButton.isEnabled = false
+            playButton.alpha = 0.5f
+        } else {
+            cooldownText.text = ""
         }
 
-        // Code display text - only show OTP part
-        val codeDisplayTextView = TextView(context).apply {
-            val otp = code.drop(1)  // Remove tag character
-            val fullText = "Code: $otp"
+        // Set button click listener
+        playButton.setOnClickListener { onPlayClick(playButton, cooldownText) }
 
-            val spannableString = SpannableString(fullText)
-            spannableString.setSpan(
-                StyleSpan(Typeface.BOLD),
-                fullText.indexOf(otp),
-                fullText.indexOf(otp) + otp.length,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-
-            text = spannableString
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(context.resources.getColor(android.R.color.black))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 30
-            }
-        }
-
-        // Main instruction text
-        val instructionText = TextView(context).apply {
-            text = "Align first your phone flashlight to the Sensor of your LIMO-Safe while transmitting data. Thank you"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 30
-            }
-        }
-
-        // Remaining tries text
-        val triesText = TextView(context).apply {
-            text = "Remaining tries: $remainingTries"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(context.resources.getColor(android.R.color.darker_gray))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        triesTextView = triesText  // Store reference to update later
-
-        // Cooldown text
-        val cooldownText = TextView(context).apply {
-            visibility = android.view.View.VISIBLE
-            text = if (remainingCooldown > 0) "Please wait ${remainingCooldown / 1000} seconds before next try" else ""
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(context.resources.getColor(android.R.color.holo_orange_dark))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = 10
-            }
-        }
-
-        // Create custom button layout
-        val buttonLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setPadding(50, 20, 50, 20)
-        }
-
-        val playButton = Button(context).apply {
-            text = "Play Morse Code"
-            isEnabled = remainingCooldown <= 0
-            alpha = if (remainingCooldown <= 0) 1.0f else 0.5f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setOnClickListener { onPlayClick(this, cooldownText) }
-        }
-
-        layout.apply {
-            addView(codeDisplayTextView)
-            addView(instructionText)
-            addView(triesText)
-            addView(cooldownText)
-            buttonLayout.addView(playButton)
-            addView(buttonLayout)
-        }
+        // Store reference for updating tries later
+        triesTextView = triesText
 
         return AlertDialog.Builder(context)
             .setTitle("Play Morse Code")
-            .setView(layout)
+            .setView(dialogView)
             .setCancelable(false)
             .create()
     }
