@@ -15,7 +15,7 @@
 void setup() {
     Serial.begin(115200);
     Serial.println("\n🚀 Starting LIMO SAFE Morse System...");
-
+    
     // Initialize light sensor
     setupLightSensor();
 
@@ -24,7 +24,6 @@ void setup() {
         Serial.println("❌ WiFi setup failed! Restarting...");
         delay(3000);
         ESP.restart();
-        return;
     }
 
     // Setup Firebase after WiFi is connected
@@ -32,18 +31,16 @@ void setup() {
         Serial.println("❌ Firebase setup failed! Restarting...");
         delay(3000);
         ESP.restart();
-        return;
     }
 
     // Initialize Nano communication
-    Serial2.begin(9600, SERIAL_8N1, 16, 17); // RX, TX
-    Serial.println("✅ Nano UART Initialized");
+    setupNanoCommunication();
 
     Serial.println("✅ System initialization complete!");
 }
 
 void loop() {
-    // Check WiFi connection
+    // Ensure WiFi is connected
     if (!checkWiFiConnection()) {
         return; // Skip loop if WiFi is not connected
     }
@@ -51,7 +48,7 @@ void loop() {
     // Update device status in Firebase periodically
     static unsigned long lastStatusUpdate = 0;
     if (millis() - lastStatusUpdate >= 60000) { // Every minute
-        updateDeviceStatus(true);
+        updateDeviceStatus(true, false, true);
         lastStatusUpdate = millis();
     }
 
@@ -62,6 +59,7 @@ void loop() {
         String newSSID, newPassword;
         if (checkForNewWiFiCredentials(newSSID, newPassword)) {
             // Get current credentials from flash
+            Preferences wifiPrefs;
             wifiPrefs.begin("wifi", false);
             String currentSSID = wifiPrefs.getString("ssid", "");
             String currentPass = wifiPrefs.getString("pass", "");
@@ -70,6 +68,8 @@ void loop() {
             // Only update if credentials are different
             if (currentSSID != newSSID || currentPass != newPassword) {
                 Serial.println("📡 New WiFi credentials received from Firebase");
+                Serial.print("📡 New SSID: ");
+                Serial.println(newSSID);
                 if (updateWiFiCredentials(newSSID.c_str(), newPassword.c_str())) {
                     Serial.println("📡 Reconnecting with new credentials...");
                     WiFi.disconnect();
@@ -80,6 +80,8 @@ void loop() {
         }
     }
 
+    // Handle Nano communication (process safe status)
+    handleNanoData();
     // Process light sensor input (Morse code)
     processLightInput();
 }

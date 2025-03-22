@@ -25,7 +25,7 @@ extern String deviceId;
 void tokenStatusCallback(TokenInfo info);
 bool setupFirebase();
 bool isFirebaseReady();
-bool updateDeviceStatus(bool isOnline);
+bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure);
 bool updateWiFiCredentials(const String& ssid, const String& password);
 bool checkForNewWiFiCredentials(String& newSSID, String& newPassword);
 bool verifyOTP(String receivedOTP);

@@ -17,7 +17,7 @@ public:
     static bool registerUserToDevice(FirebaseData& fbdo, const String& deviceId, const String& userId, const String& userTag, bool isFirstUser);
     
     // Update user's registered devices list, maintains array of devices
-    static bool updateUserDeviceRegistration(FirebaseData& fbdo, const String& userId, const String& deviceId);
+    static bool updateUserDeviceRegistration(FirebaseData& fbdo, const String& userId, const String& deviceId, const String& userRole);
 };
 
 #endif

@@ -5,8 +5,15 @@ bool UserManager::isFirstTimeUser(FirebaseData& fbdo, const String& deviceId) {
     String regPath = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE;
     
     if (!Firebase.RTDB.getJSON(&fbdo, regPath.c_str())) {
-        Serial.println("ℹ️ No registered users found - first time setup");
-        return true;  // If path doesn't exist, it's first time setup
+        // Check specific error reason before assuming first-time setup
+        if (fbdo.errorReason() == "path not found") {
+            Serial.println("ℹ️ No registered users found - first time setup");
+            return true;
+        } else {
+            Serial.print("❌ Firebase error: ");
+            Serial.println(fbdo.errorReason());
+            return false; // Return an error state instead of assuming first time
+        }
     }
     
     FirebaseJson regJson = fbdo.jsonObject();
@@ -62,77 +69,51 @@ bool UserManager::verifyUserTag(FirebaseData& fbdo, const String& userTag, const
 }
 
 bool UserManager::registerUserToDevice(FirebaseData& fbdo, const String& deviceId, const String& userId, const String& userTag, bool isFirstUser) {
-    // First check if user is already registered to this device
-    String userDevicePath = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE + "/" + userTag;
-    if (Firebase.RTDB.getString(&fbdo, userDevicePath.c_str())) {
-        Serial.println("ℹ️ User is already registered to this device");
-        return true;  // Consider this a success case
-    }
-
-    // If not first user, check if they are approved in Firebase
-    if (!isFirstUser) {
-        String approvalPath = String(DEVICE_PATH) + deviceId + APPROVED_USERS_NODE + "/" + userId;
-        if (!Firebase.RTDB.getBool(&fbdo, approvalPath.c_str())) {
-            Serial.println("❌ Access Denied: User not approved by first user");
-            return false;
-        }
-    }
-
-    // Create the registeredUsers node with the user data
-    FirebaseJson regJson;
-    regJson.set(userTag, userId);  // Store userId under userTag
-    
-    // Set the JSON at the registeredUsers node
+    // Get existing registered users first
     String regPath = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE;
-    if (!Firebase.RTDB.setJSON(&fbdo, regPath.c_str(), &regJson)) {
+    FirebaseJson existingRegJson;
+    
+    if (Firebase.RTDB.getJSON(&fbdo, regPath.c_str())) {
+        existingRegJson = fbdo.jsonObject();
+    }
+    
+    // Update rather than replace
+    existingRegJson.set(userTag, userId);
+    
+    // Set the updated JSON
+    if (!Firebase.RTDB.updateNode(&fbdo, regPath.c_str(), &existingRegJson)) {
         Serial.print("❌ Failed to register user to device: ");
         Serial.println(fbdo.errorReason());
         return false;
     }
-
+    
     Serial.println("✅ User registered successfully");
     return true;
 }
 
-bool UserManager::updateUserDeviceRegistration(FirebaseData& fbdo, const String& userId, const String& deviceId) {
+bool UserManager::updateUserDeviceRegistration(FirebaseData& fbdo, const String& userId, const String& deviceId, const String& userRole) {
     String userPath = String(USERS_PATH) + userId;
-    FirebaseJsonArray deviceArray;
-
+    FirebaseJson updateUser;
+    FirebaseJson deviceRoles;
+    
+    // Check if user already has registered devices
     if (Firebase.RTDB.getJSON(&fbdo, userPath + "/registeredDevices")) {
-        FirebaseJsonData devicesData;
         FirebaseJson userData = fbdo.jsonObject();
-        userData.get(devicesData, "registeredDevices");
-        
-        if (devicesData.success && devicesData.type == "array") {
-            FirebaseJsonArray existingArray;
-            existingArray.setJsonArrayData(devicesData.stringValue);
-            deviceArray = existingArray;
-        }
+        deviceRoles = userData;
     }
-
-    // Check if device already exists in array
-    bool deviceExists = false;
-    size_t len = deviceArray.size();
-    for (size_t i = 0; i < len; i++) {
-        FirebaseJsonData item;
-        deviceArray.get(item, i);
-        if (item.success && item.stringValue == deviceId) {
-            deviceExists = true;
-            break;
-        }
+    
+    // Set or update the role for this device
+    deviceRoles.set(deviceId, userRole);
+    
+    // Update the user's registered devices with the role
+    updateUser.set("registeredDevices", deviceRoles);
+    
+    if (!Firebase.RTDB.updateNode(&fbdo, userPath.c_str(), &updateUser)) {
+        Serial.print("❌ Failed to update user's device registration: ");
+        Serial.println(fbdo.errorReason());
+        return false;
     }
-
-    if (!deviceExists) {
-        deviceArray.add(deviceId);
-        FirebaseJson updateUser;
-        updateUser.set("registeredDevices", deviceArray);
-        
-        if (!Firebase.RTDB.updateNode(&fbdo, userPath.c_str(), &updateUser)) {
-            Serial.print("❌ Failed to update user's device registration: ");
-            Serial.println(fbdo.errorReason());
-            return false;
-        }
-    }
-
+    
+    Serial.println("✅ User device registration updated with role");
     return true;
 }
