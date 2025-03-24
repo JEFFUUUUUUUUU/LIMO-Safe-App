@@ -32,6 +32,15 @@
                 android:textStyle="bold" />
 
             <ImageButton
+                android:id="@+id/fingerprintButton"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_fingerprint"
+                android:tint="@android:color/white" />
+
+            <ImageButton
                 android:id="@+id/wifiButton"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
