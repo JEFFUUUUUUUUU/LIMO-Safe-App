@@ -6,7 +6,6 @@
     android:orientation="vertical"
     android:background="#FFFFFF">
 
-    <!-- Content Container with white background -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -20,7 +19,6 @@
             android:orientation="vertical"
             android:background="#FFFFFF">
 
-            <!-- Search Bar -->
             <EditText
                 android:id="@+id/searchInput"
                 android:layout_width="match_parent"
@@ -33,7 +31,6 @@
                 android:textSize="16sp"
                 android:textColorHint="#80800000" />
 
-            <!-- Column Headers -->
             <TableLayout
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
@@ -94,7 +91,17 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="0.8"
-                        android:text="Event"
+                        android:text="Status"
+                        android:textColor="@android:color/white"
+                        android:textStyle="bold"
+                        android:textSize="14sp"
+                        android:gravity="center" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Event Type"
                         android:textColor="@android:color/white"
                         android:textStyle="bold"
                         android:textSize="14sp"
@@ -103,7 +110,6 @@
                 </TableRow>
             </TableLayout>
 
-            <!-- Log List with white background -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/logsRecyclerView"
                 android:layout_width="match_parent"

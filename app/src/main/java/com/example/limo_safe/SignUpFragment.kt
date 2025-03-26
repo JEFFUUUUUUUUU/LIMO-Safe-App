@@ -127,7 +127,8 @@ class SignUpFragment : Fragment() {
         fun attemptTagGeneration() {
             val newTag = characters.random().toString()
 
-            database.orderByChild("tag").equalTo(newTag).get()
+            // Query users who have this tag
+            database.child("users").orderByChild("tag").equalTo(newTag).get()
                 .addOnSuccessListener { snapshot ->
                     if (snapshot.exists()) {
                         attemptTagGeneration()
