@@ -18,8 +18,8 @@ class SessionManager(
     private var handler: Handler = Handler(Looper.getMainLooper())
     private var sessionTimeoutRunnable: Runnable? = null
     private var warningRunnable: Runnable? = null
-    private val SESSION_TIMEOUT = 300000L // 5 minutes in milliseconds
-    private val WARNING_TIME = 290000L // Show warning 10 seconds before timeout (5 minutes - 10 seconds)
+    private val SESSION_TIMEOUT = 150000L // 5 minutes in milliseconds
+    private val WARNING_TIME = 140000L // Show warning 10 seconds before timeout (5 minutes - 10 seconds)
     private val PREFS_NAME = "LIMOSafePrefs"
     private val LAST_GENERATE_TIME_KEY = "last_generate_time"
     private val KEY_MORSE_STATE_ACTIVE = "morse_state_active"
