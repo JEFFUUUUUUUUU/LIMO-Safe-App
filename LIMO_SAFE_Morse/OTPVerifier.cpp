@@ -1,6 +1,7 @@
 #include "OTPVerifier.h"
 #include "FirebaseHandler.h"
 #include "UserManager.h"
+#include "RGBLed.h"
 
 bool OTPVerifier::validateFormat(const String& receivedOTP, String& userTag, String& actualOTP) {
     Serial.print("Validating OTP format: ");
@@ -122,6 +123,9 @@ bool OTPVerifier::verifyOTPCode(FirebaseData& fbdo, const String& deviceId, cons
         
         return true;
     } else {
+        setLEDStatus(STATUS_OTP_ERROR);
+        delay(3000);
+        setColorRGB(COLOR_OFF);
         Serial.println("❌ Invalid OTP");
         Serial.print("Expected (without tag): ");
         Serial.println(storedOTPWithoutTag);

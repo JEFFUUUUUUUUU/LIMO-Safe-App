@@ -3,6 +3,7 @@
 #include "OTPVerifier.h"
 #include "UserManager.h"
 #include "NanoCommunicator.h"
+#include "RGBLed.h"
 #include <Preferences.h>
 
 // Firebase objects
@@ -52,66 +53,85 @@ bool setupFirebase() {
     }
     preferences.end();
     
+    // Validate Firebase configuration
+    if (strlen(FIREBASE_HOST) == 0 || strlen(FIREBASE_AUTH) == 0) {
+        Serial.println("❌ Firebase host or auth token not configured!");
+        return false;
+    }
+    
     // Set the database URL and auth token
     config.database_url = FIREBASE_HOST;
     config.signer.tokens.legacy_token = FIREBASE_AUTH;
     config.token_status_callback = tokenStatusCallback;
 
-    Firebase.begin(&config, &auth);
-    Firebase.reconnectWiFi(true);
-    
-    // Set database read timeout to 1 minute
-    Firebase.RTDB.setReadTimeout(&fbdo, 1000 * 60);
-    // Set write size and response size to 4KB (minimum size)
-    Firebase.RTDB.setwriteSizeLimit(&fbdo, "tiny");
-
-    delay(1000); // Give Firebase a moment to initialize
-
-    if (Firebase.ready()) {
-        Serial.println("✅ Firebase Ready!");
+    // Attempt Firebase initialization with retry mechanism
+    int initAttempts = 3;
+    while (initAttempts > 0) {
+        Firebase.begin(&config, &auth);
+        Firebase.reconnectWiFi(true);
         
-        // Initialize device data if needed
-        String path = String(DEVICE_PATH) + deviceId;
-        if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
-            FirebaseJson json;
-            json.set("id", deviceId);
-            json.set("status", "online");
-            json.set("lastSeen", millis());
-            
-            // Initialize WiFi node with connected = false as default
-            FirebaseJson wifiJson;
-            wifiJson.set("connected", false);  // Default to false
-            json.set("wifi", wifiJson);
-            
-            if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
-                Serial.println("✅ Device data initialized in Firebase");
-            } else {
-                Serial.println("❌ Failed to initialize device data");
-                return false;
-            }
+        // Set database read timeout to 1 minute
+        Firebase.RTDB.setReadTimeout(&fbdo, 1000 * 60);
+        // Set write size and response size to 4KB (minimum size)
+        Firebase.RTDB.setwriteSizeLimit(&fbdo, "tiny");
+
+        delay(1000); // Give Firebase a moment to initialize
+
+        if (Firebase.ready()) {
+            break;
         }
         
-        // Update device status
-        if (updateDeviceStatus(true, false, true)) {
-            Serial.println("✅ Device status updated in Firebase");
-            
-            // Now that we're connected, update the WiFi connection status to true
-            String wifiPath = path + WIFI_NODE + "/connected";
-            Firebase.RTDB.setBool(&fbdo, wifiPath.c_str(), true);
-            Serial.println("✅ WiFi connection status updated to 'connected'");
-            
-            return true;
+        Serial.print("🔄 Firebase initialization attempt failed. Retries left: ");
+        Serial.println(initAttempts - 1);
+        initAttempts--;
+        delay(2000); // Wait before retrying
+    }
+
+    // Check if Firebase initialization was successful
+    if (!Firebase.ready()) {
+        Serial.println("❌ Firebase initialization failed after multiple attempts!");
+        return false;
+    }
+
+    Serial.println("✅ Firebase Ready!");
+    
+    // Initialize device data if needed
+    String path = String(DEVICE_PATH) + deviceId;
+    if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
+        FirebaseJson json;
+        json.set("id", deviceId);
+        json.set("status", "online");
+                
+        // Initialize WiFi node with connected = false as default
+        FirebaseJson wifiJson;
+        wifiJson.set("connected", false);  // Default to false
+        json.set("wifi", wifiJson);
+        
+        if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
+            Serial.println("✅ Device data initialized in Firebase");
         } else {
-            Serial.println("❌ Failed to update device status");
+            Serial.println("❌ Failed to initialize device data");
             return false;
         }
+    }
+    
+    // Update device status
+    if (updateDeviceStatus(false, false, false, false, false)) {
+        Serial.println("✅ Device status updated in Firebase");
+        
+        // Now that we're connected, update the WiFi connection status to true
+        String wifiPath = path + WIFI_NODE + "/connected";
+        Firebase.RTDB.setBool(&fbdo, wifiPath.c_str(), true);
+        Serial.println("✅ WiFi connection status updated to 'connected'");
+        
+        return true;
     } else {
-        Serial.println("❌ Firebase initialization failed!");
+        Serial.println("❌ Failed to update device status");
         return false;
     }
 }
 
-bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
+bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure, bool isOtp, bool isFingerprint) {
     if (!Firebase.ready()) {
         Serial.println("❌ Firebase not ready when updating device status");
         return false;
@@ -123,7 +143,8 @@ bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
     json.set("status/online", isOnline);  // ✅ Update 'online' status
     json.set("status/locked", isLocked);  // ✅ Update 'locked' status
     json.set("status/secure", isSecure);  // ✅ Update 'secure' status
-    json.set("status/lastUpdated", millis());  // Timestamp for the update
+    json.set("status/otp", isOtp);
+    json.set("status/fingerprint", isFingerprint);
 
     if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
         Serial.print("❌ Failed to update device status: ");
@@ -138,10 +159,13 @@ bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
     Serial.print(isLocked ? "true" : "false");
     Serial.print(", Secure=");
     Serial.println(isSecure ? "true" : "false");
+    Serial.print(", OTP=");
+    Serial.println(isOtp ? "true" : "false");
+    Serial.print(", Fingerprint=");
+    Serial.println(isFingerprint ? "true" : "false");
 
     return true;
 }
-
 
 bool updateWiFiCredentials(const String& ssid, const String& password) {
     if (!Firebase.ready()) {
@@ -151,12 +175,12 @@ bool updateWiFiCredentials(const String& ssid, const String& password) {
 
     String path = String(DEVICE_PATH) + deviceId + WIFI_NODE;
     
-    FirebaseJson json;
-    json.set("ssid", ssid);
-    json.set("password", password);
-    json.set("lastUpdated", millis());
+    FirebaseJson wifiJson;
+    wifiJson.set("ssid", ssid);
+    wifiJson.set("password", password);
+    wifiJson.set("lastUpdated", millis());
 
-    if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
+    if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &wifiJson)) {
         Serial.print("❌ Failed to update WiFi credentials: ");
         Serial.println(fbdo.errorReason());
         return false;
@@ -165,6 +189,7 @@ bool updateWiFiCredentials(const String& ssid, const String& password) {
     Serial.println("✅ WiFi credentials updated in Firebase");
     return true;
 }
+
 
 bool checkForNewWiFiCredentials(String& newSSID, String& newPassword) {
     if (!isFirebaseReady()) {
@@ -204,7 +229,6 @@ bool checkForNewWiFiCredentials(String& newSSID, String& newPassword) {
     return false;
 }
 
-
 bool verifyOTP(String receivedOTP) {
     if (!Firebase.ready()) {
         Serial.println("❌ Firebase not ready for OTP verification");
@@ -226,10 +250,10 @@ bool verifyOTP(String receivedOTP) {
 
     // Check if user already has a role on this device
     String userRole = "user"; // Default role
-    
+   
     // Path to the user's role for this device
     String userRolePath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId;
-    
+   
     // Try to get existing role
     if (Firebase.RTDB.getString(&fbdo, userRolePath.c_str())) {
         if (fbdo.stringData().length() > 0) {
@@ -254,8 +278,32 @@ bool verifyOTP(String receivedOTP) {
         return false;
     }
 
+    // Prepare log entry for device logs
+    FirebaseJson logEntry;
+    // Use current time as timestamp
+    logEntry.set("timestamp", millis());
+    logEntry.set("event", "otp_verified");
+    logEntry.set("user/id", userId);
+    logEntry.set("user/tag", userTag);
+    logEntry.set("role", userRole);
+    logEntry.set("is_first_user", isFirstUser);
+
+    // Generate a unique log key
+    String logPath = String("devices/") + deviceId + "/logs";
+    FirebaseJson *json = &logEntry;
+    
+    // Use the correct push method
+    if (!Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), json)) {
+        Serial.println("❌ Failed to log OTP verification");
+        Serial.println(fbdo.errorReason().c_str());
+        // This is not a critical failure, so we'll continue
+    }
+
     Serial.println("✅ OTP verified successfully");
     sendCommandToNano("UNLOCK");
+    setLEDStatus(STATUS_UNLOCKED);
+    delay(3000);
+    setColorRGB(COLOR_OFF);
     return true;
 }
 

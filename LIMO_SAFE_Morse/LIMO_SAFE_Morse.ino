@@ -10,11 +10,14 @@
 #include "LightSensor.h"
 #include "OTPVerifier.h"
 #include "UserManager.h"
+#include "RGBLed.h"
 #include "secrets.h"
 
 void setup() {
     Serial.begin(115200);
     Serial.println("\n🚀 Starting LIMO SAFE Morse System...");
+
+    initRGB();
     
     // Initialize light sensor
     setupLightSensor();
@@ -26,6 +29,10 @@ void setup() {
         ESP.restart();
     }
 
+    // Capture WiFi details immediately after successful connection
+    String connectedSSID = WiFi.SSID();
+    IPAddress connectedIP = WiFi.localIP();
+    
     // Setup Firebase after WiFi is connected
     if (!setupFirebase()) {
         Serial.println("❌ Firebase setup failed! Restarting...");
@@ -33,8 +40,28 @@ void setup() {
         ESP.restart();
     }
 
+    // Log WiFi connection to Firebase
+    if (Firebase.ready()) {
+        time_t now = time(nullptr);
+        FirebaseJson logEntry;
+        logEntry.set("timestamp", (double) now);
+        logEntry.set("event", "wifi_connected");
+        logEntry.set("ssid", connectedSSID);
+        logEntry.set("ip_address", connectedIP.toString());
+        
+        String logPath = String("devices/") + deviceId + "/logs";
+        
+        if (Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry)) {
+            Serial.println("✅ WiFi connection logged during system startup");
+        } else {
+            Serial.println("❌ Failed to log WiFi connection during system startup");
+            Serial.println(fbdo.errorReason().c_str());
+        }
+    }
+
     // Initialize Nano communication
     setupNanoCommunication();
+    updateDeviceStatus(false, false, false, false, false);
 
     Serial.println("✅ System initialization complete!");
 }
@@ -43,13 +70,6 @@ void loop() {
     // Ensure WiFi is connected
     if (!checkWiFiConnection()) {
         return; // Skip loop if WiFi is not connected
-    }
-
-    // Update device status in Firebase periodically
-    static unsigned long lastStatusUpdate = 0;
-    if (millis() - lastStatusUpdate >= 60000) { // Every minute
-        updateDeviceStatus(true, false, true);
-        lastStatusUpdate = millis();
     }
 
     // Check for new WiFi credentials

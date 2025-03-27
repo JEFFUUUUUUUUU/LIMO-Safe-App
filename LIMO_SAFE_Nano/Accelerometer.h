@@ -7,8 +7,14 @@
 
 extern const int accelIntPin;
 extern volatile bool motionDetected;
+extern bool accelInitialized;
 
-void initializeAccelerometer();
+// Change the return type to bool to match the implementation
+bool initializeAccelerometer();
 void motionInterrupt(); // Interrupt handler
+
+// Additional utility functions
+bool isMotionDetected();
+void resetMotionDetection();
 
 #endif // ACCELEROMETER_H

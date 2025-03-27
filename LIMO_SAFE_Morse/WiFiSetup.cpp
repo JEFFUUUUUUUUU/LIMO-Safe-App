@@ -1,6 +1,7 @@
 #include "WiFiSetup.h"
 #include "secrets.h"
 #include "FirebaseHandler.h"
+#include "RGBLed.h"
 #include <WiFi.h>
 #include <Preferences.h>
 
@@ -22,6 +23,15 @@ extern String deviceId;
 
 // Define the global wifiPrefs instance
 Preferences wifiPrefs;
+
+const char* NTP_SERVERS[] = {
+    "time.google.com",
+    "pool.ntp.org",
+    "time.cloudflare.com"
+};
+const int NTP_SERVER_COUNT = sizeof(NTP_SERVERS) / sizeof(NTP_SERVERS[0]);
+const long GMT_OFFSET_SEC = 0;
+const int DAYLIGHT_OFFSET_SEC = 0;
 
 // Forward declarations for helper functions
 bool updateFirebaseWiFiStatus(bool connected);
@@ -45,6 +55,7 @@ bool setupWiFi() {
         savedPass = WIFI_PASSWORD;
     }
 
+    setLEDStatus(STATUS_OFFLINE);
     Serial.print("📡 Attempting to connect to: ");
     Serial.println(savedSSID);
     
@@ -64,18 +75,20 @@ bool setupWiFi() {
     
     // Handle successful connection
     if (WiFi.status() == WL_CONNECTED) {
+        setLEDStatus(STATUS_ONLINE);
         Serial.print("✅ Connected to WiFi. IP: ");
         Serial.println(WiFi.localIP());
         
         // Reset failure count
         saveFailedAttempts(0);
-        
+        performTimeSync(); 
         // Update Firebase status if possible (non-blocking)
         updateFirebaseWiFiStatus(true);
         return true;
     } 
     // Handle connection failure
     else {
+        setLEDStatus(STATUS_OFFLINE);
         Serial.println("❌ Failed to connect to WiFi");
         
         // Increment and check failed attempts
@@ -104,6 +117,7 @@ bool checkWiFiConnection() {
         lastCheck = millis();
         
         if (WiFi.status() != WL_CONNECTED) {
+            setLEDStatus(STATUS_OFFLINE);
             Serial.println("⚠️ WiFi connection lost. Attempting to reconnect...");
             
             // Update Firebase status if possible (non-blocking)
@@ -115,7 +129,7 @@ bool checkWiFiConnection() {
             return setupWiFi();
         }
     }
-    
+    setLEDStatus(STATUS_ONLINE);
     return WiFi.status() == WL_CONNECTED;
 }
 
@@ -172,8 +186,6 @@ void clearFlashStorage() {
         Serial.println("❌ Failed to access preferences for clearing");
     }
 }
-
-// Helper Functions
 
 void loadWiFiCredentials(String &ssid, String &password, int &failedAttempts) {
     // Safely open preferences
@@ -244,4 +256,78 @@ bool updateFirebaseWiFiStatus(bool connected) {
     }
     
     return success;
+}
+
+void performTimeSync() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("❌ Cannot sync time: WiFi not connected");
+        return;
+    }
+
+    Serial.println("\n🕒 Attempting NTP Time Synchronization...");
+
+    bool syncSuccessful = false;
+    for (int i = 0; i < NTP_SERVER_COUNT; i++) {
+        Serial.print("- Trying NTP Server: ");
+        Serial.println(NTP_SERVERS[i]);
+
+        configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVERS[i]);
+
+        unsigned long startAttemptTime = millis();
+        while (!isTimeSynchronized() && millis() - startAttemptTime < 10000) {
+            delay(100);
+        }
+
+        if (isTimeSynchronized()) {
+            syncSuccessful = true;
+            break;
+        }
+    }
+
+    if (syncSuccessful) {
+        Serial.println("✅ Time Synchronization Successful!");
+        printCurrentTime();
+    } else {
+        Serial.println("❌ Time Synchronization Failed");
+        printTimeErrorDiagnostics();
+    }
+}
+
+bool isTimeSynchronized() {
+    time_t now = time(nullptr);
+    return now > 1609459200;  // Check if time is after Jan 1, 2021
+}
+
+void printCurrentTime() {
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
+
+    Serial.println("Current Time:");
+    Serial.print("- Formatted: ");
+    Serial.println(buffer);
+    Serial.print("- Epoch Time: ");
+    Serial.println(now);
+}
+
+void printTimeErrorDiagnostics() {
+    Serial.println("Time Sync Diagnostics:");
+    Serial.print("- WiFi Status: ");
+    switch(WiFi.status()) {
+        case WL_CONNECTED: Serial.println("Connected"); break;
+        case WL_NO_SSID_AVAIL: Serial.println("No SSID Available"); break;
+        case WL_CONNECT_FAILED: Serial.println("Connection Failed"); break;
+        case WL_DISCONNECTED: Serial.println("Disconnected"); break;
+        default: Serial.println("Unknown Status"); break;
+    }
+
+    Serial.println("Possible Causes:");
+    Serial.println("1. Firewall blocking NTP");
+    Serial.println("2. Unstable connection");
+    Serial.println("3. DNS resolution issues");
+    Serial.println("4. NTP server unavailability");
 }
