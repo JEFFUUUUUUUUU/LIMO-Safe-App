@@ -19,7 +19,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ServerValue
+import com.google.firebase.database.GenericTypeIndicator
 import com.google.firebase.database.ValueEventListener
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -120,230 +120,124 @@ class LogsFragment : Fragment() {
         }
     }
 
-    private fun saveLogToFirebase(log: LogEntry) {
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return // ✅ Retrieve user ID inside function
-
-        val logRef = database.child("users").child(currentUserId).child("logs").push()
-        logRef.setValue(log)
-    }
-
     private val processedLogTimestamps = mutableSetOf<Long>()
 
     private fun fetchLogs() {
         val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return
 
-        database.child("users").child(currentUserId).child("registeredDevices")
+        database.child("users").child(currentUserId).child("logs")
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    val adminDevices = snapshot.children
-                        .filter { it.getValue(String::class.java) == "admin" }
-                        .mapNotNull { it.key }
+                    val retrievedLogs = mutableListOf<LogEntry>()
 
-                    val userDevices = snapshot.children.mapNotNull { it.key }
+                    // Use GenericTypeIndicator for Map retrieval
+                    val logMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
 
-                    if (userDevices.isNotEmpty()) {
-                        // ✅ Clear logs before adding new ones to prevent duplicates
-                        allLogs.clear()
-                        processedLogTimestamps.clear()
+                    for (logSnapshot in snapshot.children) {
+                        val logData = logSnapshot.getValue(logMapType)
 
-                        database.child("users").child(currentUserId).child("logs")
-                            .addListenerForSingleValueEvent(object : ValueEventListener {
-                                override fun onDataChange(snapshot: DataSnapshot) {
-                                    val retrievedLogs = mutableListOf<LogEntry>()
+                        if (logData != null) {
+                            val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
 
-                                    for (logSnapshot in snapshot.children) {
-                                        logSnapshot.getValue(LogEntry::class.java)?.let { newLog ->
-                                            // ✅ Prevent duplicate logs using timestamp
-                                            if (!processedLogTimestamps.contains(newLog.timestamp)) {
-                                                retrievedLogs.add(newLog)
-                                                processedLogTimestamps.add(newLog.timestamp)
-                                            }
-                                        }
-                                    }
-
-                                    // ✅ Replace logs instead of appending
-                                    allLogs.clear()
-                                    allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                                    logsAdapter.updateLogs(allLogs)
-                                }
-
-                                override fun onCancelled(error: DatabaseError) {
-                                    Log.e("LogsFragment", "Error fetching logs", error.toException())
-                                }
-                            })
-
-                        val firstDeviceId = userDevices.firstOrNull()
-                        if (firstDeviceId != null) {
-                            fetchUserEvents(firstDeviceId)
-                        } else {
-                            Log.e("fetchLogs", "No valid device ID found for user: $currentUserId")
+                            // Prevent duplicate logs using timestamp
+                            if (!processedLogTimestamps.contains(log.timestamp)) {
+                                retrievedLogs.add(log)
+                                processedLogTimestamps.add(log.timestamp)
+                            }
                         }
-
-                        fetchDeviceEvents(adminDevices)
                     }
+
+                    // Replace logs instead of appending
+                    allLogs.clear()
+                    allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
+                    logsAdapter.updateLogs(allLogs)
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    Log.e("LogsFragment", "Error fetching registered devices", error.toException())
+                    Log.e("LogsFragment", "Error fetching logs", error.toException())
                 }
             })
     }
 
-    private val lastLoggedRolesPerDevice = mutableMapOf<String, MutableMap<String, String>>() // 🔥 Stores last known roles per device & user
-
-    private fun fetchUserEvents(deviceId: String) {
-        val usersReference = database.child("devices").child(deviceId).child("registeredUsers")
-
-        usersReference.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(usersSnapshot: DataSnapshot) {
-                if (!usersSnapshot.exists()) {
-                    Log.e("fetchUserEvents", "No registered users found for device: $deviceId")
-                    return
-                }
-
-                val userEvents = mutableListOf<LogEntry>()
-                val lastRolesForDevice = lastLoggedRolesPerDevice.getOrPut(deviceId) { mutableMapOf() }
-
-                usersSnapshot.children.forEach { userEntry ->
-                    val userId = userEntry.getValue(String::class.java) ?: return@forEach
-
-                    val userDeviceRef = database.child("users").child(userId).child("registeredDevices").child(deviceId)
-
-                    userDeviceRef.addListenerForSingleValueEvent(object : ValueEventListener {
-                        override fun onDataChange(userSnapshot: DataSnapshot) {
-                            val deviceRole = userSnapshot.getValue(String::class.java) ?: "Unknown"
-
-                            database.child("users").child(userId).child("email")
-                                .addListenerForSingleValueEvent(object : ValueEventListener {
-                                    override fun onDataChange(emailSnapshot: DataSnapshot) {
-                                        val email = emailSnapshot.getValue(String::class.java) ?: "Unknown Email"
-
-                                        // Check if role has changed
-                                        if (lastRolesForDevice[userId] != deviceRole) {
-                                            lastRolesForDevice[userId] = deviceRole
-
-                                            val logEntry = LogEntry(
-                                                deviceName = deviceId,
-                                                timestamp = System.currentTimeMillis(),
-                                                status = "Role: $deviceRole",
-                                                userName = email,
-                                                eventType = "User Device Role Change"
-                                            )
-
-                                            // Duplicate prevention
-                                            if (!processedLogTimestamps.contains(logEntry.timestamp)) {
-                                                userEvents.add(logEntry)
-                                                processedLogTimestamps.add(logEntry.timestamp)
-                                                saveLogToFirebase(logEntry)
-                                            }
-                                        }
-                                    }
-
-                                    override fun onCancelled(error: DatabaseError) {
-                                        Log.e("fetchUserEvents", "Error fetching email", error.toException())
-                                    }
-                                })
-                        }
-
-                        override fun onCancelled(error: DatabaseError) {
-                            Log.e("fetchUserEvents", "Error fetching user role", error.toException())
-                        }
-                    })
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("fetchUserEvents", "Error fetching registered users", error.toException())
-            }
-        })
+    enum class EventType {
+        USER_ROLE_UPDATE,
+        OTP_GENERATION,
+        USER_ADDED_TO_DEVICE,
+        USER_REMOVED_FROM_DEVICE,
+        UNKNOWN
     }
 
-    private val lastDeviceStates = mutableMapOf<String, DeviceState>() // Stores last known states
+    private fun convertSnapshotToLogEntry(key: String, logData: Map<String, Any>): LogEntry {
+        // Determine event type with more precise matching
+        val event = logData["event"] as? String ?: "Unknown Event"
+        val eventType = when (event) {
+            "user_role_updated" -> EventType.USER_ROLE_UPDATE
+            "otp" -> EventType.OTP_GENERATION
+            "user_added_to_device" -> EventType.USER_ADDED_TO_DEVICE
+            "user_removed_from_device" -> EventType.USER_REMOVED_FROM_DEVICE
+            else -> EventType.UNKNOWN
+        }
 
-    private fun fetchDeviceEvents(adminDevices: List<String>) {
-        database.child("devices").addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val deviceEvents = mutableListOf<LogEntry>()
+        // Extract timestamp safely
+        val timestamp = (logData["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
-                snapshot.children.forEach { deviceSnapshot ->
-                    val deviceId = deviceSnapshot.key ?: return@forEach
-
-                    if (deviceId !in adminDevices) return@forEach
-
-                    val deviceStatus = deviceSnapshot.child("status")
-
-                    val currentState = DeviceState(
-                        online = deviceStatus.child("online").getValue(Boolean::class.java) ?: false,
-                        locked = deviceStatus.child("locked").getValue(Boolean::class.java) ?: false,
-                        secure = deviceStatus.child("secure").getValue(Boolean::class.java) ?: false
-                    )
-
-                    val lastState = lastDeviceStates[deviceId]
-
-                    // Online Status Log
-                    if (lastState == null || lastState.online != currentState.online) {
-                        val logEntry = LogEntry(
-                            deviceId,
-                            System.currentTimeMillis(),
-                            if (currentState.online) "Online" else "Offline",
-                            "System",
-                            "Device Online Status"
-                        )
-
-                        // Duplicate prevention
-                        if (!processedLogTimestamps.contains(logEntry.timestamp)) {
-                            deviceEvents.add(logEntry)
-                            processedLogTimestamps.add(logEntry.timestamp)
-                            saveLogToFirebase(logEntry)
-                        }
-                    }
-                    if (lastState == null || lastState.locked != currentState.locked) {
-                        val logEntry = LogEntry(
-                            deviceId,
-                            System.currentTimeMillis(),
-                            if (currentState.locked) "Locked" else "Unlocked",
-                            "System",
-                            "Device Lock Status"
-                        )
-
-                        // Duplicate prevention
-                        if (!processedLogTimestamps.contains(logEntry.timestamp)) {
-                            deviceEvents.add(logEntry)
-                            processedLogTimestamps.add(logEntry.timestamp)
-                            saveLogToFirebase(logEntry)
-                        }
-                    }
-                    if (lastState == null || lastState.secure != currentState.secure) {
-                        val logEntry = LogEntry(
-                            deviceId,
-                            System.currentTimeMillis(),
-                            if (currentState.secure) "Secure" else "Unsecure",
-                            "System",
-                            "Device Security Status"
-                        )
-
-                        // Duplicate prevention
-                        if (!processedLogTimestamps.contains(logEntry.timestamp)) {
-                            deviceEvents.add(logEntry)
-                            processedLogTimestamps.add(logEntry.timestamp)
-                            saveLogToFirebase(logEntry)
-                        }
-                    }
-
-                    // Update last known device state
-                    lastDeviceStates[deviceId] = currentState
-                }
-
-                // Add new device events to logs
-                allLogs.addAll(deviceEvents)
-                allLogs.sortByDescending { it.timestamp }
-                logsAdapter.updateLogs(allLogs)
+        // Comprehensive event parsing
+        return when (eventType) {
+            EventType.USER_ROLE_UPDATE -> {
+                val updatedUser = logData["user"] as? Map<String, Any> ?: emptyMap()
+                LogEntry(
+                    deviceName = logData["device"] as? String ?: "",
+                    timestamp = timestamp,
+                    status = "Role: ${logData["newRole"] as? String ?: "Unknown"}",
+                    userName = updatedUser["email"] as? String ?: "Unknown",
+                    eventType = "User Role Update",
+                    uniqueId = key
+                )
             }
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("LogsFragment", "Device events query cancelled", error.toException())
+            EventType.OTP_GENERATION -> {
+                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
+                LogEntry(
+                    deviceName = "System",
+                    timestamp = timestamp,
+                    status = "OTP Generated",
+                    userName = userData["email"] as? String ?: "Unknown",
+                    eventType = "Authentication",
+                    uniqueId = key
+                )
             }
-        })
+            EventType.USER_ADDED_TO_DEVICE -> {
+                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
+                LogEntry(
+                    deviceName = logData["device"] as? String ?: "Unknown",
+                    timestamp = timestamp,
+                    status = "Added to Device",
+                    userName = userData["email"] as? String ?: "Unknown",
+                    eventType = "User Management",
+                    uniqueId = key
+                )
+            }
+            EventType.USER_REMOVED_FROM_DEVICE -> {
+                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
+                LogEntry(
+                    deviceName = logData["device"] as? String ?: "Unknown",
+                    timestamp = timestamp,
+                    status = "Removed from Device",
+                    userName = userData["email"] as? String ?: "Unknown",
+                    eventType = "User Management",
+                    uniqueId = key
+                )
+            }
+            EventType.UNKNOWN -> {
+                LogEntry(
+                    deviceName = "System",
+                    timestamp = timestamp,
+                    status = event,
+                    userName = "System",
+                    eventType = "Unknown Event",
+                    uniqueId = key
+                )
+            }
+        }
     }
 
     companion object {
@@ -364,11 +258,6 @@ class LogsFragment : Fragment() {
         }
     }
 
-    data class DeviceState(
-        val online: Boolean,
-        val locked: Boolean,
-        val secure: Boolean
-    )
 }
 
 data class LogEntry(
@@ -378,15 +267,7 @@ data class LogEntry(
     val userName: String = "",
     val eventType: String = "",
     val uniqueId: String = "" // New field
-){
-    // Firebase requires an empty constructor
-    constructor() : this("", 0, "", "", "Unknown")
-
-    // Helper function to convert timestamp back to Date when needed
-    fun getDate(): Date {
-        return Date(timestamp)
-    }
-}
+)
 
 class LogsAdapter(private var logs: List<LogEntry>) :
     RecyclerView.Adapter<LogsAdapter.LogViewHolder>() {

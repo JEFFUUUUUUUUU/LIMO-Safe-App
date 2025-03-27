@@ -107,9 +107,14 @@ class SignUpFragment : Fragment() {
             val userMap = mapOf(
                 "email" to email,
                 "tag" to userTag,
-                "created_at" to System.currentTimeMillis()
+                "created_at" to System.currentTimeMillis(),
+                "logs" to listOf(
+                    mapOf(
+                        "timestamp" to System.currentTimeMillis(),
+                        "event" to "user_created"
+                    )
+                )
             )
-
             database.child(userId).setValue(userMap)
                 .addOnSuccessListener {
                     showToast("Your user tag is: $userTag\nKeep this for reference!", true)

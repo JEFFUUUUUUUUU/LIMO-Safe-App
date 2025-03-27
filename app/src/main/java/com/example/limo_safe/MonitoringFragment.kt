@@ -336,6 +336,13 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun addUserToDevice(deviceId: String, email: String, role: String = "user") {
+        // Get the current user's ID who is performing the action
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+            ?: run {
+                Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
+                return
+            }
+
         // Find the user ID from the email
         database.child("users")
             .orderByChild("email")
@@ -343,29 +350,45 @@ class MonitoringFragment : Fragment() {
             .get()
             .addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key
-                    if (userId != null) {
-                        // Retrieve the user's existing tag
-                        database.child("users").child(userId).child("tag")
+                    val addedUserId = snapshot.children.first().key
+                    if (addedUserId != null) {
+                        // Retrieve the added user's existing tag
+                        database.child("users").child(addedUserId).child("tag")
                             .get()
                             .addOnSuccessListener { tagSnapshot ->
                                 val existingTag = tagSnapshot.getValue(String::class.java)
 
                                 if (!existingTag.isNullOrEmpty()) {
-                                    Log.d("UserDebug", "Using existing tag: $existingTag for user: $userId")
+                                    Log.d("UserDebug", "Using existing tag: $existingTag for user: $addedUserId")
 
-                                    // Add user to device's registered users using existing tag
+                                    // Prepare log entry
+                                    val logEntry = mapOf(
+                                        "timestamp" to ServerValue.TIMESTAMP,
+                                        "event" to "user_added_to_device",
+                                        "user" to mapOf(
+                                            "id" to addedUserId,
+                                            "email" to email,
+                                            "tag" to existingTag
+                                        ),
+                                        "device" to deviceId,
+                                        "role" to role
+                                    )
+
+                                    // Add user to device's registered users
                                     val addToDevice = database.child("devices").child(deviceId).child("registeredUsers")
                                         .child(existingTag)
-                                        .setValue(userId)
+                                        .setValue(addedUserId)
 
-                                    // Add device to user's registeredDevices with the role
-                                    val addToUser = database.child("users").child(userId).child("registeredDevices")
+                                    // Add device to added user's registeredDevices with the role
+                                    val addToUser = database.child("users").child(addedUserId).child("registeredDevices")
                                         .child(deviceId)
                                         .setValue(role)
 
-                                    // Execute both operations and wait for completion
-                                    Tasks.whenAllComplete(addToDevice, addToUser)
+                                    // Add log entry under current user's logs
+                                    val addLog = database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
+
+                                    // Execute all operations and wait for completion
+                                    Tasks.whenAllComplete(addToDevice, addToUser, addLog)
                                         .addOnSuccessListener {
                                             Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
                                         }
@@ -394,6 +417,13 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun deleteUserFromDevice(deviceId: String, userInfo: UserInfo) {
+        // Get the current user's ID who is performing the action
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+            ?: run {
+                Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
+                return
+            }
+
         val email = userInfo.email
 
         // Find user ID based on email
@@ -404,27 +434,42 @@ class MonitoringFragment : Fragment() {
             .get()
             .addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key ?: return@addOnSuccessListener
-                    Log.d("FirebaseDebug", "Found user UID: $userId")
+                    val removedUserId = snapshot.children.first().key ?: return@addOnSuccessListener
+                    Log.d("FirebaseDebug", "Found user UID: $removedUserId")
 
                     // Get the user's existing tag from their profile
-                    database.child("users").child(userId).child("tag")
+                    database.child("users").child(removedUserId).child("tag")
                         .get()
                         .addOnSuccessListener { tagSnapshot ->
                             val existingTag = tagSnapshot.getValue(String::class.java)
 
                             if (!existingTag.isNullOrEmpty()) {
-                                Log.d("FirebaseDebug", "Using existing tag: $existingTag for user: $userId")
+                                Log.d("FirebaseDebug", "Using existing tag: $existingTag for user: $removedUserId")
+
+                                // Prepare log entry
+                                val logEntry = mapOf(
+                                    "timestamp" to ServerValue.TIMESTAMP,
+                                    "event" to "user_removed_from_device",
+                                    "user" to mapOf(
+                                        "id" to removedUserId,
+                                        "email" to email,
+                                        "tag" to existingTag
+                                    ),
+                                    "device" to deviceId
+                                )
 
                                 // Firebase operations to remove user from both locations
                                 val removeFromDevice = database.child("devices").child(deviceId)
                                     .child("registeredUsers").child(existingTag).removeValue()
 
-                                val removeFromUser = database.child("users").child(userId)
+                                val removeFromUser = database.child("users").child(removedUserId)
                                     .child("registeredDevices").child(deviceId).removeValue()
 
-                                // Run both deletions in parallel and wait for them to complete
-                                Tasks.whenAllComplete(removeFromDevice, removeFromUser)
+                                // Add log entry under current user's logs
+                                val addLog = database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
+
+                                // Run all operations in parallel and wait for them to complete
+                                Tasks.whenAllComplete(removeFromDevice, removeFromUser, addLog)
                                     .addOnSuccessListener {
                                         Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
                                     }
@@ -449,6 +494,13 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun updateUserRole(deviceId: String, userInfo: UserInfo, newRole: String) {
+        // Get the current user's ID who is performing the action
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+            ?: run {
+                Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
+                return
+            }
+
         Log.d("UpdateUserRole", "Updating role for deviceId: $deviceId, userInfo: $userInfo, newRole: $newRole")
 
         database.child("users")
@@ -470,9 +522,25 @@ class MonitoringFragment : Fragment() {
                                 return@addOnSuccessListener
                             }
 
+                            // Prepare log entry
+                            val logEntry = mapOf(
+                                "timestamp" to ServerValue.TIMESTAMP,
+                                "event" to "user_role_updated",
+                                "user" to mapOf(
+                                    "id" to userId,
+                                    "email" to userInfo.email
+                                ),
+                                "device" to deviceId,
+                                "oldRole" to currentRole,
+                                "newRole" to newRole
+                            )
+
                             // Proceed with role update
                             userRef.setValue(newRole)
                                 .addOnSuccessListener {
+                                    // Add log entry under current user's logs
+                                    database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
+
                                     updateLocalUserRole(deviceId, userInfo.email, newRole)
                                     Toast.makeText(context, "User role updated to $newRole", Toast.LENGTH_SHORT).show()
                                 }

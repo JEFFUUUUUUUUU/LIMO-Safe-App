@@ -282,14 +282,27 @@ class MCFragment : Fragment() {
                 val tagChar = if (userTag.isNotEmpty()) userTag.first().toString() else ""
                 val fullCode = tagChar + randomCode
 
-                // Store the full code (with tag) in Firebase with expiry
+                // Store the OTP data
                 val otpData = mapOf(
                     "code" to fullCode,
                     "created_at" to ServerValue.TIMESTAMP,
                     "expires_at" to (System.currentTimeMillis() + 30000) // 30 seconds
                 )
 
-                database.child("users").child(userId).child("otp").setValue(otpData)
+                // Prepare log entry using push() to create a unique key
+                val logsRef = database.child("users").child(userId).child("logs").push()
+                val logEntry = mapOf(
+                    "timestamp" to ServerValue.TIMESTAMP,
+                    "event" to "otp"
+                )
+
+                // Update both OTP and logs
+                val updates = mapOf(
+                    "/users/$userId/otp" to otpData,
+                    "${logsRef.path}" to logEntry
+                )
+
+                database.updateChildren(updates)
                     .addOnSuccessListener {
                         // Update the UI with the full code
                         activity?.runOnUiThread {
