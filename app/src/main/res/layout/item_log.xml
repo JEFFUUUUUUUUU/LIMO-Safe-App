@@ -9,7 +9,7 @@
         android:id="@+id/dateText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1.2"
+        android:layout_weight="1"
         android:gravity="center"
         android:paddingEnd="8dp"
         android:textSize="12sp" />
@@ -18,7 +18,7 @@
         android:id="@+id/timeText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:layout_weight="0.8"
         android:gravity="center"
         android:paddingEnd="8dp"
         android:textSize="12sp" />
@@ -36,7 +36,7 @@
         android:id="@+id/deviceNameText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="0.8"
+        android:layout_weight="1"
         android:gravity="center"
         android:paddingEnd="8dp"
         android:textSize="12sp" />
@@ -45,15 +45,16 @@
         android:id="@+id/statusText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="0.8"
+        android:layout_weight="1"
         android:gravity="center"
+        android:paddingEnd="8dp"
         android:textSize="12sp" />
 
     <TextView
         android:id="@+id/eventTypeText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:layout_weight="1.2"
         android:gravity="center"
         android:textSize="12sp" />
 

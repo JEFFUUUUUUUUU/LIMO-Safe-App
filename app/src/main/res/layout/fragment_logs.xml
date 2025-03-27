@@ -33,79 +33,80 @@
 
             <TableLayout
                 android:layout_width="match_parent"
-                android:layout_height="50dp"
+                android:layout_height="40dp"
                 android:background="#FFA500"
                 android:stretchColumns="*">
 
                 <TableRow
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
+                    android:layout_height="95dp"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1.2"
-                        android:text="Date"
-                        android:textColor="@android:color/white"
-                        android:textStyle="bold"
-                        android:textSize="14sp"
-                        android:gravity="center"
-                        android:paddingEnd="8dp" />
+                    android:paddingHorizontal="10dp">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:gravity="center"
+                        android:paddingEnd="8dp"
+                        android:text="Date"
+                        android:textColor="@android:color/white"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="0.8"
+                        android:gravity="center"
+                        android:paddingEnd="5dp"
                         android:text="Time"
                         android:textColor="@android:color/white"
-                        android:textStyle="bold"
                         android:textSize="14sp"
-                        android:gravity="center"
-                        android:paddingEnd="8dp" />
+                        android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1.5"
+                        android:gravity="center"
+                        android:paddingEnd="8dp"
                         android:text="User"
                         android:textColor="@android:color/white"
-                        android:textStyle="bold"
                         android:textSize="14sp"
-                        android:gravity="center"
-                        android:paddingEnd="8dp" />
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="0.8"
-                        android:text="Device"
-                        android:textColor="@android:color/white"
-                        android:textStyle="bold"
-                        android:textSize="14sp"
-                        android:gravity="center"
-                        android:paddingEnd="8dp" />
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="0.8"
-                        android:text="Status"
-                        android:textColor="@android:color/white"
-                        android:textStyle="bold"
-                        android:textSize="14sp"
-                        android:gravity="center" />
+                        android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:gravity="center"
+                        android:paddingEnd="5dp"
+                        android:text="Device"
+                        android:textColor="@android:color/white"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:paddingEnd="5dp"
+                        android:text="Status"
+                        android:textColor="@android:color/white"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1.2"
+                        android:gravity="center"
                         android:text="Event Type"
                         android:textColor="@android:color/white"
-                        android:textStyle="bold"
                         android:textSize="14sp"
-                        android:gravity="center" />
+                        android:textStyle="bold" />
 
                 </TableRow>
             </TableLayout>
