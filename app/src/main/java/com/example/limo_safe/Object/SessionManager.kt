@@ -4,14 +4,15 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.OnLifecycleEvent
+import com.example.limo_safe.LoginFragment
 import com.google.firebase.auth.FirebaseAuth
 
 class SessionManager(
-    private val activity: ComponentActivity,
+    private val activity: FragmentActivity,
     private val onLogout: () -> Unit
 ) : LifecycleObserver {
 
@@ -21,11 +22,10 @@ class SessionManager(
     private val SESSION_TIMEOUT = 300000L // 5 minutes in milliseconds
     private val WARNING_TIME = 290000L // Show warning 10 seconds before timeout (5 minutes - 10 seconds)
     private val PREFS_NAME = "LIMOSafePrefs"
-    private val LAST_GENERATE_TIME_KEY = "last_generate_time"
-    private val KEY_MORSE_STATE_ACTIVE = "morse_state_active"
 
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
-    private val sharedPreferences = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private var isWarningShown = false
+    private var isTimeoutShown = false
 
     init {
         activity.lifecycle.addObserver(this)
@@ -36,14 +36,47 @@ class SessionManager(
         return firebaseAuth.currentUser != null
     }
 
-    private fun resetSessionTimeout() {
-        // Remove existing callbacks
+    private fun clearAllRunnables() {
         sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         warningRunnable?.let { handler.removeCallbacks(it) }
+        sessionTimeoutRunnable = null
+        warningRunnable = null
+        isWarningShown = false
+        isTimeoutShown = false
+    }
+
+    private fun clearAllPreferences() {
+        // Clear LIMOSafe preferences
+        activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+            
+        // Clear Morse code preferences
+        activity.getSharedPreferences("MorseCodePrefs", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+            
+        // Clear any other app preferences
+        activity.getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+    }
+
+    private fun resetSessionTimeout() {
+        clearAllRunnables()
+
+        // Only set up timeouts if user is signed in
+        if (!isUserSignedIn()) {
+            return
+        }
 
         // Create warning runnable
         warningRunnable = Runnable {
-            if (isUserSignedIn()) {
+            if (isUserSignedIn() && !isWarningShown) {
+                isWarningShown = true
                 Toast.makeText(
                     activity,
                     "Warning: Session will timeout in 10 seconds due to inactivity",
@@ -54,16 +87,33 @@ class SessionManager(
 
         // Create timeout runnable
         sessionTimeoutRunnable = Runnable {
-            if (isUserSignedIn()) {
-                // Save morse code state before logout
-                val morseStateActive = sharedPreferences.getBoolean(KEY_MORSE_STATE_ACTIVE, false)
-                if (morseStateActive) {
-                    // Keep the morse state active so it can be restored after login
-                    sharedPreferences.edit().putBoolean(KEY_MORSE_STATE_ACTIVE, true).apply()
-                }
-
+            if (isUserSignedIn() && !isTimeoutShown) {
+                isTimeoutShown = true
+                
+                // Clear all preferences first
+                clearAllPreferences()
+                
+                // Sign out the user
+                firebaseAuth.signOut()
+                
                 Toast.makeText(activity, "Session timeout due to inactivity", Toast.LENGTH_LONG).show()
+
+                // Clear the back stack and navigate to login
+                activity.supportFragmentManager.popBackStack(null, androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE)
+                
+                // Create a new instance of LoginFragment
+                val loginFragment = LoginFragment.newInstance()
+                
+                // Replace current fragment with login
+                activity.supportFragmentManager.beginTransaction()
+                    .replace(android.R.id.content, loginFragment)
+                    .commit()
+                
+                // Notify the activity
                 onLogout.invoke()
+                
+                // Clear all runnables after timeout
+                clearAllRunnables()
             }
         }
 
@@ -85,35 +135,19 @@ class SessionManager(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     fun onAppBackgrounded() {
-        // Keep session active when app is minimized
-        sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-        warningRunnable?.let { handler.removeCallbacks(it) }
+        clearAllRunnables()
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_START)
     fun onAppForegrounded() {
-        // Restore session timeout when app is brought back to foreground
         if (isUserSignedIn()) {
             resetSessionTimeout()
         }
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-    fun onDestroy() {
-        endSession()
+    fun cleanup() {
+        clearAllRunnables()
         activity.lifecycle.removeObserver(this)
-    }
-
-    fun endSession() {
-        sessionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-        warningRunnable?.let { handler.removeCallbacks(it) }
-    }
-
-    fun setLastGenerateTime(time: Long) {
-        sharedPreferences.edit().putLong(LAST_GENERATE_TIME_KEY, time).apply()
-    }
-
-    fun getLastGenerateTime(): Long {
-        return sharedPreferences.getLong(LAST_GENERATE_TIME_KEY, 0L)
     }
 }

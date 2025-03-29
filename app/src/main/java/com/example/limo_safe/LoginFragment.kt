@@ -12,8 +12,9 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.google.firebase.auth.FirebaseAuth
 import com.example.limo_safe.utils.DialogManager
+import com.example.limo_safe.base.BaseFragment
 
-class LoginFragment : Fragment() {
+class LoginFragment : BaseFragment() {
     private lateinit var auth: FirebaseAuth
     private lateinit var emailEditText: EditText
     private lateinit var passwordEditText: EditText
@@ -40,6 +41,28 @@ class LoginFragment : Fragment() {
         dialogManager = DialogManager(requireContext())
         initializeViews(view)
         setupClickListeners()
+
+        // Clear all preferences to ensure fresh state
+        clearAllPreferences()
+    }
+
+    private fun clearAllPreferences() {
+        requireActivity().apply {
+            getSharedPreferences("MorseCodePrefs", Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply()
+
+            getSharedPreferences("LIMOSafePrefs", Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply()
+
+            getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply()
+        }
     }
 
     private fun initializeViews(view: View) {
@@ -62,7 +85,7 @@ class LoginFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            // Show loading dialog with session management
+            // Show loading dialog
             val loadingDialog = dialogManager.createLoadingDialog("Logging in...")
             loadingDialog.show()
 
@@ -93,20 +116,14 @@ class LoginFragment : Fragment() {
     private fun handleSuccessfulLogin() {
         val currentUser = auth.currentUser
         if (currentUser != null && currentUser.isEmailVerified) {
-            // Check if there's an active Morse code session
-            val prefs = requireActivity().getSharedPreferences("MorseCodePrefs", Context.MODE_PRIVATE)
-            val isMorseStateActive = prefs.getBoolean("morse_state_active", false)
-            val lastMorseTime = prefs.getLong("last_morse_time", 0)
-            val currentTime = System.currentTimeMillis()
+            // Clear any existing preferences
+            clearAllPreferences()
 
-            if (isMorseStateActive && (currentTime - lastMorseTime) < 30000) {
-                // If there's an active session and we're still within the cooldown period
-                navigateToMC()
-            } else {
-                // Clear any expired Morse code state
-                prefs.edit().putBoolean("morse_state_active", false).apply()
-                navigateToMC()
-            }
+            // Start a fresh session
+            sessionManager.userActivityDetected()
+            
+            // Navigate to MC fragment
+            navigateToMC()
         } else {
             Toast.makeText(requireContext(), "Please verify your email first", Toast.LENGTH_LONG).show()
         }
@@ -115,7 +132,6 @@ class LoginFragment : Fragment() {
     private fun navigateToMC() {
         val mcFragment = MCFragment()
         parentFragmentManager.beginTransaction()
-            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
             .replace(R.id.fragmentContainer, mcFragment)
             .commit()
     }
@@ -123,7 +139,6 @@ class LoginFragment : Fragment() {
     private fun navigateToSignUp() {
         val signUpFragment = SignUpFragment.newInstance()
         parentFragmentManager.beginTransaction()
-            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
             .replace(R.id.fragmentContainer, signUpFragment)
             .addToBackStack(null)
             .commit()
@@ -132,7 +147,6 @@ class LoginFragment : Fragment() {
     private fun navigateToForgotPassword() {
         val forgotPasswordFragment = ForgotPasswordFragment()
         parentFragmentManager.beginTransaction()
-            .setCustomAnimations(R.anim.slide_in_right, R.anim.fade_in)
             .replace(R.id.fragmentContainer, forgotPasswordFragment)
             .addToBackStack(null)
             .commit()
@@ -140,7 +154,6 @@ class LoginFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Ensure any active dialogs are dismissed
         dialogManager.dismissActiveDialog()
     }
 }

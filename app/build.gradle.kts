@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.camera.core)
     implementation(libs.play.services.cast.framework)
+    implementation(libs.androidx.compose)
+    implementation(libs.androidx.navigation.runtime.ktx)
 
     // Testing dependencies
     testImplementation(libs.junit)

@@ -59,7 +59,7 @@ class MonitoringFragment : Fragment() {
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
-        
+
         // Initialize managers
         dialogManager = DialogManager(requireContext())
         sessionManager = com.example.limo_safe.Object.SessionManager(requireActivity()) {

@@ -1,6 +1,7 @@
 package com.example.limo_safe
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -269,6 +270,7 @@ class MCFragment : Fragment() {
         codeDisplayText.text = currentCode
     }
 
+    @SuppressLint("RestrictedApi")
     private fun generateRandomCode(): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         val randomCode = (1..6).map { chars.random() }.joinToString("")
@@ -401,7 +403,7 @@ class MCFragment : Fragment() {
             if (remainingTries > 0) {
                 playMorseCode(code)
                 remainingTries--
-                dialogManager.updateRemainingTries(remainingTries)
+                dialogManager.updateTriesText(remainingTries)
                 saveState()
 
                 if (remainingTries > 0) {
@@ -492,7 +494,8 @@ class MCFragment : Fragment() {
     override fun onDestroy() {
         super.onDestroy()
         cleanup()
-        sessionManager.endSession()
+        // Remove endSession call as it's no longer needed
+        // The SessionManager will handle cleanup through its lifecycle observer
     }
 
     // Add this to loadState() method
