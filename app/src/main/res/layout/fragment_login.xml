@@ -3,7 +3,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#800000">
+    android:background="#800000"
+    android:visibility="visible">
 
     <!-- Top Orange Bar with App Name -->
     <View
@@ -11,6 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="60dp"
         android:background="#FFA500"
+        android:visibility="visible"
         app:layout_constraintTop_toTopOf="parent"/>
 
     <TextView
@@ -20,6 +22,7 @@
         android:textColor="#800000"
         android:textSize="24sp"
         android:textStyle="bold"
+        android:visibility="visible"
         app:layout_constraintTop_toTopOf="@id/topBar"
         app:layout_constraintBottom_toBottomOf="@id/topBar"
         app:layout_constraintStart_toStartOf="parent"
@@ -31,6 +34,7 @@
         android:layout_width="match_parent"
         android:layout_height="60dp"
         android:background="#FFA500"
+        android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"/>
 
     <LinearLayout
@@ -42,6 +46,7 @@
         android:padding="24dp"
         android:background="@drawable/rounded_corner_bg"
         android:layout_marginVertical="16dp"
+        android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -56,6 +61,7 @@
             android:textSize="30sp"
             android:textStyle="bold"
             android:gravity="center"
+            android:visibility="visible"
             android:textAlignment="center" />
 
         <TextView
@@ -66,6 +72,7 @@
             android:textSize="16sp"
             android:layout_marginTop="8dp"
             android:gravity="center"
+            android:visibility="visible"
             android:textAlignment="center" />
 
         <EditText
@@ -78,6 +85,7 @@
             android:inputType="textEmailAddress"
             android:padding="16dp"
             android:textColor="#333333"
+            android:visibility="visible"
             android:textColorHint="#666666" />
 
         <EditText
@@ -90,8 +98,8 @@
             android:inputType="textPassword"
             android:padding="16dp"
             android:textColor="#333333"
+            android:visibility="visible"
             android:textColorHint="#666666" />
-
         <TextView
             android:id="@+id/forgotPasswordText"
             android:layout_width="wrap_content"
@@ -100,46 +108,48 @@
             android:layout_marginTop="8dp"
             android:text="Forgot Password?"
             android:textColor="#FFA500"
+            android:visibility="visible"
             android:textSize="14sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"/>
-
+            android:textStyle="bold" />
         <Button
             android:id="@+id/loginButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="10dp"
             android:background="@drawable/button_bg"
-            android:text="Log In"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:padding="16dp"/>
+            android:text="LOG IN"
+            android:textColor="@android:color/white"
+            android:visibility="visible"
+            android:padding="16dp" />
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="24dp">
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:visibility="visible"
+            android:orientation="horizontal">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Don't have an account? "
+                android:text="Don't have an account?"
                 android:textColor="#CCCCCC"
-                android:textSize="14sp"/>
+                android:visibility="visible"
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/signUpText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
                 android:text="Sign Up"
                 android:textColor="#FFA500"
+                android:visibility="visible"
                 android:textSize="14sp"
-                android:textStyle="bold"
-                android:clickable="true"
-                android:focusable="true"/>
+                android:textStyle="bold" />
         </LinearLayout>
+
     </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

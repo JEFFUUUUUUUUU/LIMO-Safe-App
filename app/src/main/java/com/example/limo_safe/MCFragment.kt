@@ -95,6 +95,7 @@ class MCFragment : Fragment() {
             updateGeneratedCodeText()
 
             // Calculate remaining morse cooldown time
+            val currentTime = System.currentTimeMillis()
             val remainingMorseCooldown = if (lastMorsePlayTime > 0) {
                 val elapsed = currentTime - lastMorsePlayTime
                 if (elapsed < MORSE_COOLDOWN) MORSE_COOLDOWN - elapsed else 0
@@ -109,11 +110,32 @@ class MCFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_mc, container, false)
+        // Remove any existing fragments
+        parentFragmentManager.fragments.forEach { fragment ->
+            if (fragment != this && fragment.isVisible) {
+                parentFragmentManager.beginTransaction()
+                    .remove(fragment)
+                    .commitNow()
+            }
+        }
+
+        val view = inflater.inflate(R.layout.fragment_mc, container, false)
+        view.visibility = View.VISIBLE
+        return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Ensure this fragment is the only one visible
+        parentFragmentManager.fragments.forEach { fragment ->
+            if (fragment != this) {
+                fragment.view?.visibility = View.GONE
+            }
+        }
+
+        view.visibility = View.VISIBLE
+        view.bringToFront()
 
         sessionManager = SessionManager(requireActivity()) {
             // Logout callback
@@ -133,6 +155,15 @@ class MCFragment : Fragment() {
         setupClickListeners()
         checkCameraPermission()
         loadState()  // Load saved state
+
+        // Make sure all views are visible
+        view.findViewById<View>(R.id.topBar).visibility = View.VISIBLE
+        view.findViewById<View>(R.id.bottomBar).visibility = View.VISIBLE
+        generateCodeButton.visibility = View.VISIBLE
+        checkMonitoringButton.visibility = View.VISIBLE
+        exitButton.visibility = View.VISIBLE
+        generatedCodeText.visibility = View.VISIBLE
+        codeDisplayText.visibility = View.VISIBLE
 
         // Check if there's an ongoing timer from previous session
         if (persistentTimer.isTimerRunning()) {

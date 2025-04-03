@@ -75,6 +75,10 @@ class MonitoringFragment : Fragment() {
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
 
+        // Ensure view visibility
+        view.visibility = View.VISIBLE
+        deviceListRecyclerView.visibility = View.VISIBLE
+
         setupRecyclerView()
         setupBackButton()
         setupTabs()
@@ -676,9 +680,7 @@ class MonitoringFragment : Fragment() {
     }
 
     companion object {
-        fun newInstance(): MonitoringFragment {
-            return MonitoringFragment()
-        }
+        fun newInstance() = MonitoringFragment()
     }
 }
 

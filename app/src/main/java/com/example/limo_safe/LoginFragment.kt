@@ -32,11 +32,17 @@ class LoginFragment : BaseFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_login, container, false)
+        val view = inflater.inflate(R.layout.fragment_login, container, false)
+        view.visibility = View.VISIBLE
+        return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Ensure fragment container is visible
+        requireActivity().findViewById<View>(R.id.fragmentContainer).visibility = View.VISIBLE
+
         auth = FirebaseAuth.getInstance()
         dialogManager = DialogManager(requireContext())
         initializeViews(view)
@@ -71,6 +77,18 @@ class LoginFragment : BaseFragment() {
         loginButton = view.findViewById(R.id.loginButton)
         signUpText = view.findViewById(R.id.signUpText)
         forgotPasswordText = view.findViewById(R.id.forgotPasswordText)
+
+        // Ensure all views are visible
+        emailEditText.visibility = View.VISIBLE
+        passwordEditText.visibility = View.VISIBLE
+        loginButton.visibility = View.VISIBLE
+        signUpText.visibility = View.VISIBLE
+        forgotPasswordText.visibility = View.VISIBLE
+
+        // Set proper background colors
+        view.setBackgroundColor(resources.getColor(android.R.color.transparent, null))
+        view.findViewById<View>(R.id.topBar)?.setBackgroundColor(resources.getColor(android.R.color.holo_orange_light, null))
+        view.findViewById<View>(R.id.bottomBar)?.setBackgroundColor(resources.getColor(android.R.color.holo_orange_light, null))
     }
 
     private fun setupClickListeners() {
@@ -116,24 +134,20 @@ class LoginFragment : BaseFragment() {
     private fun handleSuccessfulLogin() {
         val currentUser = auth.currentUser
         if (currentUser != null && currentUser.isEmailVerified) {
-            // Clear any existing preferences
-            clearAllPreferences()
+            // Dismiss any active dialogs
+            dialogManager.dismissActiveDialog()
 
-            // Start a fresh session
-            sessionManager.userActivityDetected()
-            
-            // Navigate to MC fragment
-            navigateToMC()
+            // Let MainActivity handle the navigation
+            (activity as? MainActivity)?.let { mainActivity ->
+                // Ensure we're on the main thread
+                view?.post {
+                    mainActivity.onLoginSuccessful()
+                }
+            }
         } else {
             Toast.makeText(requireContext(), "Please verify your email first", Toast.LENGTH_LONG).show()
+            auth.signOut()
         }
-    }
-
-    private fun navigateToMC() {
-        val mcFragment = MCFragment()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, mcFragment)
-            .commit()
     }
 
     private fun navigateToSignUp() {
