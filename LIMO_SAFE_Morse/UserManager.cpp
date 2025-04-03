@@ -5,85 +5,96 @@ bool UserManager::isFirstTimeUser(FirebaseData& fbdo, const String& deviceId) {
     String regPath = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE;
     
     if (!Firebase.RTDB.getJSON(&fbdo, regPath.c_str())) {
-        // Check specific error reason before assuming first-time setup
-        if (fbdo.errorReason() == "path not found") {
+        // Path doesn't exist - this means no users are registered yet
+        // Check for specific error messages that indicate path absence
+        String errorReason = fbdo.errorReason();
+        if (errorReason == "path not found" || errorReason == "path not exist") {
             Serial.println("ℹ️ No registered users found - first time setup");
             return true;
         } else {
+            // Some other error occurred
             Serial.print("❌ Firebase error: ");
-            Serial.println(fbdo.errorReason());
-            return false; // Return an error state instead of assuming first time
+            Serial.println(errorReason);
+            return true; // Assume first time if we can't verify otherwise
         }
     }
     
-    FirebaseJson regJson = fbdo.jsonObject();
+    // Path exists, check if there are any registered users
+    FirebaseJson* regJson = fbdo.jsonObjectPtr();
+    if (regJson == nullptr) {
+        Serial.println("ℹ️ No JSON data - first time setup");
+        return true;
+    }
+    
     size_t count = 0;
     String key, value;
     int type = 0;
     
-    size_t len = regJson.iteratorBegin();
+    size_t len = regJson->iteratorBegin();
     for (size_t i = 0; i < len; i++) {
-        regJson.iteratorGet(i, type, key, value);
+        regJson->iteratorGet(i, type, key, value);
         if (value.length() > 0) {
             count++;
         }
     }
-    regJson.iteratorEnd();
+    regJson->iteratorEnd();
     
-    return count == 0;
+    // If no users found, it's first time setup
+    if (count == 0) {
+        Serial.println("ℹ️ No registered users found - first time setup");
+        return true;
+    }
+    
+    Serial.print("ℹ️ Found ");
+    Serial.print(count);
+    Serial.println(" registered users - not first time setup");
+    return false;
 }
 
 bool UserManager::verifyUserTag(FirebaseData& fbdo, const String& userTag, const String& deviceId, bool isFirstUser, String& foundUserId) {
-    String globalUserPath = String(USERS_PATH);
-    
-    if (!Firebase.RTDB.getJSON(&fbdo, globalUserPath.c_str())) {
-        Serial.print("❌ Failed to get users: ");
+    Serial.print("📡 Querying Firebase for user tag: ");
+    Serial.println(userTag);
+
+    QueryFilter query;
+    query.orderBy("tag");  
+    query.equalTo(userTag);  
+    query.limitToFirst(1);  
+
+    if (!Firebase.RTDB.getJSON(&fbdo, "users", &query)) {  
+        Serial.print("❌ Firebase Query Failed: ");
         Serial.println(fbdo.errorReason());
         return false;
     }
-    
-    FirebaseJson usersJson = fbdo.jsonObject();
-    bool userFound = false;
+
+    FirebaseJson json = fbdo.jsonObject();
+    FirebaseJsonData jsonData;
+    size_t len = json.iteratorBegin();
+
+    if (len == 0) {
+        Serial.println("❌ No user found with this tag.");
+        return false;
+    }
+
+    // 🔹 Extract user ID
     String key, value;
     int type = 0;
+    json.iteratorGet(0, type, key, value);
+    json.iteratorEnd();
+
+    foundUserId = key;  // ✅ Assign user ID
+    Serial.print("✅ Found User ID: ");
+    Serial.println(foundUserId);
     
-    size_t len = usersJson.iteratorBegin();
-    for (size_t i = 0; i < len; i++) {
-        usersJson.iteratorGet(i, type, key, value);
-        if (value.startsWith("{") && value.endsWith("}")) {  // Check if value is a JSON object
-            FirebaseJson userJson;
-            userJson.setJsonData(value);
-            FirebaseJsonData tagData;
-            userJson.get(tagData, "tag");
-            
-            if (tagData.success && tagData.type == "string" && tagData.stringValue == userTag) {
-                foundUserId = key;
-                userFound = true;
-                break;
-            }
-        }
-    }
-    usersJson.iteratorEnd();
-    
-    return userFound;
+    return true;
 }
 
 bool UserManager::registerUserToDevice(FirebaseData& fbdo, const String& deviceId, const String& userId, const String& userTag, bool isFirstUser) {
-    // Get existing registered users first
-    String regPath = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE;
-    FirebaseJson existingRegJson;
+    // Make sure we're using only the userTag, not the full OTP
+    String path = String(DEVICE_PATH) + deviceId + REGISTERED_USERS_NODE + "/" + userTag;
     
-    if (Firebase.RTDB.getJSON(&fbdo, regPath.c_str())) {
-        existingRegJson = fbdo.jsonObject();
-    }
-    
-    // Update rather than replace
-    existingRegJson.set(userTag, userId);
-    
-    // Set the updated JSON
-    if (!Firebase.RTDB.updateNode(&fbdo, regPath.c_str(), &existingRegJson)) {
-        Serial.print("❌ Failed to register user to device: ");
-        Serial.println(fbdo.errorReason());
+    // Set the user ID as the value
+    if (!Firebase.RTDB.setString(&fbdo, path.c_str(), userId)) {
+        Serial.println("❌ Failed to register user to device");
         return false;
     }
     

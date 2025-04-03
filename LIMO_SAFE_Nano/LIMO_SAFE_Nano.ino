@@ -1,22 +1,26 @@
+#include <Arduino.h>
 #include "ReedSensor.h"
 #include "Accelerometer.h"
 #include "ESPCommunication.h"
 #include "LockControl.h"
 #include "FingerprintSensor.h"
 
+// Flag to track if tamper was detected
+bool tamperDetected = false;
+
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(9600);
     pinMode(LED_BUILTIN, OUTPUT); 
     initializeReedSensor();
     initializeAccelerometer();
     initializeESPCommunication();
     initializeLock();
-    //initializeFingerprint();
+    initializeFingerprint();
 
     Serial.println("Nano-ESP Secure Safe System Started");
 
     // Uncomment to enroll a new fingerprint (only run once for setup)
-    // enrollFingerprint(1);
+    //enrollFingerprint(1);
     // enrollFingerprint(2);
     // enrollFingerprint(3);
     // deleteAllFingerprints(); // To reset fingerprints
@@ -26,10 +30,26 @@ void loop() {
     // Read reed sensor state
     bool safeClosed = isSafeClosed();
     
-    bool tamperDetected = motionDetected;
-    if (motionDetected) {
-        motionDetected = false;  // Reset flag
+    // Check for tamper using different motion detection methods
+    bool currentTamperDetected = isMotionDetected() || detectMotionByReading() || detectSustainedMotion();
+
+    if (currentTamperDetected && !tamperDetected) {  // Log only on state change
+        Serial.println("⚠️ Tampering detected!");
+
+        if (detectSustainedMotion()) {  // Log orientation only when significant motion occurs
+            float pitch, roll;
+            getOrientation(&pitch, &roll);
+            Serial.print("Orientation - Pitch: ");
+            Serial.print(pitch);
+            Serial.print("° Roll: ");
+            Serial.println(roll);
+        }
+
+        resetMotionDetection();  // Reset internal motion detection if triggered
     }
+
+    // Update tamper flag
+    tamperDetected = currentTamperDetected;
 
     // Send status periodically
     static unsigned long lastStatusTime = 0;
@@ -54,7 +74,7 @@ void loop() {
         processESPCommand(command);
     }
 
-    /*if (authenticateUser()) {
+    if (authenticateUser()) {
         unlockSafe();
         delay(5000);  // Keep the safe unlocked for 5 seconds
         lockSafe();
@@ -65,7 +85,7 @@ void loop() {
             Serial.println("Access denied.");
             lastAccessDeniedTime = millis();
         }
-    }*/
+    }
     
     // Short delay is crucial - gives time to read Serial without missing commands
     delay(50);

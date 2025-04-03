@@ -1,7 +1,12 @@
 // Core Arduino includes
 #include <Arduino.h>
+#include <WiFi.h>  
+#include <WiFiClientSecure.h>
 #include <Firebase_ESP_Client.h>
 #include <Preferences.h>
+
+// ESP32-specific headers
+#include <esp_wifi.h>
 
 // Project headers
 #include "WiFiSetup.h"
@@ -14,94 +19,119 @@
 #include "secrets.h"
 
 void setup() {
+    setLEDStatus(STATUS_OFFLINE);
     Serial.begin(115200);
     Serial.println("\n🚀 Starting LIMO SAFE Morse System...");
 
     initRGB();
-    
-    // Initialize light sensor
     setupLightSensor();
 
-    // Setup WiFi first
-    if (!setupWiFi()) {
+    // ✅ Ensure WiFi is available
+    int wifiAttempts = 5;
+    while (!setupWiFi() && wifiAttempts > 0) {
+        Serial.println("⚠️ Retrying WiFi setup...");
+        wifiAttempts--;
+        delay(5000);
+    }
+
+    if (wifiAttempts == 0) {
         Serial.println("❌ WiFi setup failed! Restarting...");
         delay(3000);
-        ESP.restart();
+        //ESP.restart();
     }
 
-    // Capture WiFi details immediately after successful connection
-    String connectedSSID = WiFi.SSID();
-    IPAddress connectedIP = WiFi.localIP();
-    
-    // Setup Firebase after WiFi is connected
-    if (!setupFirebase()) {
+    WiFi.setSleep(false);
+
+    // ✅ Ensure Firebase is available
+    int firebaseAttempts = 5;
+    while (!setupFirebase() && firebaseAttempts > 0) {
+        Serial.println("⚠️ Retrying Firebase setup...");
+        firebaseAttempts--;
+        delay(5000);
+    }
+
+    if (firebaseAttempts == 0) {
         Serial.println("❌ Firebase setup failed! Restarting...");
         delay(3000);
-        ESP.restart();
+        //ESP.restart();
     }
 
-    // Log WiFi connection to Firebase
+    // ✅ Log WiFi connection
     if (Firebase.ready()) {
-        time_t now = time(nullptr);
         FirebaseJson logEntry;
-        logEntry.set("timestamp", (double) now);
+        logEntry.set("timestamp", isTimeSynchronized());
         logEntry.set("event", "wifi_connected");
-        logEntry.set("ssid", connectedSSID);
-        logEntry.set("ip_address", connectedIP.toString());
-        
+        logEntry.set("ssid", WiFi.SSID());
+
         String logPath = String("devices/") + deviceId + "/logs";
-        
         if (Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry)) {
-            Serial.println("✅ WiFi connection logged during system startup");
+            Serial.println("✅ WiFi connection logged.");
         } else {
-            Serial.println("❌ Failed to log WiFi connection during system startup");
+            Serial.println("❌ Failed to log WiFi connection.");
             Serial.println(fbdo.errorReason().c_str());
         }
     }
 
     // Initialize Nano communication
     setupNanoCommunication();
-    updateDeviceStatus(false, false, false, false, false);
+    updateDeviceStatus(true, false, false);
 
     Serial.println("✅ System initialization complete!");
 }
 
+unsigned long lastFirebaseCheck = 0;
+const unsigned long FIREBASE_CHECK_INTERVAL = 30000; // Every 30 seconds
+
+// ✅ Watchdog timer to restart ESP if WiFi or Firebase fail
+unsigned long lastSuccess = millis();
+const unsigned long WATCHDOG_TIMEOUT = 60000; // 1 minute
+
 void loop() {
-    // Ensure WiFi is connected
+    // ✅ Ensure WiFi is connected
     if (!checkWiFiConnection()) {
-        return; // Skip loop if WiFi is not connected
+        Serial.println("❌ WiFi lost! Restarting...");
+        delay(3000);
+        //ESP.restart();
     }
 
-    // Check for new WiFi credentials
+    // ✅ Ensure Firebase is connected
+    if (millis() - lastFirebaseCheck >= FIREBASE_CHECK_INTERVAL) {
+        checkFirebaseConnection();
+        lastFirebaseCheck = millis();
+
+        if (!Firebase.ready()) {
+            Serial.println("❌ Firebase lost! Restarting...");
+            delay(3000);
+            //ESP.restart();
+        }
+    }
+    
+    // ✅ Check for new WiFi credentials
     static unsigned long lastWiFiCheck = 0;
     if (millis() - lastWiFiCheck >= 30000) { // Every 30 seconds
         lastWiFiCheck = millis();
         String newSSID, newPassword;
         if (checkForNewWiFiCredentials(newSSID, newPassword)) {
-            // Get current credentials from flash
             Preferences wifiPrefs;
             wifiPrefs.begin("wifi", false);
             String currentSSID = wifiPrefs.getString("ssid", "");
             String currentPass = wifiPrefs.getString("pass", "");
             wifiPrefs.end();
 
-            // Only update if credentials are different
             if (currentSSID != newSSID || currentPass != newPassword) {
-                Serial.println("📡 New WiFi credentials received from Firebase");
-                Serial.print("📡 New SSID: ");
-                Serial.println(newSSID);
+                Serial.println("📡 New WiFi credentials received!");
                 if (updateWiFiCredentials(newSSID.c_str(), newPassword.c_str())) {
                     Serial.println("📡 Reconnecting with new credentials...");
                     WiFi.disconnect();
                     delay(1000);
-                    setupWiFi();
+                    WiFi.reconnect();
                 }
             }
         }
     }
 
-    // Handle Nano communication (process safe status)
+    // ✅ Handle Nano communication (process safe status)
     handleNanoData();
-    // Process light sensor input (Morse code)
+    // ✅ Process light sensor input (Morse code)
     processLightInput();
 }

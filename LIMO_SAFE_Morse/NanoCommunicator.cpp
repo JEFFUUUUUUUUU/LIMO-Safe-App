@@ -1,5 +1,8 @@
+#line 1 "E:\\Arduino IDE\\Arduino\\LIMO_SAFE_Morse\\NanoCommunicator.cpp"
 #include "NanoCommunicator.h"
 #include "FirebaseHandler.h"
+#include "WiFiSetup.h"
+#include "RGBLed.h"
 
 HardwareSerial NanoSerial(1); // UART1 for Nano communication
 
@@ -9,10 +12,17 @@ void setupNanoCommunication() {
 }
 
 // Define global variables to track previous states
-bool prevSafeClosed = false;
-bool prevMotionDetected = false;
+bool prevSafeClosed = false;  // Changed initial value to false to ensure first state is detected
+bool prevMotionDetected = false;  // Changed initial value to false to ensure first state is detected
+bool statesInitialized = false;  // Flag to track if we've received initial state
 unsigned long lastLockedChangeTime = 0;
 unsigned long lastSecureChangeTime = 0;
+unsigned long lastMessageTime = 0;  // To track message timing for debouncing
+unsigned long lastStatusUpdateTime = 0;
+
+// Debounce time in milliseconds
+const unsigned long DEBOUNCE_TIME = 500;
+const unsigned long STATUS_UPDATE_INTERVAL = 30000;
 
 void handleNanoData() {
     if (!NanoSerial.available()) return;
@@ -22,11 +32,9 @@ void handleNanoData() {
     Serial.println(message);
     
     // Expected format: "Nano:<ID>:<SafeStatus>:<TamperStatus>"
-    // Use more efficient parsing
     int indices[3] = {-1, -1, -1};
-    int startIdx = 0;
     
-    // Find all colons in one pass
+    // Locate colons efficiently
     for (int i = 0, colon = 0; i < message.length() && colon < 3; i++) {
         if (message.charAt(i) == ':') {
             indices[colon++] = i;
@@ -39,71 +47,67 @@ void handleNanoData() {
         return;
     }
     
-    // Direct boolean conversion without temporary strings
+    // Extract values efficiently
     String nanoID = message.substring(indices[0] + 1, indices[1]);
     bool isSafeClosed = message.substring(indices[1] + 1, indices[2]).equals("CLOSED");
-    bool motionDetected = message.substring(indices[2] + 1).equals("UNSAFE");
-    
-    // Only log if needed for debugging
-    #ifdef DEBUG_MODE
-    Serial.print("Parsed ID: ");
-    Serial.println(nanoID);
-    Serial.print("Locked (isSafeClosed): ");
-    Serial.println(isSafeClosed ? "true" : "false");
-    Serial.print("Secure (!motionDetected): ");
-    Serial.println(!motionDetected ? "true" : "false");
-    #endif
+    String tamperStatus = message.substring(indices[2] + 1);
+    tamperStatus.trim();  // Trim it separately
+    bool motionDetected = tamperStatus.equals("UNSAFE");
     
     // Send acknowledgment to Nano
     NanoSerial.print("ESP32: Received (");
     NanoSerial.print(message);
     NanoSerial.println(")");
     
-    // Check if states have changed
+    // Update LED status immediately for security indication
+    if (!isSafeClosed || motionDetected) {
+        setLEDStatus(STATUS_TAMPERED);
+    }
+    
+    // Track changes
     bool lockedChanged = (isSafeClosed != prevSafeClosed);
     bool secureChanged = (motionDetected != prevMotionDetected);
+
+    // Define current device status
+    bool online = true;  // Device is active when receiving Nano messages
+    bool locked = isSafeClosed;
+    bool secure = !motionDetected;
+    bool otpStatus = false;
+    bool fingerprintStatus = false;
     
-    // Update Firebase only if there's a change
-    if ((lockedChanged || secureChanged) && Firebase.ready()) {
-        // Capture current time for timestamp
-        unsigned long currentTime = millis();
+    // Update Firebase via updateDeviceStatus
+    bool firebaseUpdateSuccess = false;
+    if (updateDeviceStatus(online, locked, secure)) {
+        Serial.println("✅ Status updated in Firebase via updateDeviceStatus");
+        firebaseUpdateSuccess = true;
         
-        // Update timestamps for changed states
-        if (lockedChanged) {
-            lastLockedChangeTime = currentTime;
-        }
-        if (secureChanged) {
-            lastSecureChangeTime = currentTime;
-        }
-        
-        String devicePath = String(DEVICE_PATH) + deviceId + "/status";
-        
-        // Use static JSON to reduce memory fragmentation
-        static FirebaseJson json;
-        json.clear();
-        json.set("locked", isSafeClosed);
-        json.set("secure", !motionDetected);
-                
-        // Add timestamps for state changes
-        if (lockedChanged) {
-            json.set("lockedChangedAt", lastLockedChangeTime);
-        }
-        if (secureChanged) {
-            json.set("secureChangedAt", lastSecureChangeTime);
-        }
-        
-        if (Firebase.RTDB.updateNode(&fbdo, devicePath.c_str(), &json)) {
-            Serial.println("✅ Status updated in Firebase");
+        // Log changes if the safe is unlocked, tampered, or states changed
+        if (lockedChanged || secureChanged || !isSafeClosed || motionDetected) {
+            String logsPath = String(DEVICE_PATH) + deviceId + "/logs";
             
-            // Update previous states after successful Firebase update
-            prevSafeClosed = isSafeClosed;
-            prevMotionDetected = motionDetected;
-        } else {
-            Serial.print("❌ Firebase update failed: ");
-            Serial.println(fbdo.errorReason());
+            static FirebaseJson logJson;
+            logJson.clear();
+            logJson.set("timestamp", isTimeSynchronized());
+
+            if (lockedChanged) logJson.set("locked", isSafeClosed);
+            if (secureChanged) logJson.set("secure", !motionDetected);
+
+            if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &logJson)) {
+                Serial.println("✅ Log entry added to Firebase");
+            } else {
+                Serial.print("❌ Firebase log update failed: ");
+                Serial.println(fbdo.errorReason());
+            }
         }
+        
+        // Update previous states only after successful Firebase update
+        prevSafeClosed = isSafeClosed;
+        prevMotionDetected = motionDetected;
+    } else {
+        Serial.println("⚠️ Firebase status update failed!");
     }
 }
+
 
 void sendCommandToNano(const String& command) {
     // Send the raw command exactly as the Nano expects it

@@ -5,16 +5,19 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
-extern const int accelIntPin;
-extern volatile bool motionDetected;
 extern bool accelInitialized;
 
-// Change the return type to bool to match the implementation
+// Core functions
 bool initializeAccelerometer();
-void motionInterrupt(); // Interrupt handler
-
-// Additional utility functions
 bool isMotionDetected();
+bool detectMotionByReading();
+bool detectSustainedMotion();
 void resetMotionDetection();
+
+// Helper functions
+float calculateMagnitude(float x, float y, float z);
+void getAccelerationData(float* x, float* y, float* z);
+void getGyroscopeData(float* x, float* y, float* z);
+void getOrientation(float* pitch, float* roll);
 
 #endif // ACCELEROMETER_H

@@ -39,7 +39,36 @@ void loadWiFiCredentials(String &ssid, String &password, int &failedAttempts);
 void saveWiFiCredentials(const String &ssid, const String &password);
 void saveFailedAttempts(int failedAttempts);
 
+void WiFiEventHandler(WiFiEvent_t event) {
+    static int attemptCount = 0;
+    static unsigned long lastReconnectAttempt = 0;
+    const unsigned long delayIntervals[] = {5000, 10000, 30000, 60000};  // 5s, 10s, 30s, 60s
+    unsigned long now = millis();
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            Serial.println("WiFi lost connection");
+            setLEDStatus(STATUS_OFFLINE);          
+            if (now - lastReconnectAttempt >= delayIntervals[min(attemptCount, 3)]) {
+                Serial.println("🔄 Attempting WiFi reconnection...");
+                WiFi.reconnect();
+                lastReconnectAttempt = now;
+                attemptCount++;
+            }
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.println("✅ WiFi connected!");
+            Serial.print("IP address: ");
+            Serial.println(WiFi.localIP());
+            setLEDStatus(STATUS_ONLINE);
+            updateFirebaseWiFiStatus(true);
+            attemptCount = 0;  // Reset attempt counter
+            break;
+    }
+}
+
 bool setupWiFi() {
+    WiFi.onEvent(WiFiEventHandler);
     Serial.println("📡 Setting up WiFi...");
     WiFi.mode(WIFI_STA);
     
@@ -100,37 +129,69 @@ bool setupWiFi() {
         
         // Reset credentials after too many failures
         if (failedAttempts >= WIFI_MAX_FAILED_ATTEMPTS) {
-            Serial.println("⚠️ Too many failures. Resetting WiFi settings...");
-            clearFlashStorage();
-            // clearFlashStorage will restart the device
+            Serial.println("⚠️ Too many failures. Attempting alternative networks...");
+  
+            // Try default credentials as fallback
+            Serial.println("📡 Trying default credentials...");
+            WiFi.disconnect();
+            delay(500);
+            WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+          
+          // Check if default credentials work
+          unsigned long startAttemptTime = millis();
+          while (WiFi.status() != WL_CONNECTED && 
+                millis() - startAttemptTime < WIFI_CONNECT_TIMEOUT_MS) {
+            delay(500);
+            Serial.print(".");
+          }
+          
+          if (WiFi.status() == WL_CONNECTED) {
+            // Default credentials worked, save them
+            saveWiFiCredentials(WIFI_SSID, WIFI_PASSWORD);
+            saveFailedAttempts(0);
+            return true;
+          }
+          // Only clear credentials and restart as last resort
+          clearFlashStorage();
         }
         
         return false;
     }
 }
 
+unsigned long lastReconnectAttempt = 0;
+int reconnectInterval = 1000; // Start with 1 second
+const int maxReconnectInterval = 60000; // Max 1 minute between attempts
+
+// In your checkWiFiConnection function
 bool checkWiFiConnection() {
-    static unsigned long lastCheck = 0;
-    
-    // Check periodically based on defined interval
-    if (millis() - lastCheck >= WIFI_CHECK_INTERVAL_MS) {
-        lastCheck = millis();
-        
-        if (WiFi.status() != WL_CONNECTED) {
-            setLEDStatus(STATUS_OFFLINE);
-            Serial.println("⚠️ WiFi connection lost. Attempting to reconnect...");
-            
-            // Update Firebase status if possible (non-blocking)
-            updateFirebaseWiFiStatus(false);
-            
-            // Attempt reconnection
-            WiFi.disconnect();
-            delay(500);
-            return setupWiFi();
-        }
+  if (WiFi.status() != WL_CONNECTED) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastReconnectAttempt > reconnectInterval) {
+      lastReconnectAttempt = currentMillis;
+
+      Serial.print("Attempting reconnection (");
+      Serial.print(reconnectInterval / 1000);
+      Serial.println("s interval)");
+
+      // If too many failed attempts, reset WiFi
+      if (reconnectInterval >= maxReconnectInterval) {
+        Serial.println("🚨 Too many failures, resetting WiFi...");
+        WiFi.disconnect(true);
+        delay(1000);
+        WiFi.begin(); // Start fresh connection
+      } else {
+        WiFi.reconnect();
+      }
+
+      reconnectInterval = min(reconnectInterval * 2, maxReconnectInterval);
+      return false;
     }
+  } else {
     setLEDStatus(STATUS_ONLINE);
-    return WiFi.status() == WL_CONNECTED;
+    reconnectInterval = 1000;
+    return true;
+  }
 }
 
 bool updateWiFiCredentials(const char* ssid, const char* password) {
@@ -169,18 +230,15 @@ bool updateWiFiCredentials(const char* ssid, const char* password) {
 void clearFlashStorage() {
     Serial.println("🧹 Clearing WiFi flash storage...");
     
-    // Safely open, clear, and close preferences
     if (wifiPrefs.begin(WIFI_CREDENTIALS_NAMESPACE, false)) {
         wifiPrefs.clear();
         wifiPrefs.putInt(WIFI_PREF_FAILED, 0);
         wifiPrefs.end();
-        
-        // Give time for flash write to complete
         delay(FLASH_WRITE_DELAY_MS);
-        Serial.println("🧹 Flash storage cleared!");
         
-        // Delay before restart to ensure flash writes complete
-        delay(500);
+        Serial.println("🧹 Flash storage cleared! Restarting in 3 seconds...");
+        setLEDStatus(STATUS_ERROR);  // Indicate that a reset is happening
+        delay(3000);  // Allow some time before restarting
         ESP.restart();
     } else {
         Serial.println("❌ Failed to access preferences for clearing");
@@ -241,7 +299,10 @@ bool updateFirebaseWiFiStatus(bool connected) {
         Serial.println("⚠️ Firebase not ready, WiFi status update skipped");
         return false;
     }
-    
+    if (deviceId.isEmpty()) {
+        Serial.println("❌ ERROR: Device ID is missing, cannot update Firebase!");
+        return false;
+    }    
     // Construct the path and attempt to update
     String path = String(DEVICE_PATH) + deviceId + WIFI_NODE + "/connected";
     bool success = Firebase.RTDB.setBool(&fbdo, path.c_str(), connected);
@@ -293,26 +354,37 @@ void performTimeSync() {
     }
 }
 
-bool isTimeSynchronized() {
-    time_t now = time(nullptr);
-    return now > 1609459200;  // Check if time is after Jan 1, 2021
+bool isTimeSynchronized(unsigned long long &epochMilliseconds) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    // Convert to milliseconds
+    epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+
+    // Convert seconds to check year validity
+    struct tm timeinfo;
+    localtime_r(&tv.tv_sec, &timeinfo);
+
+    return (timeinfo.tm_year > (2021 - 1900)); // Ensure time is after Jan 1, 2021
+}
+
+unsigned long long isTimeSynchronized() {
+    unsigned long long epochMilliseconds;
+    isTimeSynchronized(epochMilliseconds);  // Calls the existing function
+    return epochMilliseconds;
 }
 
 void printCurrentTime() {
-    time_t now;
-    struct tm timeinfo;
-    time(&now);
-    localtime_r(&now, &timeinfo);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
 
-    char buffer[80];
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
+    // Convert epoch time to milliseconds
+    unsigned long long epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
 
-    Serial.println("Current Time:");
-    Serial.print("- Formatted: ");
-    Serial.println(buffer);
-    Serial.print("- Epoch Time: ");
-    Serial.println(now);
+    Serial.print("Current Time (ms): ");
+    Serial.println(epochMilliseconds);
 }
+
 
 void printTimeErrorDiagnostics() {
     Serial.println("Time Sync Diagnostics:");

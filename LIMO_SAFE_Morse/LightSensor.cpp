@@ -1,6 +1,7 @@
 #include "LightSensor.h"
 #include "MorseDecoder.h"
 #include "FirebaseHandler.h"
+#include "RGBLed.h"
 
 // Define global variables (only once)
 String receivedMorse = "";
@@ -66,9 +67,11 @@ void processLightInput() {
                 // TODO: Implement success signal handling
             } else {
                 Serial.println("❌ Invalid Code!");
+                setLEDStatus(STATUS_OTP_ERROR);
             }
         } else {
             Serial.println("⚠ Invalid Code Length! Must be exactly 7 characters.");
+            setLEDStatus(STATUS_OTP_ERROR);
         }
 
         // Reset states

@@ -10,6 +10,7 @@
 extern Preferences wifiPrefs;
 
 // WiFi Functions
+void WiFiEventHandler(WiFiEvent_t event);
 bool setupWiFi();
 bool checkWiFiConnection();
 bool updateWiFiCredentials(const char* ssid, const char* password);
@@ -17,7 +18,8 @@ void clearFlashStorage();
 
 // NTP Time Sync Functions
 void performTimeSync();
-bool isTimeSynchronized();
+bool isTimeSynchronized(unsigned long long &epochMilliseconds);
+unsigned long long isTimeSynchronized();
 void printCurrentTime();
 void printTimeErrorDiagnostics();
 

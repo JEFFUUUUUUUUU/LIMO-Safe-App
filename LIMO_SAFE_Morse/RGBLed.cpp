@@ -26,17 +26,19 @@ void setLEDStatus(Status status) {
         case STATUS_SECURE:
             setColorRGB(COLOR_GREEN);  // Solid Green
             break;
+        case STATUS_ERROR:
         case STATUS_OTP_ERROR:
             blinkColor(COLOR_RED, 3, 500, 500); // 3 Blinks Red (OTP Error)
             break;
         case STATUS_ONLINE:
+        case STATUS_NORMAL:
             setColorRGB(COLOR_BLUE);  // Solid Blue
             break;
         case STATUS_OFFLINE:
             blinkColor(COLOR_BLUE, 5, 300, 300); // Fast blinking blue (Offline)
             break;
         case STATUS_TAMPERED:
-            setColorRGB(COLOR_YELLOW);  // Solid Yellow (Red + Green)
+            pulseColor(COLOR_YELLOW, 5, 800);  // Solid Yellow (Red + Green)
             break;
         case STATUS_SCANNING:
             pulseColor(COLOR_YELLOW, 5, 400); // Pulsing Yellow

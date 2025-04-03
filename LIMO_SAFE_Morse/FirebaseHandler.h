@@ -22,10 +22,11 @@ extern const char* const OTP_NODE;
 extern String deviceId;
 
 // Function declarations
+void checkFirebaseConnection();
 void tokenStatusCallback(TokenInfo info);
 bool setupFirebase();
 bool isFirebaseReady();
-bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure, bool isOtp, bool isFingerprint);
+bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure);
 bool updateWiFiCredentials(const String& ssid, const String& password);
 bool checkForNewWiFiCredentials(String& newSSID, String& newPassword);
 bool verifyOTP(String receivedOTP);
