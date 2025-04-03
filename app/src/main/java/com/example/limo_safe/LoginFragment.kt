@@ -12,16 +12,15 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.google.firebase.auth.FirebaseAuth
 import com.example.limo_safe.utils.DialogManager
-import com.example.limo_safe.base.BaseFragment
 
-class LoginFragment : BaseFragment() {
-    private lateinit var auth: FirebaseAuth
+class LoginFragment : Fragment() {
     private lateinit var emailEditText: EditText
     private lateinit var passwordEditText: EditText
     private lateinit var loginButton: Button
     private lateinit var signUpText: TextView
     private lateinit var forgotPasswordText: TextView
     private lateinit var dialogManager: DialogManager
+    private lateinit var auth: FirebaseAuth
 
     companion object {
         fun newInstance() = LoginFragment()

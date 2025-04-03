@@ -12,6 +12,7 @@
         android:layout_weight="1"
         android:gravity="center"
         android:paddingEnd="8dp"
+        android:textColor="@color/maroon"
         android:textSize="12sp" />
 
     <TextView
@@ -21,6 +22,7 @@
         android:layout_weight="0.8"
         android:gravity="center"
         android:paddingEnd="8dp"
+        android:textColor="@color/maroon"
         android:textSize="12sp" />
 
     <TextView
@@ -30,6 +32,7 @@
         android:layout_weight="1.5"
         android:gravity="center"
         android:paddingEnd="8dp"
+        android:textColor="@color/maroon"
         android:textSize="12sp" />
 
     <TextView
@@ -39,6 +42,7 @@
         android:layout_weight="1"
         android:gravity="center"
         android:paddingEnd="8dp"
+        android:textColor="@color/maroon"
         android:textSize="12sp" />
 
     <TextView
@@ -56,6 +60,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1.2"
         android:gravity="center"
+        android:textColor="@color/maroon"
         android:textSize="12sp" />
 
 </LinearLayout>

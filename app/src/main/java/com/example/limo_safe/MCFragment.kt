@@ -20,7 +20,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.limo_safe.Object.PersistentTimer
-import com.example.limo_safe.Object.SessionManager
+import com.example.limo_safe.base.BaseFragment
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.MorseCodeHelper
 import com.google.firebase.auth.FirebaseAuth
@@ -29,14 +29,14 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import kotlin.concurrent.thread
 
-class MCFragment : Fragment() {
+class MCFragment : BaseFragment() {
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
     private lateinit var generatedCodeText: TextView
     private lateinit var codeDisplayText: TextView
-    private lateinit var sessionManager: SessionManager
     private lateinit var dialogManager: DialogManager
+    private lateinit var database: DatabaseReference
     private lateinit var persistentTimer: PersistentTimer
     private var countDownTimer: CountDownTimer? = null
     private var morseTimer: CountDownTimer? = null
@@ -58,7 +58,6 @@ class MCFragment : Fragment() {
 
     private lateinit var cooldownText: TextView
     private lateinit var dialog: AlertDialog
-    private lateinit var database: DatabaseReference
 
     private fun saveState() {
         val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -136,18 +135,6 @@ class MCFragment : Fragment() {
 
         view.visibility = View.VISIBLE
         view.bringToFront()
-
-        sessionManager = SessionManager(requireActivity()) {
-            // Logout callback
-            Toast.makeText(requireContext(), "Session expired. Please log in again.", Toast.LENGTH_LONG).show()
-            // Save current state before navigating
-            saveState()
-            // Dismiss any active dialog
-            if (::dialog.isInitialized && dialog.isShowing) {
-                dialog.dismiss()
-            }
-            navigateToLogin()
-        }
 
         dialogManager = DialogManager(requireContext())
         persistentTimer = PersistentTimer(requireContext())

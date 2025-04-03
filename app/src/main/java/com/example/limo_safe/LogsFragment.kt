@@ -3,7 +3,6 @@ package com.example.limo_safe
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -12,77 +11,68 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.utils.DialogManager
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.GenericTypeIndicator
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
+import com.google.firebase.database.ktx.database
+import com.google.firebase.ktx.Firebase
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
+
+data class LogEntry(
+    val deviceName: String = "",
+    val timestamp: Long = 0,
+    val status: String = "",
+    val userName: String = "",
+    val eventType: String = "",
+    val uniqueId: String = ""
+)
 
 class LogsFragment : Fragment() {
     private lateinit var logsRecyclerView: RecyclerView
-    private lateinit var logsAdapter: LogsAdapter
     private lateinit var searchInput: EditText
-    private lateinit var database: DatabaseReference
-    private lateinit var sessionManager: SessionManager
     private lateinit var dialogManager: DialogManager
-    private var allLogs: MutableList<LogEntry> = mutableListOf()
-    private var logsListener: ValueEventListener? = null
+    private lateinit var database: DatabaseReference
+    private lateinit var logsListener: ValueEventListener
+    private val logs = mutableListOf<LogEntry>()
+    private val currentUserId: String
+        get() = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+    companion object {
+        fun newInstance() = LogsFragment()
+        private val dateFormat = SimpleDateFormat("MM/dd/yy", Locale.getDefault())
+        private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        val view = inflater.inflate(R.layout.fragment_logs, container, false)
-        logsRecyclerView = view.findViewById(R.id.logsRecyclerView)
-        searchInput = view.findViewById(R.id.searchInput)
+        return inflater.inflate(R.layout.fragment_logs, container, false)
+    }
 
-        sessionManager = SessionManager(requireActivity()) {
-            navigateToLogin()
-        }
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
 
         dialogManager = DialogManager(requireContext())
+        database = Firebase.database.reference
 
-        database = FirebaseDatabase.getInstance().reference
-        setupSearchBar()
+        initializeViews(view)
         setupRecyclerView()
-        fetchLogs()
-
-        view.setOnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
-        }
-        logsRecyclerView.setOnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
-        }
-        searchInput.setOnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
-        }
-
-        return view
+        setupSearchBar()
+        setupListeners()
     }
 
-    private fun navigateToLogin() {
-        val loginFragment = LoginFragment.newInstance()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commit()
+    private fun initializeViews(view: View) {
+        logsRecyclerView = view.findViewById(R.id.logsRecyclerView)
+        searchInput = view.findViewById(R.id.searchInput)
     }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        processedLogTimestamps.clear()
-        logsListener?.let {
-            database.child("logs").removeEventListener(it)
+    private fun setupRecyclerView() {
+        logsRecyclerView.apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = LogsAdapter(logs)
         }
     }
 
@@ -97,341 +87,105 @@ class LogsFragment : Fragment() {
     }
 
     private fun filterLogs(query: String) {
-        if (query.isEmpty()) {
-            logsAdapter.updateLogs(allLogs)
+        val filteredLogs = if (query.isEmpty()) {
+            logs
         } else {
-            val filteredLogs = allLogs.filter { log ->
+            logs.filter { log ->
                 log.deviceName.contains(query, ignoreCase = true) ||
-                        log.status.contains(query, ignoreCase = true) ||
-                        log.userName.contains(query, ignoreCase = true) ||
-                        log.eventType.contains(query, ignoreCase = true) ||
-                        dateFormat.format(log.timestamp).contains(query, ignoreCase = true) ||
-                        timeFormat.format(log.timestamp).contains(query, ignoreCase = true)
+                log.status.contains(query, ignoreCase = true) ||
+                log.userName.contains(query, ignoreCase = true) ||
+                log.eventType.contains(query, ignoreCase = true) ||
+                dateFormat.format(Date(log.timestamp)).contains(query, ignoreCase = true) ||
+                timeFormat.format(Date(log.timestamp)).contains(query, ignoreCase = true)
             }
-            logsAdapter.updateLogs(filteredLogs)
         }
+        (logsRecyclerView.adapter as LogsAdapter).updateLogs(filteredLogs)
     }
 
-    private fun setupRecyclerView() {
-        logsAdapter = LogsAdapter(allLogs)
-        logsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context)
-            adapter = logsAdapter
-        }
-    }
-
-    private val processedLogTimestamps = mutableSetOf<Long>()
-
-    private fun fetchLogs() {
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return
-
-        // Reference to user's own logs and registered devices
-        val userLogsRef = database.child("users").child(currentUserId).child("logs")
-        val registeredDevicesRef = database.child("users").child(currentUserId).child("registeredDevices")
-
-        // Create a list to collect all logs
-        val retrievedLogs = mutableListOf<LogEntry>()
-
-        // First, fetch user's own logs
-        userLogsRef.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(userLogsSnapshot: DataSnapshot) {
-                // Use GenericTypeIndicator for Map retrieval
-                val logMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
-
-                // Process user's own logs
-                for (logSnapshot in userLogsSnapshot.children) {
-                    val logData = logSnapshot.getValue(logMapType)
-
-                    if (logData != null) {
-                        val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
-
-                        // Prevent duplicate logs using timestamp
-                        if (!processedLogTimestamps.contains(log.timestamp)) {
-                            retrievedLogs.add(log)
-                            processedLogTimestamps.add(log.timestamp)
-                        }
-                    }
+    private fun setupListeners() {
+        logsListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val updatedLogs = mutableListOf<LogEntry>()
+                snapshot.children.forEach { logSnapshot ->
+                    val logData = logSnapshot.getValue(LogEntry::class.java)
+                    logData?.let { updatedLogs.add(it) }
                 }
-
-                // Then fetch registered devices
-                registeredDevicesRef.addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(registeredDevicesSnapshot: DataSnapshot) {
-                        // Track pending device log fetches
-                        val pendingDevices = mutableListOf<String>()
-
-                        // Iterate through registered devices
-                        for (deviceSnapshot in registeredDevicesSnapshot.children) {
-                            val deviceId = deviceSnapshot.key ?: continue
-
-                            // Check if device is admin by checking its value
-                            val isAdminDevice = deviceSnapshot.getValue(String::class.java) == "admin"
-
-                            if (isAdminDevice) {
-                                pendingDevices.add(deviceId)
-
-                                // Fetch logs for this admin device
-                                database.child("devices").child(deviceId).child("logs")
-                                    .addListenerForSingleValueEvent(object : ValueEventListener {
-                                        override fun onDataChange(deviceLogsSnapshot: DataSnapshot) {
-                                            // Use GenericTypeIndicator for Map retrieval
-                                            val deviceLogMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
-
-                                            // Process device logs
-                                            for (logSnapshot in deviceLogsSnapshot.children) {
-                                                val logData = logSnapshot.getValue(deviceLogMapType)
-
-                                                if (logData != null) {
-                                                    val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
-
-                                                    // Prevent duplicate logs using timestamp
-                                                    if (!processedLogTimestamps.contains(log.timestamp)) {
-                                                        retrievedLogs.add(log)
-                                                        processedLogTimestamps.add(log.timestamp)
-                                                    }
-                                                }
-                                            }
-
-                                            // Remove this device from pending list
-                                            pendingDevices.remove(deviceId)
-
-                                            // If no more pending devices, update logs
-                                            if (pendingDevices.isEmpty()) {
-                                                // Replace logs instead of appending
-                                                allLogs.clear()
-                                                allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                                                logsAdapter.updateLogs(allLogs)
-                                            }
-                                        }
-
-                                        override fun onCancelled(error: DatabaseError) {
-                                            Log.e("LogsFragment", "Error fetching logs for device $deviceId", error.toException())
-
-                                            // Remove this device from pending list
-                                            pendingDevices.remove(deviceId)
-
-                                            // If no more pending devices, update logs
-                                            if (pendingDevices.isEmpty()) {
-                                                allLogs.clear()
-                                                allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                                                logsAdapter.updateLogs(allLogs)
-                                            }
-                                        }
-                                    })
-                            }
-                        }
-
-                        // If no admin devices, update logs immediately
-                        if (pendingDevices.isEmpty()) {
-                            allLogs.clear()
-                            allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                            logsAdapter.updateLogs(allLogs)
-                        }
-                    }
-
-                    override fun onCancelled(error: DatabaseError) {
-                        Log.e("LogsFragment", "Error fetching registered devices", error.toException())
-
-                        // Update logs with user's own logs in case of error
-                        allLogs.clear()
-                        allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                        logsAdapter.updateLogs(allLogs)
-                    }
-                })
+                logs.clear()
+                logs.addAll(updatedLogs.sortedByDescending { it.timestamp })
+                logsRecyclerView.adapter?.notifyDataSetChanged()
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e("LogsFragment", "Error fetching user logs", error.toException())
-            }
-        })
-    }
-
-    enum class EventType {
-        USER_ROLE_UPDATE,
-        OTP_GENERATION,
-        USER_ADDED_TO_DEVICE,
-        USER_REMOVED_FROM_DEVICE,
-        UNKNOWN,
-        DEVICE_ONLINE
-    }
-
-    private fun convertSnapshotToLogEntry(key: String, logData: Map<String, Any>): LogEntry {
-        // Determine event type with more precise matching
-        val event = logData["event"] as? String ?: "Unknown Event"
-        val eventType = when (event) {
-            "user_role_updated" -> EventType.USER_ROLE_UPDATE
-            "otp" -> EventType.OTP_GENERATION
-            "user_added_to_device" -> EventType.USER_ADDED_TO_DEVICE
-            "user_removed_from_device" -> EventType.USER_REMOVED_FROM_DEVICE
-            "device_online" -> EventType.DEVICE_ONLINE
-            else -> EventType.UNKNOWN
-        }
-
-        // Extract timestamp safely
-        val timestamp = (logData["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis()
-
-        // Comprehensive event parsing
-        return when (eventType) {
-            EventType.USER_ROLE_UPDATE -> {
-                val updatedUser = logData["user"] as? Map<String, Any> ?: emptyMap()
-                LogEntry(
-                    deviceName = logData["device"] as? String ?: "",
-                    timestamp = timestamp,
-                    status = "Role: ${logData["newRole"] as? String ?: "Unknown"}",
-                    userName = updatedUser["email"] as? String ?: "Unknown",
-                    eventType = "User Role Update",
-                    uniqueId = key
-                )
-            }
-            EventType.OTP_GENERATION -> {
-                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
-                LogEntry(
-                    deviceName = "System",
-                    timestamp = timestamp,
-                    status = "OTP Generated",
-                    userName = userData["email"] as? String ?: "Unknown",
-                    eventType = "Authentication",
-                    uniqueId = key
-                )
-            }
-            EventType.USER_ADDED_TO_DEVICE -> {
-                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
-                LogEntry(
-                    deviceName = logData["device"] as? String ?: "Unknown",
-                    timestamp = timestamp,
-                    status = "Added to Device",
-                    userName = userData["email"] as? String ?: "Unknown",
-                    eventType = "User Management",
-                    uniqueId = key
-                )
-            }
-            EventType.USER_REMOVED_FROM_DEVICE -> {
-                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
-                LogEntry(
-                    deviceName = logData["device"] as? String ?: "Unknown",
-                    timestamp = timestamp,
-                    status = "Removed from Device",
-                    userName = userData["email"] as? String ?: "Unknown",
-                    eventType = "User Management",
-                    uniqueId = key
-                )
-            }
-            EventType.DEVICE_ONLINE -> {
-                LogEntry(
-                    deviceName = logData["ssid"] as? String ?: "Unknown WiFi",  // ✅ Use SSID instead of device name
-                    timestamp = timestamp,
-                    status = "Device Online",  // ✅ Correct status for WiFi connection
-                    userName = logData["ip_address"] as? String ?: "Unknown IP",  // ✅ Show IP instead of email
-                    eventType = "Network",  // ✅ More appropriate category
-                    uniqueId = key
-                )
-            }
-            EventType.UNKNOWN -> {
-                LogEntry(
-                    deviceName = "System",
-                    timestamp = timestamp,
-                    status = event,
-                    userName = "System",
-                    eventType = "Unknown Event",
-                    uniqueId = key
+                dialogManager.showErrorDialog(
+                    title = "Error",
+                    message = "Error loading logs: ${error.message}"
                 )
             }
         }
+
+        database.child("users").child(currentUserId).child("logs")
+            .addValueEventListener(logsListener)
     }
 
-    companion object {
-        private val lastLoggedDeviceRoles = mutableMapOf<String, String>()
-
-        private val dateFormat = SimpleDateFormat("MM/dd/yy", Locale.getDefault())
-        private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-
-        fun newInstance(): LogsFragment {
-            return LogsFragment()
-        }
+    override fun onDestroyView() {
+        super.onDestroyView()
+        database.child("users").child(currentUserId).child("logs")
+            .removeEventListener(logsListener)
     }
 
-}
+    inner class LogsAdapter(private var logs: List<LogEntry>) : 
+        RecyclerView.Adapter<LogsAdapter.LogViewHolder>() {
 
-data class LogEntry(
-    val deviceName: String = "",
-    val timestamp: Long = 0,
-    val status: String = "",
-    val userName: String = "",
-    val eventType: String = "",
-    val uniqueId: String = "" // New field
-)
-
-class LogsAdapter(private var logs: List<LogEntry>) :
-    RecyclerView.Adapter<LogsAdapter.LogViewHolder>() {
-
-    private val dateFormat = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault())
-    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-
-    fun updateLogs(newLogs: List<LogEntry>) {
-        logs = newLogs
-        notifyDataSetChanged()
-    }
-
-    inner class LogViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val dateText: TextView = itemView.findViewById(R.id.dateText)
-        val timeText: TextView = itemView.findViewById(R.id.timeText)
-        val userText: TextView = itemView.findViewById(R.id.userText)
-        val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
-        val statusText: TextView = itemView.findViewById(R.id.statusText)
-        val eventTypeText: TextView = itemView.findViewById(R.id.eventTypeText)
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): LogViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_log, parent, false)
-        return LogViewHolder(view)
-    }
-
-    override fun getItemCount() = logs.size
-
-    override fun onBindViewHolder(holder: LogViewHolder, position: Int) {
-        val log = logs[position]
-        val logDate = Date(log.timestamp) // ✅ Convert Long to Date
-
-        holder.dateText.apply {
-            text = dateFormat.format(logDate) // ✅ Format as Date
-            setTextColor(0xFF800000.toInt()) // Maroon color from theme
+        fun updateLogs(newLogs: List<LogEntry>) {
+            logs = newLogs
+            notifyDataSetChanged()
         }
 
-        holder.timeText.apply {
-            text = timeFormat.format(logDate) // ✅ Format as Time
-            setTextColor(0xFF800000.toInt()) // Maroon color from theme
+        inner class LogViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val dateText: TextView = view.findViewById(R.id.dateText)
+            val timeText: TextView = view.findViewById(R.id.timeText)
+            val userText: TextView = view.findViewById(R.id.userText)
+            val deviceNameText: TextView = view.findViewById(R.id.deviceNameText)
+            val statusText: TextView = view.findViewById(R.id.statusText)
+            val eventTypeText: TextView = view.findViewById(R.id.eventTypeText)
         }
 
-        holder.userText.apply {
-            text = log.userName
-            setTextColor(0xFF800000.toInt()) // Maroon color from theme
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): LogViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_log, parent, false)
+            return LogViewHolder(view)
         }
 
-        holder.deviceNameText.apply {
-            text = log.deviceName
-            setTextColor(0xFF800000.toInt()) // Maroon color from theme
+        override fun onBindViewHolder(holder: LogViewHolder, position: Int) {
+            val log = logs[position]
+            val date = Date(log.timestamp)
+            
+            holder.dateText.text = dateFormat.format(date)
+            holder.timeText.text = timeFormat.format(date)
+            holder.userText.text = log.userName
+            holder.deviceNameText.text = log.deviceName
+            holder.statusText.text = log.status
+            holder.eventTypeText.text = log.eventType
+
+            // Set alternating background colors
+            holder.itemView.setBackgroundColor(
+                if (position % 2 == 0) 0xFFFFFFFF.toInt() else 0xFFF5F5F5.toInt()
+            )
+
+            // Set status color based on value
+            holder.statusText.setTextColor(
+                when {
+                    log.status.contains("Online", true) -> 0xFF00FF00.toInt()
+                    log.status.contains("Offline", true) -> 0xFFFF0000.toInt()
+                    log.status.contains("Locked", true) -> 0xFF00FF00.toInt()
+                    log.status.contains("Unlocked", true) -> 0xFFFF0000.toInt()
+                    log.status.contains("Secure", true) -> 0xFF00FF00.toInt()
+                    log.status.contains("Unsecure", true) -> 0xFFFF0000.toInt()
+                    else -> 0xFF800000.toInt()
+                }
+            )
         }
 
-        holder.statusText.apply {
-            text = log.status
-            setTextColor(when {
-                log.status.contains("Online", true) -> 0xFF00FF00.toInt()
-                log.status.contains("Offline", true) -> 0xFFFF0000.toInt()
-                log.status.contains("Locked", true) -> 0xFF00FF00.toInt()
-                log.status.contains("Unlocked", true) -> 0xFFFF0000.toInt()
-                log.status.contains("Secure", true) -> 0xFF00FF00.toInt()
-                log.status.contains("Unsecure", true) -> 0xFFFF0000.toInt()
-                else -> 0xFF800000.toInt()
-            })
-        }
-
-        holder.eventTypeText.apply {
-            text = log.eventType
-            setTextColor(0xFF800000.toInt()) // Maroon color from theme
-        }
-
-        holder.itemView.setBackgroundColor(
-            if (position % 2 == 0) 0xFFFFFFFF.toInt() else 0xFFF5F5F5.toInt()
-        )
+        override fun getItemCount() = logs.size
     }
 }
