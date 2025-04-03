@@ -125,38 +125,124 @@ class LogsFragment : Fragment() {
     private fun fetchLogs() {
         val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return
 
-        database.child("users").child(currentUserId).child("logs")
-            .addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val retrievedLogs = mutableListOf<LogEntry>()
+        // Reference to user's own logs and registered devices
+        val userLogsRef = database.child("users").child(currentUserId).child("logs")
+        val registeredDevicesRef = database.child("users").child(currentUserId).child("registeredDevices")
 
-                    // Use GenericTypeIndicator for Map retrieval
-                    val logMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
+        // Create a list to collect all logs
+        val retrievedLogs = mutableListOf<LogEntry>()
 
-                    for (logSnapshot in snapshot.children) {
-                        val logData = logSnapshot.getValue(logMapType)
+        // First, fetch user's own logs
+        userLogsRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(userLogsSnapshot: DataSnapshot) {
+                // Use GenericTypeIndicator for Map retrieval
+                val logMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
 
-                        if (logData != null) {
-                            val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
+                // Process user's own logs
+                for (logSnapshot in userLogsSnapshot.children) {
+                    val logData = logSnapshot.getValue(logMapType)
 
-                            // Prevent duplicate logs using timestamp
-                            if (!processedLogTimestamps.contains(log.timestamp)) {
-                                retrievedLogs.add(log)
-                                processedLogTimestamps.add(log.timestamp)
+                    if (logData != null) {
+                        val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
+
+                        // Prevent duplicate logs using timestamp
+                        if (!processedLogTimestamps.contains(log.timestamp)) {
+                            retrievedLogs.add(log)
+                            processedLogTimestamps.add(log.timestamp)
+                        }
+                    }
+                }
+
+                // Then fetch registered devices
+                registeredDevicesRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                    override fun onDataChange(registeredDevicesSnapshot: DataSnapshot) {
+                        // Track pending device log fetches
+                        val pendingDevices = mutableListOf<String>()
+
+                        // Iterate through registered devices
+                        for (deviceSnapshot in registeredDevicesSnapshot.children) {
+                            val deviceId = deviceSnapshot.key ?: continue
+
+                            // Check if device is admin by checking its value
+                            val isAdminDevice = deviceSnapshot.getValue(String::class.java) == "admin"
+
+                            if (isAdminDevice) {
+                                pendingDevices.add(deviceId)
+
+                                // Fetch logs for this admin device
+                                database.child("devices").child(deviceId).child("logs")
+                                    .addListenerForSingleValueEvent(object : ValueEventListener {
+                                        override fun onDataChange(deviceLogsSnapshot: DataSnapshot) {
+                                            // Use GenericTypeIndicator for Map retrieval
+                                            val deviceLogMapType = object : GenericTypeIndicator<Map<String, Any>>() {}
+
+                                            // Process device logs
+                                            for (logSnapshot in deviceLogsSnapshot.children) {
+                                                val logData = logSnapshot.getValue(deviceLogMapType)
+
+                                                if (logData != null) {
+                                                    val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData)
+
+                                                    // Prevent duplicate logs using timestamp
+                                                    if (!processedLogTimestamps.contains(log.timestamp)) {
+                                                        retrievedLogs.add(log)
+                                                        processedLogTimestamps.add(log.timestamp)
+                                                    }
+                                                }
+                                            }
+
+                                            // Remove this device from pending list
+                                            pendingDevices.remove(deviceId)
+
+                                            // If no more pending devices, update logs
+                                            if (pendingDevices.isEmpty()) {
+                                                // Replace logs instead of appending
+                                                allLogs.clear()
+                                                allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
+                                                logsAdapter.updateLogs(allLogs)
+                                            }
+                                        }
+
+                                        override fun onCancelled(error: DatabaseError) {
+                                            Log.e("LogsFragment", "Error fetching logs for device $deviceId", error.toException())
+
+                                            // Remove this device from pending list
+                                            pendingDevices.remove(deviceId)
+
+                                            // If no more pending devices, update logs
+                                            if (pendingDevices.isEmpty()) {
+                                                allLogs.clear()
+                                                allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
+                                                logsAdapter.updateLogs(allLogs)
+                                            }
+                                        }
+                                    })
                             }
+                        }
+
+                        // If no admin devices, update logs immediately
+                        if (pendingDevices.isEmpty()) {
+                            allLogs.clear()
+                            allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
+                            logsAdapter.updateLogs(allLogs)
                         }
                     }
 
-                    // Replace logs instead of appending
-                    allLogs.clear()
-                    allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
-                    logsAdapter.updateLogs(allLogs)
-                }
+                    override fun onCancelled(error: DatabaseError) {
+                        Log.e("LogsFragment", "Error fetching registered devices", error.toException())
 
-                override fun onCancelled(error: DatabaseError) {
-                    Log.e("LogsFragment", "Error fetching logs", error.toException())
-                }
-            })
+                        // Update logs with user's own logs in case of error
+                        allLogs.clear()
+                        allLogs.addAll(retrievedLogs.sortedByDescending { it.timestamp })
+                        logsAdapter.updateLogs(allLogs)
+                    }
+                })
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("LogsFragment", "Error fetching user logs", error.toException())
+            }
+        })
     }
 
     enum class EventType {
@@ -164,7 +250,8 @@ class LogsFragment : Fragment() {
         OTP_GENERATION,
         USER_ADDED_TO_DEVICE,
         USER_REMOVED_FROM_DEVICE,
-        UNKNOWN
+        UNKNOWN,
+        DEVICE_ONLINE
     }
 
     private fun convertSnapshotToLogEntry(key: String, logData: Map<String, Any>): LogEntry {
@@ -175,6 +262,7 @@ class LogsFragment : Fragment() {
             "otp" -> EventType.OTP_GENERATION
             "user_added_to_device" -> EventType.USER_ADDED_TO_DEVICE
             "user_removed_from_device" -> EventType.USER_REMOVED_FROM_DEVICE
+            "device_online" -> EventType.DEVICE_ONLINE
             else -> EventType.UNKNOWN
         }
 
@@ -227,6 +315,16 @@ class LogsFragment : Fragment() {
                     uniqueId = key
                 )
             }
+            EventType.DEVICE_ONLINE -> {
+                LogEntry(
+                    deviceName = logData["ssid"] as? String ?: "Unknown WiFi",  // ✅ Use SSID instead of device name
+                    timestamp = timestamp,
+                    status = "Device Online",  // ✅ Correct status for WiFi connection
+                    userName = logData["ip_address"] as? String ?: "Unknown IP",  // ✅ Show IP instead of email
+                    eventType = "Network",  // ✅ More appropriate category
+                    uniqueId = key
+                )
+            }
             EventType.UNKNOWN -> {
                 LogEntry(
                     deviceName = "System",
@@ -243,13 +341,6 @@ class LogsFragment : Fragment() {
     companion object {
         private val lastLoggedDeviceRoles = mutableMapOf<String, String>()
 
-        private fun getLastLoggedRoleForDevice(deviceId: String): String? {
-            return lastLoggedDeviceRoles[deviceId]
-        }
-
-        private fun updateLastLoggedRoleForDevice(deviceId: String, role: String) {
-            lastLoggedDeviceRoles[deviceId] = role
-        }
         private val dateFormat = SimpleDateFormat("MM/dd/yy", Locale.getDefault())
         private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
