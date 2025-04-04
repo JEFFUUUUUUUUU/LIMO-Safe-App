@@ -1,44 +1,34 @@
 #include "FingerprintSensor.h"
 #include <SoftwareSerial.h>
 
-SoftwareSerial fingerSerial(8, 9); // RX, TX for fingerprint module
-Adafruit_Fingerprint finger = Adafruit_Fingerprint(&fingerSerial);
+// Single static instance for the hardware
+static SoftwareSerial fingerSerial(8, 9); // RX, TX
+static Adafruit_Fingerprint finger(&fingerSerial);
 
-// Define specific allowed fingerprint IDs
-const int allowedFingerprints[MAX_FINGERPRINTS] = {1};
+// Constants
+#define ALLOWED_FINGERPRINT_ID 1
+#define MAX_REMOVAL_ATTEMPTS 12
+#define LED_DISABLE_ATTEMPTS 3
+#define NEXT_SCAN_DELAY 5000  // 5 seconds delay between scans
 
 void initializeFingerprint() {
     finger.begin(57600);
     if (finger.verifyPassword()) {
-        Serial.println("Fingerprint sensor found.");
+        Serial.println(F("Fingerprint sensor found."));
         
-        // Try multiple times to disable the built-in LED
-        for (int i = 0; i < 5; i++) {
+        // Disable LED with fewer attempts
+        for (uint8_t i = 0; i < LED_DISABLE_ATTEMPTS; i++) {
             finger.LEDcontrol(false);
-            delay(50);
+            delay(20); // Reduced delay
         }
-        Serial.println("Sensor LED disabled (attempted multiple times)");
-        
     } else {
-        Serial.println("Fingerprint sensor NOT detected!");
-    }
-    
-    finger.getParameters();
-    Serial.print("Capacity: "); Serial.print(finger.capacity); Serial.println(" fingerprints");
-}
-
-// Disable sensor's built-in LED with multiple attempts
-void disableSensorLED() {
-    // Call LEDcontrol multiple times to ensure it takes effect
-    for (int i = 0; i < 3; i++) {
-        finger.LEDcontrol(false);
-        delay(20);
+        Serial.println(F("Fingerprint sensor NOT detected!"));
     }
 }
 
-// Authenticate only if the fingerprint ID is in the allowed list
+// Authenticate only if fingerprint ID is allowed
 bool authenticateUser() {
-    Serial.println("Waiting for fingerprint...");
+    Serial.println(F("Waiting for fingerprint..."));
 
     uint8_t p = finger.getImage();
     if (p != FINGERPRINT_OK) return false;
@@ -48,146 +38,89 @@ bool authenticateUser() {
     
     p = finger.fingerFastSearch();
     if (p != FINGERPRINT_OK) {
-        if (p == FINGERPRINT_NOTFOUND) {
-            Serial.println("Did not find a match");
-        }
         waitForFingerRemoval();
+        delay(NEXT_SCAN_DELAY);  // 5 second delay before next scan
         return false;
     }
 
-    int userID = finger.fingerID;
-
-    // Check if the fingerprint ID is allowed
-    for (int i = 0; i < MAX_FINGERPRINTS; i++) {
-        if (userID == allowedFingerprints[i]) {
-            Serial.print("Authenticated! User ID: ");
-            Serial.println(userID);
-            
-            // Disable sensor LED again
-            disableSensorLED();
-            
-            // Wait for finger removal
-            waitForFingerRemoval();
-            
-            return true;
-        }
+    // Check if the fingerprint is authorized
+    if (finger.fingerID == ALLOWED_FINGERPRINT_ID) {
+        // Disable LED and wait for finger removal
+        finger.LEDcontrol(false);
+        waitForFingerRemoval();
+        delay(NEXT_SCAN_DELAY);  // 5 second delay before next scan
+        return true;
     }
-
-    Serial.println("Unauthorized fingerprint detected!");
+    delay(5000);
     return false;
 }
 
-// Enroll a fingerprint if under the limit
+// Simplified fingerprint enrollment
 bool enrollFingerprint(int id) {
-    if (id != 1) {  // Only allow fingerprint ID 1
-        Serial.println("❌ Only fingerprint ID 1 is allowed!");
+    if (id != ALLOWED_FINGERPRINT_ID) {
+        Serial.println(F("Only ID 1 allowed!"));
         return false;
     }
-    Serial.print("Enrolling fingerprint ID ");
-    Serial.println(id);
-
-    // Make sure LED is off before starting enrollment
-    disableSensorLED();
-
-    // Wait for a valid finger
-    Serial.println("Place finger on sensor...");
-    uint8_t p = -1;
+    
+    finger.LEDcontrol(false);
+    Serial.println(F("Place finger on sensor..."));
+    
+    uint8_t p = 0;
     while (p != FINGERPRINT_OK) {
         p = finger.getImage();
-        switch (p) {
-            case FINGERPRINT_OK:
-                Serial.println("Image taken");
-                break;
-            case FINGERPRINT_NOFINGER:
-                // Silent when no finger detected to avoid spamming
-                break;
-            case FINGERPRINT_PACKETRECIEVEERR:
-                Serial.println("Communication error");
-                break;
-            case FINGERPRINT_IMAGEFAIL:
-                Serial.println("Imaging error");
-                break;
-            default:
-                Serial.println("Unknown error");
-                break;
+        // Only process meaningful states
+        if (p == FINGERPRINT_OK) {
+            Serial.println(F("Image taken"));
+        } else if (p != FINGERPRINT_NOFINGER) {
+            Serial.println(F("Error"));
         }
     }
 
-    // Convert image to template
-    p = finger.image2Tz(1);
-    if (p != FINGERPRINT_OK) {
-        Serial.println("❌ Error processing fingerprint.");
+    // Process fingerprint
+    if (finger.image2Tz(1) != FINGERPRINT_OK) {
         return false;
     }
     
-    // Since we're only taking one scan, we'll duplicate the template
-    Serial.println("Creating fingerprint model...");
+    finger.image2Tz(2);  // Create template in slot 2 (duplicating first one)
     
-    // We're skipping the second scan and using the first template for both slots
-    finger.image2Tz(2);  // Create template in slot 2 (duplicating the first one)
-    
-    p = finger.createModel();
-    if (p != FINGERPRINT_OK) {
-        Serial.println("❌ Error creating fingerprint model.");
+    if (finger.createModel() != FINGERPRINT_OK) {
         return false;
     }
 
-    // Store the model
     if (finger.storeModel(id) == FINGERPRINT_OK) {
-        Serial.println("✅ Fingerprint stored successfully!");
-        
-        // Make sure LED is disabled after enrollment
-        disableSensorLED();
-        
+        Serial.println(F("Fingerprint stored!"));
+        finger.LEDcontrol(false);
         waitForFingerRemoval();
+        delay(NEXT_SCAN_DELAY);  // 5 second delay before next scan
         return true;
-    } else {
-        Serial.println("❌ Error storing fingerprint.");
-        return false;
     }
+    
+    return false;
 }
 
-// Delete all fingerprints
+// Delete fingerprint
 void deleteAllFingerprints() {
-    Serial.println("Deleting fingerprint ID 1...");
-    finger.deleteModel(1);
-    Serial.println("Fingerprint ID 1 deleted.");
+    finger.deleteModel(ALLOWED_FINGERPRINT_ID);
 }
 
-// Wait for finger to be removed from the sensor
+// Wait for finger removal with timeout
 void waitForFingerRemoval() {
-    Serial.println("Waiting for finger to be removed...");
+    Serial.println(F("Remove finger..."));
     
-    // First, give a short delay for stability
-    delay(500);
+    // Short delay for stability
+    delay(300);
     
-    // Set a maximum number of attempts to prevent infinite loop
-    int maxAttempts = 15;
-    int attempts = 0;
-    
-    while (attempts < maxAttempts) {
-        uint8_t p = finger.getImage();
-        
-        // If no finger detected, we're done
-        if (p == FINGERPRINT_NOFINGER) {
-            Serial.println("Finger removed, ready for next scan");
-            delay(500); // Short delay before next scan
+    for (uint8_t attempts = 0; attempts < MAX_REMOVAL_ATTEMPTS; attempts++) {
+        if (finger.getImage() == FINGERPRINT_NOFINGER) {
+            Serial.println(F("Finger removed"));
+            delay(500);  // Small delay after finger removed
             return;
         }
-        
-        // Small delay between checks
-        delay(300);
-        attempts++;
-        
-        // If taking too long, force exit
-        if (attempts >= maxAttempts - 3) {
-            Serial.println("Timeout waiting for finger removal");
-            Serial.println("Forcing continuation...");
-            delay(1000);
-            return;
-        }
+        delay(200);
     }
     
-    // Disable sensor LED again after finger removal
-    disableSensorLED();
+    // Timeout occurred, disable LED before continuing
+    Serial.println(F("Timeout - please remove finger"));
+    finger.LEDcontrol(false);
+    delay(NEXT_SCAN_DELAY);  // 5 second delay after timeout
 }

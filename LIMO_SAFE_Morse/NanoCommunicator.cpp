@@ -47,13 +47,17 @@ void handleNanoData() {
         return;
     }
     
-    // Extract values efficiently
     String nanoID = message.substring(indices[0] + 1, indices[1]);
-    bool isSafeClosed = message.substring(indices[1] + 1, indices[2]).equals("CLOSED");
+    String safeStatus = message.substring(indices[1] + 1, indices[2]);
     String tamperStatus = message.substring(indices[2] + 1);
-    tamperStatus.trim();  // Trim it separately
+
+    safeStatus.trim();  // ✅ Correct: modifies safeStatus directly
+    tamperStatus.trim();  // ✅ Correct: modifies tamperStatus directly
+
+    bool isSafeClosed = safeStatus.equals("CLOSED");
     bool motionDetected = tamperStatus.equals("UNSAFE");
-    
+
+
     // Send acknowledgment to Nano
     NanoSerial.print("ESP32: Received (");
     NanoSerial.print(message);

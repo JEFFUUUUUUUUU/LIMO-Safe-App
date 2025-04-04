@@ -1,55 +1,48 @@
 #include "Accelerometer.h"
-#include <Wire.h>
-#include <Adafruit_MPU6050.h>
 
-Adafruit_MPU6050 mpu;
-bool accelInitialized = false;
+// Single static instance for the hardware
+static Adafruit_MPU6050 mpu;
+static bool accelInitialized = false;
 
-// Add variables to track acceleration history
-float prevAccelMagnitude = 0;
-const float MOTION_THRESHOLD = 0.5; // Adjustable threshold in m/s²
+// Constants in PROGMEM or as #define to save RAM
+#define MOTION_THRESHOLD 0.5f
+#define SUSTAINED_MOTION_THRESHOLD 0.7f
+#define HISTORY_SIZE 3
+#define MPU_ADDRESS 0x68
+#define GRAVITY_MAGNITUDE 9.8f
 
-// Variables for detecting significant motion
-float accelHistory[3] = {0, 0, 0}; // Store recent acceleration samples
-int historyIndex = 0;
-const int HISTORY_SIZE = 3;
-const float SUSTAINED_MOTION_THRESHOLD = 0.7; // Higher threshold for sustained motion
+// Variables for motion detection
+static float prevAccelMagnitude = 0;
+static float accelHistory[HISTORY_SIZE];
+static uint8_t historyIndex = 0;
 
 bool initializeAccelerometer() {
-    // Initialize I2C communication
     Wire.begin();
     
-    // Attempt to initialize the MPU6050
     if (!mpu.begin()) {
-        Serial.println("MPU6050 not found!");
-        accelInitialized = false;
         return false;
     }
    
-    // Configure sensor settings
+    // Configure with minimal settings
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_1000_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
     
-    // Configure motion detection in the MPU6050 (still useful even without interrupt)
-    Wire.beginTransmission(0x68); // MPU6050 address
-    
-    // Configure motion threshold - 1 = 4mg, so 20 = 80mg
-    Wire.write(0x1F); // Write to MOT_THR register
-    Wire.write(20);   // Set motion threshold
-    
-    // Configure motion duration - 1 = 1ms, so 40 = 40ms
-    Wire.write(0x20); // Write to MOT_DUR register
-    Wire.write(40);   // Set motion duration
-    
+    // Configure motion detection
+    Wire.beginTransmission(MPU_ADDRESS);
+    Wire.write(0x1F);  // MOT_THR register
+    Wire.write(20);    // Threshold (80mg)
+    Wire.write(0x20);  // MOT_DUR register
+    Wire.write(40);    // Duration (40ms)
     Wire.endTransmission(true);
     
-    // Initialize acceleration values
+    // Initialize values
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
     prevAccelMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
     
-    for (int i = 0; i < HISTORY_SIZE; i++) {
+    // Initialize history with current values
+    for (uint8_t i = 0; i < HISTORY_SIZE; i++) {
         accelHistory[i] = prevAccelMagnitude;
     }
     
@@ -57,156 +50,126 @@ bool initializeAccelerometer() {
     return true;
 }
 
-// Calculate vector magnitude
+// Optimized magnitude calculation
 float calculateMagnitude(float x, float y, float z) {
     return sqrt(x*x + y*y + z*z);
 }
 
-// Detect motion by polling the MPU6050 status register
+// Check MPU6050 status register for motion detection
 bool isMotionDetected() {
-    if (!accelInitialized) {
-        return false;
-    }
+    if (!accelInitialized) return false;
     
-    uint8_t intStatus;
-    
-    // Read the INT_STATUS register (0x3A)
-    Wire.beginTransmission(0x68);
+    // Read INT_STATUS register
+    Wire.beginTransmission(MPU_ADDRESS);
     Wire.write(0x3A);
     Wire.endTransmission(false);
     
-    Wire.requestFrom(0x68, 1, true);
+    Wire.requestFrom(MPU_ADDRESS, 1, true);
     if (Wire.available()) {
-        intStatus = Wire.read();
+        return (Wire.read() & 0x40) > 0;  // Check bit 6
     }
-    
-    // Check bit 6 (0x40) which is the motion detection interrupt flag
-    return (intStatus & 0x40) > 0;
+    return false;
 }
 
-// Detect motion by analyzing acceleration changes
+// Detect motion by analyzing acceleration
 bool detectMotionByReading() {
-    if (!accelInitialized) {
-        return false;
-    }
+    if (!accelInitialized) return false;
     
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
     
-    // Calculate current acceleration magnitude
-    float currentAccelMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    float currentMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    float delta = abs(currentMagnitude - prevAccelMagnitude);
+    prevAccelMagnitude = currentMagnitude;
     
-    // Calculate change in acceleration
-    float accelDelta = abs(currentAccelMagnitude - prevAccelMagnitude);
-    
-    // Update previous reading
-    prevAccelMagnitude = currentAccelMagnitude;
-    
-    // Return true if acceleration change exceeds threshold
-    return accelDelta > MOTION_THRESHOLD;
+    return delta > MOTION_THRESHOLD;
 }
 
-// Detect sustained motion by analyzing several consecutive readings
+// Detect sustained motion
 bool detectSustainedMotion() {
-    if (!accelInitialized) {
-        return false;
-    }
+    if (!accelInitialized) return false;
     
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
     
-    // Calculate current acceleration magnitude
-    float currentAccelMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    // Calculate net acceleration (relative to gravity)
+    float currentMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    float netAccel = abs(currentMagnitude - GRAVITY_MAGNITUDE);
     
-    // Calculate change from gravity
-    float gravityMagnitude = 9.8; // Approximate magnitude of gravity in m/s²
-    float netAcceleration = abs(currentAccelMagnitude - gravityMagnitude);
-    
-    // Store in history array
-    accelHistory[historyIndex] = netAcceleration;
+    // Update history
+    accelHistory[historyIndex] = netAccel;
     historyIndex = (historyIndex + 1) % HISTORY_SIZE;
     
-    // Check if most of the recent readings exceed the threshold
-    int aboveThresholdCount = 0;
-    for (int i = 0; i < HISTORY_SIZE; i++) {
+    // Count readings above threshold
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < HISTORY_SIZE; i++) {
         if (accelHistory[i] > SUSTAINED_MOTION_THRESHOLD) {
-            aboveThresholdCount++;
+            count++;
         }
     }
     
-    // Return true if majority of readings show motion
-    return aboveThresholdCount >= (HISTORY_SIZE / 2 + 1);
+    return count >= ((HISTORY_SIZE / 2) + 1);
 }
 
-// Reset motion detection - in polling mode, this just clears the flag
+// Reset motion detection
 void resetMotionDetection() {
-    // Read the INT_STATUS register to clear the motion flag
-    uint8_t intStatus;
-    Wire.beginTransmission(0x68);
-    Wire.write(0x3A); // INT_STATUS register
+    if (!accelInitialized) return;
+    
+    // Read INT_STATUS to clear flags
+    Wire.beginTransmission(MPU_ADDRESS);
+    Wire.write(0x3A);
     Wire.endTransmission(false);
-    
-    Wire.requestFrom(0x68, 1, true);
+    Wire.requestFrom(MPU_ADDRESS, 1, true);
     if (Wire.available()) {
-        intStatus = Wire.read();
+        Wire.read();  // Just read to clear
     }
     
-    // Also reset the history to current values
+    // Reset history
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    float currentMagnitude = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    float currMag = calculateMagnitude(a.acceleration.x, a.acceleration.y, a.acceleration.z);
     
-    for (int i = 0; i < HISTORY_SIZE; i++) {
-        accelHistory[i] = currentMagnitude - 9.8; // Reset to current net acceleration
+    for (uint8_t i = 0; i < HISTORY_SIZE; i++) {
+        accelHistory[i] = abs(currMag - GRAVITY_MAGNITUDE);
     }
 }
 
-// Get the current acceleration values
+// Combined sensor reading to reduce duplicate calls
+void getSensorData(float* ax, float* ay, float* az, float* gx, float* gy, float* gz) {
+    sensors_event_t a, g, temp;
+    
+    if (!accelInitialized) {
+        *ax = *ay = *az = *gx = *gy = *gz = 0;
+        return;
+    }
+    
+    mpu.getEvent(&a, &g, &temp);
+    
+    *ax = a.acceleration.x;
+    *ay = a.acceleration.y;
+    *az = a.acceleration.z;
+    *gx = g.gyro.x;
+    *gy = g.gyro.y;
+    *gz = g.gyro.z;
+}
+
+// Get acceleration data
 void getAccelerationData(float* x, float* y, float* z) {
-    if (!accelInitialized) {
-        *x = 0;
-        *y = 0;
-        *z = 0;
-        return;
-    }
-    
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    
-    *x = a.acceleration.x;
-    *y = a.acceleration.y;
-    *z = a.acceleration.z;
+    float gx, gy, gz;  // Unused but needed for the call
+    getSensorData(x, y, z, &gx, &gy, &gz);
 }
 
-// Get the current gyroscope values
+// Get gyroscope data
 void getGyroscopeData(float* x, float* y, float* z) {
-    if (!accelInitialized) {
-        *x = 0;
-        *y = 0;
-        *z = 0;
-        return;
-    }
-    
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    
-    *x = g.gyro.x;
-    *y = g.gyro.y;
-    *z = g.gyro.z;
+    float ax, ay, az;  // Unused but needed for the call
+    getSensorData(&ax, &ay, &az, x, y, z);
 }
 
-// Calculate the orientation (approximate)
+// Calculate orientation
 void getOrientation(float* pitch, float* roll) {
-    if (!accelInitialized) {
-        *pitch = 0;
-        *roll = 0;
-        return;
-    }
-    
     float x, y, z;
     getAccelerationData(&x, &y, &z);
     
-    // Calculate pitch and roll (simplified - assumes no extreme motion)
     *pitch = atan2(y, sqrt(x * x + z * z)) * 180.0 / PI;
     *roll = atan2(-x, z) * 180.0 / PI;
 }

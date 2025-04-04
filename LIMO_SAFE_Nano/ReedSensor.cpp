@@ -1,6 +1,6 @@
 #include "ReedSensor.h"
 
-const int reedSwitchPin = 5;
+const int reedSwitchPin = 12;
 
 void initializeReedSensor() {
     // Change to INPUT mode since KY-021 has its own pull-up resistor
