@@ -81,7 +81,7 @@ class DialogManager(private val context: Context) {
             playButton.isEnabled = true
         }
 
-        playButton.setOnClickListener { 
+        playButton.setOnClickListener {
             onPlayClick(playButton, cooldownText)
             sessionManager.userActivityDetected()
         }

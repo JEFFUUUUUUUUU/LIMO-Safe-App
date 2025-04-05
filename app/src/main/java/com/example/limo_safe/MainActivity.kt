@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             runOnUiThread {
                 auth.signOut()
                 clearAllPreferences()
-                clearBackStackAndNavigateToLogin()
+                showMainScreen()
             }
         }
 
@@ -59,21 +59,26 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     }
 
     private fun checkInitialState() {
+        // On fresh app open, always show main screen first
+        showMainScreen()
+
+        // Check if we have a valid session
+        if (!sessionManager.isLoggedIn()) {
+            clearAllPreferences()
+            auth.signOut()
+            return
+        }
+
         val currentUser = auth.currentUser
-        if (currentUser != null) {
-            if (currentUser.isEmailVerified) {
-                // User is logged in and verified, go to MC
-                mainContent.visibility = View.GONE
-                sessionManager.onLoginSuccess()
-                onLoginSuccessful()
-            } else {
-                // Email not verified, go to login
-                clearBackStackAndNavigateToLogin()
-            }
+        if (currentUser != null && currentUser.isEmailVerified) {
+            // User is logged in and verified, go to MC
+            mainContent.visibility = View.GONE
+            sessionManager.onLoginSuccess()
+            onLoginSuccessful()
         } else {
-            // No user, show initial screen
-            mainContent.visibility = View.VISIBLE
-            pressToEnterButton.visibility = View.VISIBLE
+            // Email not verified or no user
+            clearAllPreferences()
+            auth.signOut()
         }
     }
 
@@ -106,22 +111,32 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         mcFragment.view?.bringToFront()
     }
 
+    private fun showMainScreen() {
+        // Clear the entire back stack
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        
+        // Show main content with enter button
+        mainContent.visibility = View.VISIBLE
+        pressToEnterButton.visibility = View.VISIBLE
+        
+        // Hide fragment container
+        val fragmentContainer = findViewById<View>(R.id.fragmentContainer)
+        fragmentContainer.visibility = View.GONE
+    }
+
     private fun clearBackStackAndNavigateToLogin() {
         // Clear the entire back stack
         supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
 
-        // Clear any session-related preferences
-        clearAllPreferences()
-
-        // Show the main content and hide fragment container
+        // Hide main content
         mainContent.visibility = View.GONE
+        pressToEnterButton.visibility = View.GONE
 
-        // Get fragment container and ensure it's visible
+        // Show and setup fragment container
         val fragmentContainer = findViewById<View>(R.id.fragmentContainer)
         fragmentContainer.visibility = View.VISIBLE
-        fragmentContainer.bringToFront()
 
-        // Navigate to login with animation
+        // Navigate to login
         val loginFragment = LoginFragment.newInstance()
         supportFragmentManager.beginTransaction()
             .setCustomAnimations(
@@ -130,18 +145,13 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             )
             .replace(R.id.fragmentContainer, loginFragment)
             .commitNow()
-
-        // Force layout update
-        fragmentContainer.post {
-            fragmentContainer.requestLayout()
-            fragmentContainer.invalidate()
-        }
     }
 
     private fun clearAllPreferences() {
         getSharedPreferences("MorseCodePrefs", Context.MODE_PRIVATE).edit().clear().apply()
         getSharedPreferences("LIMOSafePrefs", Context.MODE_PRIVATE).edit().clear().apply()
         getSharedPreferences("UserPrefs", Context.MODE_PRIVATE).edit().clear().apply()
+        getSharedPreferences("SessionPrefs", Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     private fun navigateToLogin() {
@@ -154,9 +164,18 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     override fun onResume() {
         super.onResume()
-        if (auth.currentUser != null) {
-            sessionManager.userActivityDetected()
-        }
+        sessionManager.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sessionManager.onPause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        supportFragmentManager.removeOnBackStackChangedListener(this)
+        sessionManager.onPause() // Treat destroy as a pause to detect force-close
     }
 
     override fun onBackStackChanged() {
@@ -164,10 +183,5 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         if (currentFragment == null) {
             mainContent.visibility = View.VISIBLE
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        supportFragmentManager.removeOnBackStackChangedListener(this)
     }
 }
