@@ -9,6 +9,6 @@ extern int messageCount;
 void initializeESPCommunication();
 void sendStatusToESP(bool isSafeClosed, bool motionDetected);
 void checkESPResponse();
-void processESPCommand(const String& command);
+void processESPCommand(const char* command);
 
 #endif // ESP_COMMUNICATION_H

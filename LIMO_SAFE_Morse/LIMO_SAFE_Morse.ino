@@ -41,6 +41,7 @@ void setup() {
     }
 
     WiFi.setSleep(false);
+    performTimeSync();
 
     // ✅ Ensure Firebase is available
     int firebaseAttempts = 5;

@@ -14,6 +14,7 @@ void resetMotionDetection();
 
 // Helper functions
 float calculateMagnitude(float x, float y, float z);
+bool checkForTamper();
 void getSensorData(float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
 void getAccelerationData(float* x, float* y, float* z);
 void getGyroscopeData(float* x, float* y, float* z);

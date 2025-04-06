@@ -13,12 +13,7 @@
 // Function declarations
 void setupNanoCommunication();
 void handleNanoData();
-void sendCommandToNano(const String& command);
-
-// Sensor data upload functions
-void uploadSensorData(const String& sensorType, float value);
-void uploadTemperature(float temperature);
-void uploadLight(float light);
-void uploadHumidity(float humidity);
+void logStateChange(bool isClosed, bool isSecure);
+void sendCommandToNano(const char* command);
 
 #endif

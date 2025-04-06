@@ -110,7 +110,6 @@ bool setupWiFi() {
         
         // Reset failure count
         saveFailedAttempts(0);
-        performTimeSync(); 
         // Update Firebase status if possible (non-blocking)
         updateFirebaseWiFiStatus(true);
         return true;

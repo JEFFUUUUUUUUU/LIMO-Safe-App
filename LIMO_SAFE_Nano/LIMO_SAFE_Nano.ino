@@ -5,12 +5,13 @@
 #include "LockControl.h"
 #include "FingerprintSensor.h"
 
-// Flag to track if tamper was detected
 bool tamperDetected = false;
 
 void setup() {
     Serial.begin(9600);
     pinMode(LED_BUILTIN, OUTPUT); 
+    
+    // Initialize all components
     initializeReedSensor();
     initializeAccelerometer();
     initializeESPCommunication();
@@ -18,75 +19,42 @@ void setup() {
     initializeFingerprint();
 
     Serial.println("Nano-ESP Secure Safe System Started");
-
-    // Uncomment to enroll a new fingerprint (only run once for setup)
+    
+    // Setup functions (commented out for normal operation)
     //enrollFingerprint(1);
-    // enrollFingerprint(2);
-    // enrollFingerprint(3);
-    // deleteAllFingerprints(); // To reset fingerprints
+    //deleteAllFingerprints();
 }
 
 void loop() {
-    // Read reed sensor state
+    // Read sensors
     bool safeClosed = isSafeClosed();
-    
-    // Check for tamper using different motion detection methods
-    bool currentTamperDetected = isMotionDetected() || detectMotionByReading() || detectSustainedMotion();
+    bool tamperDetected = checkForTamper();
 
-    if (currentTamperDetected && !tamperDetected) {  // Log only on state change
-        Serial.println("⚠️ Tampering detected!");
-
-        if (detectSustainedMotion()) {  // Log orientation only when significant motion occurs
-            float pitch, roll;
-            getOrientation(&pitch, &roll);
-            Serial.print("Orientation - Pitch: ");
-            Serial.print(pitch);
-            Serial.print("° Roll: ");
-            Serial.println(roll);
-        }
-
-        resetMotionDetection();  // Reset internal motion detection if triggered
-    }
-
-    // Update tamper flag
-    tamperDetected = currentTamperDetected;
-
-    // Send status periodically
+    // Send status every 2 seconds
     static unsigned long lastStatusTime = 0;
-    if (millis() - lastStatusTime > 2000) {  // Every 2 seconds
-        // Debug output for reed sensor
-        Serial.print("Reed sensor status: ");
-        Serial.print(digitalRead(reedSwitchPin));
-        Serial.print(" | Safe status: ");
-        Serial.println(safeClosed ? "CLOSED" : "OPEN");
-        
-        // Send to ESP as normal
+    if (millis() - lastStatusTime > 2000) {
+        // Update ESP
         sendStatusToESP(safeClosed, tamperDetected);
         lastStatusTime = millis();
     }
     
-    // ALWAYS check for ESP commands - no timing window
+    // Check for ESP commands (high priority)
     if (espSerial.available()) {
         String command = espSerial.readStringUntil('\n');
-        command.trim();  // Remove whitespace
-        Serial.print("📥 Command from ESP: ");
+        command.trim();
+        Serial.print(F("📥 Command: "));
         Serial.println(command);
-        processESPCommand(command);
+        processESPCommand(command.c_str());
     }
 
+    // Handle fingerprint authentication
     if (authenticateUser()) {
+        Serial.println(F("🔓 Auth success! Unlocking..."));
         unlockSafe();
-        delay(5000);  // Keep the safe unlocked for 5 seconds
+        delay(5000);
+        Serial.println(F("🔒 Relocking..."));
         lockSafe();
-    } else {
-        // Don't print every loop
-        static unsigned long lastAccessDeniedTime = 0;
-        if (millis() - lastAccessDeniedTime > 2000) {
-            Serial.println("Access denied.");
-            lastAccessDeniedTime = millis();
-        }
     }
     
-    // Short delay is crucial - gives time to read Serial without missing commands
-    delay(50);
+    delay(50); // Prevent serial buffer overflow
 }

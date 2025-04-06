@@ -8,6 +8,6 @@ void initializeFingerprint();
 bool authenticateUser();
 bool enrollFingerprint(int id);
 void deleteAllFingerprints();
-void waitForFingerRemoval();
+void waitForFingerRemoval(unsigned long timeoutMillis = 5000);
 
 #endif

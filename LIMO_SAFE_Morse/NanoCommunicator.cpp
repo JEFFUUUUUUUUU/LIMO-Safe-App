@@ -1,4 +1,3 @@
-#line 1 "E:\\Arduino IDE\\Arduino\\LIMO_SAFE_Morse\\NanoCommunicator.cpp"
 #include "NanoCommunicator.h"
 #include "FirebaseHandler.h"
 #include "WiFiSetup.h"
@@ -6,62 +5,74 @@
 
 HardwareSerial NanoSerial(1); // UART1 for Nano communication
 
-void setupNanoCommunication() {
-    NanoSerial.begin(SERIAL2_BAUD, SERIAL_8N1, SERIAL2_RX, SERIAL2_TX);
-    Serial.println("✅ Nano UART Initialized");
-}
-
 // Define global variables to track previous states
-bool prevSafeClosed = false;  // Changed initial value to false to ensure first state is detected
-bool prevMotionDetected = false;  // Changed initial value to false to ensure first state is detected
-bool statesInitialized = false;  // Flag to track if we've received initial state
-unsigned long lastLockedChangeTime = 0;
-unsigned long lastSecureChangeTime = 0;
-unsigned long lastMessageTime = 0;  // To track message timing for debouncing
+bool prevSafeClosed = false;
+bool prevMotionDetected = false;
 unsigned long lastStatusUpdateTime = 0;
 
-// Debounce time in milliseconds
-const unsigned long DEBOUNCE_TIME = 500;
+// Constants defined using F() macro to store in flash
 const unsigned long STATUS_UPDATE_INTERVAL = 30000;
+
+void setupNanoCommunication() {
+    NanoSerial.begin(SERIAL2_BAUD, SERIAL_8N1, SERIAL2_RX, SERIAL2_TX);
+    Serial.println(F("✅ Nano UART Initialized"));
+}
 
 void handleNanoData() {
     if (!NanoSerial.available()) return;
     
-    String message = NanoSerial.readStringUntil('\n');
-    Serial.print("[Nano→ESP32] ");
-    Serial.println(message);
+    // Use fixed-size buffer instead of String
+    char buffer[64] = {0};
+    uint8_t index = 0;
+    unsigned long startTime = millis();
     
-    // Expected format: "Nano:<ID>:<SafeStatus>:<TamperStatus>"
-    int indices[3] = {-1, -1, -1};
-    
-    // Locate colons efficiently
-    for (int i = 0, colon = 0; i < message.length() && colon < 3; i++) {
-        if (message.charAt(i) == ':') {
-            indices[colon++] = i;
+    // Read data with timeout
+    while (millis() - startTime < 500 && index < sizeof(buffer) - 1) {
+        if (NanoSerial.available()) {
+            char c = NanoSerial.read();
+            if (c == '\n') {
+                buffer[index] = '\0';
+                break;
+            } else if (c != '\r') {
+                buffer[index++] = c;
+            }
         }
     }
     
-    // Validate format
-    if (indices[0] <= 0 || indices[1] <= indices[0] || indices[2] <= indices[1]) {
-        Serial.println("❌ Invalid message format from Nano");
+    // If no data read or empty, return
+    if (index == 0) return;
+    
+    Serial.print(F("[Nano→ESP32] "));
+    Serial.println(buffer);
+    
+    // Acknowledge receipt
+    NanoSerial.print(F("ESP32: Received ("));
+    NanoSerial.print(buffer);
+    NanoSerial.println(F(")"));
+    
+    // Parse message - Expected format: "Nano:SafeStatus:TamperStatus"
+    // Find delimiters
+    char* prefix = strtok(buffer, ":");
+    if (!prefix || strcmp(prefix, "Nano") != 0) {
+        Serial.println(F("❌ Invalid message format from Nano"));
         return;
     }
     
-    String nanoID = message.substring(indices[0] + 1, indices[1]);
-    String safeStatus = message.substring(indices[1] + 1, indices[2]);
-    String tamperStatus = message.substring(indices[2] + 1);
-
-    safeStatus.trim();  // ✅ Correct: modifies safeStatus directly
-    tamperStatus.trim();  // ✅ Correct: modifies tamperStatus directly
-
-    bool isSafeClosed = safeStatus.equals("CLOSED");
-    bool motionDetected = tamperStatus.equals("UNSAFE");
-
-
-    // Send acknowledgment to Nano
-    NanoSerial.print("ESP32: Received (");
-    NanoSerial.print(message);
-    NanoSerial.println(")");
+    char* safeStatus = strtok(NULL, ":");
+    if (!safeStatus) {
+        Serial.println(F("❌ Missing safe status"));
+        return;
+    }
+    
+    char* tamperStatus = strtok(NULL, ":");
+    if (!tamperStatus) {
+        Serial.println(F("❌ Missing tamper status"));
+        return;
+    }
+    
+    // Process statuses
+    bool isSafeClosed = (strcmp(safeStatus, "CLOSED") == 0);
+    bool motionDetected = (strcmp(tamperStatus, "UNSAFE") == 0);
     
     // Update LED status immediately for security indication
     if (!isSafeClosed || motionDetected) {
@@ -71,58 +82,70 @@ void handleNanoData() {
     // Track changes
     bool lockedChanged = (isSafeClosed != prevSafeClosed);
     bool secureChanged = (motionDetected != prevMotionDetected);
-
+    
     // Define current device status
     bool online = true;  // Device is active when receiving Nano messages
     bool locked = isSafeClosed;
     bool secure = !motionDetected;
-    bool otpStatus = false;
-    bool fingerprintStatus = false;
     
-    // Update Firebase via updateDeviceStatus
-    bool firebaseUpdateSuccess = false;
-    if (updateDeviceStatus(online, locked, secure)) {
-        Serial.println("✅ Status updated in Firebase via updateDeviceStatus");
-        firebaseUpdateSuccess = true;
+    // Update Firebase only if state changed or periodic update time reached
+    unsigned long currentTime = millis();
+    if (lockedChanged || secureChanged || (currentTime - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL)) {
+        lastStatusUpdateTime = currentTime;
         
-        // Log changes if the safe is unlocked, tampered, or states changed
-        if (lockedChanged || secureChanged || !isSafeClosed || motionDetected) {
-            String logsPath = String(DEVICE_PATH) + deviceId + "/logs";
+        if (updateDeviceStatus(online, locked, secure)) {
+            Serial.println(F("✅ Status updated in Firebase"));
             
-            static FirebaseJson logJson;
-            logJson.clear();
-            logJson.set("timestamp", isTimeSynchronized());
-
-            if (lockedChanged) logJson.set("locked", isSafeClosed);
-            if (secureChanged) logJson.set("secure", !motionDetected);
-
-            if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &logJson)) {
-                Serial.println("✅ Log entry added to Firebase");
-            } else {
-                Serial.print("❌ Firebase log update failed: ");
-                Serial.println(fbdo.errorReason());
+            // Log changes if the safe is unlocked, tampered, or states changed
+            if (lockedChanged || secureChanged) {
+                logStateChange(isSafeClosed, !motionDetected);
             }
+            
+            // Update previous states only after successful Firebase update
+            prevSafeClosed = isSafeClosed;
+            prevMotionDetected = motionDetected;
+        } else {
+            Serial.println(F("⚠️ Firebase status update failed!"));
         }
-        
-        // Update previous states only after successful Firebase update
-        prevSafeClosed = isSafeClosed;
-        prevMotionDetected = motionDetected;
-    } else {
-        Serial.println("⚠️ Firebase status update failed!");
     }
 }
 
+void logStateChange(bool isClosed, bool isSecure) {
+    // Construct Firebase path
+    char logsPath[64];
+    snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
+    
+    // Use static FirebaseJson to avoid repeated allocations
+    static FirebaseJson logJson;
+    logJson.clear();
+    logJson.set("timestamp", isTimeSynchronized());
+    
+    // Only log the state that changed
+    if (isClosed != prevSafeClosed) {
+        logJson.set("locked", isClosed);
+    }
+    
+    if (isSecure != !prevMotionDetected) {
+        logJson.set("secure", isSecure);
+    }
+    
+    if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
+        Serial.println(F("✅ Log entry added to Firebase"));
+    } else {
+        Serial.print(F("❌ Firebase log update failed: "));
+        Serial.println(fbdo.errorReason());
+    }
+}
 
-void sendCommandToNano(const String& command) {
-    // Send the raw command exactly as the Nano expects it
-    NanoSerial.print(command);  // Use print instead of println
-    NanoSerial.write('\n');     // Explicitly add newline
-    NanoSerial.flush();         // Ensure complete transmission
+void sendCommandToNano(const char* command) {
+    // Send the command with explicit newline
+    NanoSerial.print(command);
+    NanoSerial.write('\n');
+    NanoSerial.flush();  // Ensure complete transmission
     
-    Serial.print("[ESP32→Nano] Command sent: '");
+    Serial.print(F("[ESP32→Nano] Command sent: '"));
     Serial.print(command);
-    Serial.println("'");
-    
-    // Add a delay to give Nano time to process
+    Serial.println(F("'"));
+    // Small delay to give Nano time to process
     delay(50);
 }
