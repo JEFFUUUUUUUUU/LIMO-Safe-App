@@ -9,7 +9,7 @@ SoftwareSerial fingerprintSerial(FINGERPRINT_RX, FINGERPRINT_TX);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&fingerprintSerial);
 
 unsigned long lastFingerprintCheck = 0;
-const unsigned long FINGERPRINT_CHECK_INTERVAL = 1000; // 5 seconds between checks
+const unsigned long FINGERPRINT_CHECK_INTERVAL = 10000; // 5 seconds between checks
 
 void initializeFingerprint() {
     fingerprintSerial.begin(57600);
@@ -25,52 +25,49 @@ void initializeFingerprint() {
 }
 
 bool authenticateUser() {
-    // Only check fingerprint every 5 seconds
-    unsigned long currentTime = millis();
-    if (currentTime - lastFingerprintCheck < FINGERPRINT_CHECK_INTERVAL) {
-        return false; // Skip fingerprint check if not enough time has passed
+    if (millis() - lastFingerprintCheck < FINGERPRINT_CHECK_INTERVAL) {
+        return false;
     }
     
-    // Time to check for fingerprint
-    lastFingerprintCheck = currentTime;
-    Serial.println(F("Waiting for fingerprint..."));
+    // Update the last check time
+    lastFingerprintCheck = millis();
     
-    // Get fingerprint image
     uint8_t p = finger.getImage();
-    
-    // No finger detected
-    if (p == FINGERPRINT_NOFINGER) {
-        return false;
+    if (p != FINGERPRINT_OK) return false;
+
+    delay(100); // 🛠️ Let sensor settle before conversion
+
+    // 🛠️ Retry image conversion up to 3 times
+    uint8_t retries = 3;
+    while (retries--) {
+        p = finger.image2Tz();
+        if (p == FINGERPRINT_OK) {
+            Serial.println(F("✅ Image converted successfully"));
+            break;
+        } else {
+            Serial.print(F("Image conversion error: "));
+            Serial.println(p);
+            delay(100); // Give the sensor a moment before retry
+        }
     }
-    
-    // If we got an image but there was an error
+
     if (p != FINGERPRINT_OK) {
-        Serial.print(F("Fingerprint error: "));
-        Serial.println(p);
-        return false;
-    }
-    
-    // Convert image to features
-    p = finger.image2Tz();
-    if (p != FINGERPRINT_OK) {
-        Serial.println(F("Image conversion error"));
         waitForFingerRemoval();
         return false;
     }
-    
-    // Search for a match
+
     p = finger.fingerSearch();
-    if (p == FINGERPRINT_OK) {
-        Serial.print(F("✅ Authorized fingerprint ID #"));
-        Serial.println(finger.fingerID);
+    if (p != FINGERPRINT_OK) {
+        Serial.println(F("Fingerprint not recognized"));
         waitForFingerRemoval();
-        return true;
-    } 
-    
-    Serial.println(F("❌ Fingerprint not recognized"));
+        return false;
+    }
+
+    Serial.print(F("✅ Recognized ID #")); Serial.println(finger.fingerID);
     waitForFingerRemoval();
-    return false;
+    return true;
 }
+
 
 bool enrollFingerprint(int id) {
     Serial.println(F("Ready to enroll a fingerprint!"));
@@ -132,7 +129,7 @@ void deleteAllFingerprints() {
     }
 }
 
-void waitForFingerRemoval(unsigned long timeoutMillis = 5000) {
+void waitForFingerRemoval(unsigned long timeoutMillis = 3000) {
     Serial.println(F("Remove finger..."));
     unsigned long startTime = millis();
 
