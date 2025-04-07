@@ -52,6 +52,9 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             false
         }
 
+        // Ensure fragment container exists and is initially GONE
+        findViewById<View>(R.id.fragmentContainer).visibility = View.GONE
+
         // Check initial state
         if (savedInstanceState == null) {
             checkInitialState()
@@ -89,9 +92,12 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         // Initialize session
         sessionManager.onLoginSuccess()
 
-        // Hide main content and login fragment
+        // Hide main content
         mainContent.visibility = View.GONE
-        supportFragmentManager.findFragmentById(R.id.fragmentContainer)?.view?.visibility = View.GONE
+        pressToEnterButton.visibility = View.GONE
+
+        // Show fragment container
+        findViewById<View>(R.id.fragmentContainer).visibility = View.VISIBLE
 
         // Create and show MC fragment
         val mcFragment = MCFragment()
@@ -105,10 +111,6 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
         // Post-transaction cleanup
         supportFragmentManager.executePendingTransactions()
-
-        // Ensure MC fragment is visible
-        mcFragment.view?.visibility = View.VISIBLE
-        mcFragment.view?.bringToFront()
     }
 
     private fun showMainScreen() {
@@ -186,8 +188,27 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     override fun onBackStackChanged() {
         val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
-        if (currentFragment == null) {
-            mainContent.visibility = View.VISIBLE
+        val fragmentContainer = findViewById<View>(R.id.fragmentContainer)
+        
+        when {
+            currentFragment == null -> {
+                // No fragments - show main screen
+                mainContent.visibility = View.VISIBLE
+                pressToEnterButton.visibility = View.VISIBLE
+                fragmentContainer.visibility = View.GONE
+            }
+            currentFragment is MCFragment -> {
+                // MC Fragment - hide main screen
+                mainContent.visibility = View.GONE
+                pressToEnterButton.visibility = View.GONE
+                fragmentContainer.visibility = View.VISIBLE
+            }
+            else -> {
+                // Other fragments - hide main screen
+                mainContent.visibility = View.GONE
+                pressToEnterButton.visibility = View.GONE
+                fragmentContainer.visibility = View.VISIBLE
+            }
         }
     }
 }

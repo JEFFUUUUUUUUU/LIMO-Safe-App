@@ -136,7 +136,30 @@ class LoginFragment : Fragment() {
             // Dismiss any active dialogs
             dialogManager.dismissActiveDialog()
 
-            // Let MainActivity handle the navigation
+            // Check if we're returning from a timeout
+            arguments?.let { args ->
+                if (args.getBoolean("fromTimeout", false)) {
+                    val returnFragment = args.getString("returnFragment")
+                    val returnTab = args.getInt("returnTab", 0)
+
+                    when (returnFragment) {
+                        "MonitoringFragment" -> {
+                            val monitoringFragment = MonitoringFragment().apply {
+                                arguments = Bundle().apply {
+                                    putBoolean("fromLogin", true)
+                                    putInt("returnTab", returnTab)
+                                }
+                            }
+                            parentFragmentManager.beginTransaction()
+                                .replace(R.id.fragmentContainer, monitoringFragment)
+                                .commitAllowingStateLoss()
+                            return
+                        }
+                    }
+                }
+            }
+
+            // Default navigation through MainActivity
             (activity as? MainActivity)?.let { mainActivity ->
                 // Ensure we're on the main thread
                 view?.post {

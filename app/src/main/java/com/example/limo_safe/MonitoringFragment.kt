@@ -2,7 +2,10 @@ package com.example.limo_safe
 
 import android.app.Dialog
 import android.content.Context
+import android.graphics.Color
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -15,8 +18,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.widget.PopupMenu
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.FragmentManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.limo_safe.Object.SessionManager
@@ -36,7 +41,7 @@ class MonitoringFragment : Fragment() {
     private lateinit var deviceAdapter: DeviceAdapter
     private lateinit var backButton: Button
     private lateinit var tabLayout: TabLayout
-    private lateinit var logsFragment: LogsFragment
+    private var logsFragment: LogsFragment? = null
     private lateinit var dialogManager: DialogManager
     private lateinit var sessionManager: SessionManager
     private lateinit var fragmentContainer: View
@@ -47,7 +52,7 @@ class MonitoringFragment : Fragment() {
     private val deviceUsersListeners = mutableMapOf<String, ValueEventListener>()
     private val connectedDevices = mutableSetOf<String>()
 
-    private val devices = mutableListOf<Device>()
+    private var devices = mutableListOf<Device>()
     private val currentUserId: String
         get() = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
@@ -56,6 +61,9 @@ class MonitoringFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        // Ensure fragment container is visible
+        requireActivity().findViewById<View>(R.id.fragmentContainer).visibility = View.VISIBLE
+
         val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
 
         // Initialize views with correct IDs
@@ -84,9 +92,24 @@ class MonitoringFragment : Fragment() {
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
 
-        // Ensure view visibility
+        // Set up view visibility
         view.visibility = View.VISIBLE
         deviceListRecyclerView.visibility = View.VISIBLE
+        fragmentContainer.visibility = View.GONE  // Initially hide the logs container
+
+        // Initialize device list
+        devices = mutableListOf()
+        deviceAdapter = DeviceAdapter(
+            devices,
+            onUserAdded = { deviceId, email -> addUserToDevice(deviceId, email) },
+            onUserDeleted = { deviceId, userInfo -> deleteUserFromDeviceInternal(deviceId, userInfo) },
+            onUserPromoted = { deviceId, userInfo -> promoteUserInternal(deviceId, userInfo) },
+            onUserDemoted = { deviceId, userInfo -> demoteUserInternal(deviceId, userInfo) },
+            onWifiClicked = { deviceId -> showWifiDialogInternal(deviceId) },
+            context = requireContext()
+        )
+        deviceListRecyclerView.adapter = deviceAdapter
+        deviceListRecyclerView.layoutManager = LinearLayoutManager(context)
 
         setupRecyclerView()
         setupBackButton()
@@ -104,32 +127,60 @@ class MonitoringFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Clean up all listeners
+        // Clean up all listeners and fragments
         removeAllListeners()
+        logsFragment?.let { fragment ->
+            if (fragment.isAdded) {
+                childFragmentManager.beginTransaction()
+                    .remove(fragment)
+                    .commitNowAllowingStateLoss()
+            }
+        }
+        logsFragment = null
     }
 
     private fun setupRecyclerView() {
-        deviceAdapter = DeviceAdapter(
-            devices,
-            onUserAdded = { deviceId, email -> addUserToDevice(deviceId, email) },
-            onUserDeleted = { deviceId, userInfo -> deleteUserFromDevice(deviceId, userInfo) },
-            onUserPromoted = { deviceId, userInfo -> promoteUser(deviceId, userInfo) },
-            onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) },
-            onWifiClicked = { deviceId -> showWifiDialog(deviceId) },
-            context = requireContext()
-        )
-        deviceListRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context)
-            adapter = deviceAdapter
-        }
+        // RecyclerView setup is now done in onCreateView
     }
 
     private fun setupBackButton() {
         backButton.setOnClickListener {
             sessionManager.userActivityDetected()
-            parentFragmentManager.beginTransaction()
-                .replace(R.id.fragmentContainer, MCFragment())
-                .commitAllowingStateLoss()
+
+            // Clean up any existing fragments and listeners
+            removeAllListeners()
+            logsFragment?.let { fragment ->
+                if (fragment.isAdded) {
+                    childFragmentManager.beginTransaction()
+                        .remove(fragment)
+                        .commitNowAllowingStateLoss()
+                }
+            }
+
+            // Pop back to MCFragment
+            if (parentFragmentManager.backStackEntryCount > 0) {
+                // Find the MCFragment entry
+                val mcEntry = (0 until parentFragmentManager.backStackEntryCount)
+                    .map { parentFragmentManager.getBackStackEntryAt(it) }
+                    .firstOrNull { it.name == "monitoring" }
+
+                if (mcEntry != null) {
+                    // Pop back to MCFragment
+                    parentFragmentManager.popBackStackImmediate("monitoring", FragmentManager.POP_BACK_STACK_INCLUSIVE)
+                } else {
+                    // Pop the current fragment
+                    parentFragmentManager.popBackStackImmediate()
+                }
+            } else {
+                // Fallback: If somehow we lost the back stack, create a new MCFragment
+                parentFragmentManager.beginTransaction()
+                    .setCustomAnimations(
+                        android.R.anim.fade_in,
+                        android.R.anim.fade_out
+                    )
+                    .replace(R.id.fragmentContainer, MCFragment())
+                    .commitNowAllowingStateLoss()
+            }
         }
     }
 
@@ -147,11 +198,20 @@ class MonitoringFragment : Fragment() {
                     0 -> { // Device List
                         deviceListRecyclerView.visibility = View.VISIBLE
                         fragmentContainer.visibility = View.GONE
-                        if (logsFragment.isAdded) {
-                            childFragmentManager.beginTransaction()
-                                .remove(logsFragment)
-                                .commitAllowingStateLoss()
+                        // Safely remove logs fragment if it exists
+                        logsFragment?.let { fragment ->
+                            if (fragment.isAdded) {
+                                childFragmentManager.beginTransaction()
+                                    .remove(fragment)
+                                    .commitNowAllowingStateLoss()
+                            }
                         }
+                        logsFragment = null
+
+                        // Refresh device list
+                        devices.clear()
+                        deviceAdapter.notifyDataSetChanged()
+                        fetchUserDevices()
                     }
                     1 -> { // Logs
                         try {
@@ -161,16 +221,13 @@ class MonitoringFragment : Fragment() {
                                 deviceListRecyclerView.visibility = View.GONE
                                 fragmentContainer.visibility = View.VISIBLE
 
-                                // Create new logs fragment
-                                val logsFragment = LogsFragment()
-
-                                // Replace with new logs fragment using child fragment manager
-                                childFragmentManager.beginTransaction()
-                                    .replace(R.id.fragmentContainer, logsFragment)
-                                    .commit()
-
-                                // Execute transactions immediately
-                                childFragmentManager.executePendingTransactions()
+                                // Create and store new logs fragment
+                                logsFragment = LogsFragment().also { newFragment ->
+                                    // Replace with new logs fragment using child fragment manager
+                                    childFragmentManager.beginTransaction()
+                                        .replace(R.id.fragmentContainer, newFragment)
+                                        .commitNowAllowingStateLoss()
+                                }
                             } else {
                                 // If not logged in, stay on devices tab
                                 tabLayout.getTabAt(0)?.select()
@@ -197,7 +254,88 @@ class MonitoringFragment : Fragment() {
         })
     }
 
+    private fun deleteUserFromDeviceInternal(deviceId: String, userInfo: UserInfo) {
+        database.child("users").orderByChild("email").equalTo(userInfo.email)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key!!
+                    // Get user's tag
+                    database.child("users").child(userId).child("tag")
+                        .get()
+                        .addOnSuccessListener { tagSnapshot ->
+                            val tag = tagSnapshot.getValue(String::class.java)
+                            if (tag != null) {
+                                // Remove from device's registered users
+                                database.child("devices").child(deviceId).child("registeredUsers")
+                                    .child(tag)
+                                    .removeValue()
+                                // Remove from user's registered devices
+                                database.child("users").child(userId).child("registeredDevices")
+                                    .child(deviceId)
+                                    .removeValue()
+                                    .addOnSuccessListener {
+                                        Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
+                                        fetchUserDevices()  // Refresh the list
+                                    }
+                            }
+                        }
+                }
+            }
+    }
+
+    private fun promoteUserInternal(deviceId: String, userInfo: UserInfo) {
+        database.child("users").orderByChild("email").equalTo(userInfo.email)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key!!
+                    // Update role to admin
+                    database.child("users").child(userId).child("registeredDevices")
+                        .child(deviceId)
+                        .setValue("admin")
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "User promoted to admin", Toast.LENGTH_SHORT).show()
+                            fetchUserDevices()  // Refresh the list
+                        }
+                }
+            }
+    }
+
+    private fun demoteUserInternal(deviceId: String, userInfo: UserInfo) {
+        database.child("users").orderByChild("email").equalTo(userInfo.email)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key!!
+                    // Update role to user
+                    database.child("users").child(userId).child("registeredDevices")
+                        .child(deviceId)
+                        .setValue("user")
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "User demoted to regular user", Toast.LENGTH_SHORT).show()
+                            fetchUserDevices()  // Refresh the list
+                        }
+                }
+            }
+    }
+
+    private fun showWifiDialogInternal(deviceId: String) {
+        // Request WiFi credentials
+        database.child("devices").child(deviceId).child("status").child("wifiRequested")
+            .setValue(true)
+            .addOnSuccessListener {
+                Toast.makeText(context, "WiFi credentials requested", Toast.LENGTH_SHORT).show()
+            }
+    }
+
     private fun fetchUserDevices() {
+        // Debug logging
+        val auth = FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        Log.d(TAG, "Current user: ${user?.uid}, Email: ${user?.email}")
+        Log.d(TAG, "Current userId from getter: $currentUserId")
+
         // Remove previous listener if exists
         if (::deviceListListener.isInitialized) {
             database.child("users").child(currentUserId).child("registeredDevices")
@@ -215,16 +353,17 @@ class MonitoringFragment : Fragment() {
                     val deviceId = deviceSnapshot.key ?: continue
                     val role = deviceSnapshot.getValue(String::class.java) ?: "user"
 
-                    // Only process devices where the user is an admin
-                    if (role == "admin") {
-                        // Create placeholder device
+                    // Process all devices but store the user's role
+                    if (true) {  // We'll filter in the adapter based on role
+                        // Create placeholder device with role
                         val device = Device(
                             id = deviceId,
                             name = deviceId, // Temporary name until we get details
                             isOnline = false,
                             isLocked = false,
                             isSecure = false,
-                            users = emptyList()
+                            users = emptyList(),
+                            userRole = role  // Store the user's role
                         )
                         devices.add(device)
 
@@ -762,7 +901,8 @@ data class Device(
     val isOnline: Boolean,
     val isLocked: Boolean,
     val isSecure: Boolean,
-    val users: List<UserInfo>
+    val users: List<UserInfo>,
+    val userRole: String = "user"  // Default to user role
 )
 
 data class UserInfo(
@@ -873,23 +1013,30 @@ class DeviceAdapter(
 
     override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
         val device = devices[position]
+
+        // Only show devices where user is admin
+        holder.itemView.visibility = if (device.userRole == "admin") View.VISIBLE else View.GONE
+        holder.itemView.layoutParams = RecyclerView.LayoutParams(
+            RecyclerView.LayoutParams.MATCH_PARENT,
+            if (device.userRole == "admin") RecyclerView.LayoutParams.WRAP_CONTENT else 0
+        )
         holder.deviceNameText.text = device.name
         holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
-        holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
+        holder.onlineStatusText.setTextColor(ContextCompat.getColor(context, if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
 
         holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
-        holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
+        holder.lockStatusText.setTextColor(ContextCompat.getColor(context, if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
 
         holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
-        holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
+        holder.secureStatusText.setTextColor(ContextCompat.getColor(context, if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
 
         // Update WiFi button color based on connection status
-        val isConnected = (holder.itemView.context as? FragmentActivity)?.supportFragmentManager?.fragments?.firstOrNull { it is MonitoringFragment }?.let {
+        val isConnected = (context as? FragmentActivity)?.supportFragmentManager?.fragments?.firstOrNull { it is MonitoringFragment }?.let {
             (it as MonitoringFragment).isDeviceConnected(device.id)
         } ?: false
 
         holder.wifiButton.setColorFilter(
-            holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
+            ContextCompat.getColor(context, if (isConnected) android.R.color.holo_green_light else android.R.color.white)
         )
 
         // Clear previous users
@@ -897,14 +1044,14 @@ class DeviceAdapter(
 
         // Add user views
         device.users.forEach { userInfo ->
-            val userView = LayoutInflater.from(holder.itemView.context)
+            val userView = LayoutInflater.from(context)
                 .inflate(R.layout.item_user, holder.usersContainer, false)
 
             val userText = userView.findViewById<TextView>(R.id.userText)
             val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
 
             userText.text = "• ${userInfo.email}"
-            userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
+            userText.setTextColor(ContextCompat.getColor(context, R.color.maroon))
 
             userOptionsButton.setOnClickListener {
                 showUserOptionsMenu(it, device.id, userInfo)
@@ -915,14 +1062,14 @@ class DeviceAdapter(
     }
 
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
-        val popupMenu = PopupMenu(view.context, view).apply {
+        val popupMenu = PopupMenu(context, view).apply {
             inflate(R.menu.user_options_menu)
 
             // Set text color for all menu items
             for (i in 0 until menu.size()) {
                 val item = menu.getItem(i)
-                val spanString = android.text.SpannableString(item.title.toString())
-                spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
+                val spanString = SpannableString(item.title.toString())
+                spanString.setSpan(ForegroundColorSpan(Color.parseColor("#800000")), 0, spanString.length, 0)
                 item.title = spanString
             }
         }

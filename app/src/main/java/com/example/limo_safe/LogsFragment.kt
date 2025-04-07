@@ -71,9 +71,25 @@ class LogsFragment : Fragment() {
 
 
     override fun onDestroyView() {
+        try {
+            // Clean up Firebase listeners
+            removeAllListeners()
+            
+            // Clean up RecyclerView
+            logsRecyclerView.adapter = null
+            
+            // Remove touch listeners
+            view?.setOnTouchListener(null)
+            logsRecyclerView.setOnTouchListener(null)
+            searchInput.setOnTouchListener(null)
+            
+            // Clear data
+            allLogs.clear()
+            processedLogTimestamps.clear()
+        } catch (e: Exception) {
+            Log.e("LogsFragment", "Error in onDestroyView: ${e.message}")
+        }
         super.onDestroyView()
-        removeAllListeners()
-        processedLogTimestamps.clear()
     }
 
     private fun setupSearchBar() {

@@ -363,11 +363,20 @@ class MCFragment : BaseFragment() {
     }
 
     private fun navigateToMonitoring() {
+        // Save state before navigation
+        saveState()
+        
         val monitoringFragment = MonitoringFragment.newInstance()
         parentFragmentManager.beginTransaction()
+            .setCustomAnimations(
+                android.R.anim.fade_in,
+                android.R.anim.fade_out,
+                android.R.anim.fade_in,
+                android.R.anim.fade_out
+            )
             .replace(R.id.fragmentContainer, monitoringFragment)
-            .addToBackStack(null)  // Add to back stack for proper back navigation
-            .commit()
+            .addToBackStack("monitoring")  // Named back stack entry for better control
+            .commitAllowingStateLoss()
     }
 
     private fun showExitConfirmationDialog() {
