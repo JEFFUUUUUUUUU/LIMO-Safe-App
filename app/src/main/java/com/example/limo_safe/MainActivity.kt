@@ -124,27 +124,33 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         fragmentContainer.visibility = View.GONE
     }
 
-    private fun clearBackStackAndNavigateToLogin() {
-        // Clear the entire back stack
-        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+    fun clearBackStackAndNavigateToLogin() {
+        runOnUiThread {
+            // Clear the entire back stack
+            supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
 
-        // Hide main content
-        mainContent.visibility = View.GONE
-        pressToEnterButton.visibility = View.GONE
+            // Hide main content
+            mainContent.visibility = View.GONE
+            pressToEnterButton.visibility = View.GONE
 
-        // Show and setup fragment container
-        val fragmentContainer = findViewById<View>(R.id.fragmentContainer)
-        fragmentContainer.visibility = View.VISIBLE
+            // Show and setup fragment container
+            val fragmentContainer = findViewById<View>(R.id.fragmentContainer)
+            fragmentContainer.visibility = View.VISIBLE
 
-        // Navigate to login
-        val loginFragment = LoginFragment.newInstance()
-        supportFragmentManager.beginTransaction()
-            .setCustomAnimations(
-                android.R.anim.fade_in,
-                android.R.anim.fade_out
-            )
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commitNow()
+            // Navigate to login
+            val loginFragment = LoginFragment.newInstance()
+            supportFragmentManager.beginTransaction()
+                .setCustomAnimations(
+                    android.R.anim.fade_in,
+                    android.R.anim.fade_out
+                )
+                .replace(R.id.fragmentContainer, loginFragment)
+                .commitNow()
+
+            // Clear all preferences and sign out
+            auth.signOut()
+            clearAllPreferences()
+        }
     }
 
     private fun clearAllPreferences() {

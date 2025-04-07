@@ -27,6 +27,13 @@ class DialogManager(private val context: Context) {
         (context as MainActivity).sessionManager
     }
 
+    init {
+        // Set up session timeout listener
+        sessionManager.setOnSessionTimeoutListener {
+            dismissActiveDialog()
+        }
+    }
+
     private fun setupTouchListener(view: View) {
         view.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
@@ -207,6 +214,7 @@ class DialogManager(private val context: Context) {
     fun dismissActiveDialog() {
         activeDialog?.dismiss()
         activeDialog = null
+        triesTextView = null
     }
 
     companion object {

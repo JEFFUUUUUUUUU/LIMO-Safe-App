@@ -60,29 +60,31 @@ class MCFragment : BaseFragment() {
     private lateinit var dialog: AlertDialog
 
     private fun saveState() {
-        val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().apply {
-            putInt(KEY_REMAINING_TRIES, remainingTries)
-            putString(KEY_CURRENT_CODE, currentCode)
-            putLong(KEY_LAST_MORSE_TIME, lastMorsePlayTime)
-            putBoolean(KEY_MORSE_STATE_ACTIVE, currentCode.isNotEmpty() && remainingTries > 0)
-            putLong(KEY_GENERATE_COOLDOWN_END, generateCooldownEndTime)
-            putLong(KEY_MORSE_COOLDOWN_END, morseCooldownEndTime)
-        }.apply()
+        persistentTimer.setRemainingTries(remainingTries)
+        if (currentCode.isNotEmpty()) {
+            persistentTimer.startTimer(generateCooldownEndTime - System.currentTimeMillis(), currentCode)
+        }
+        if (generateCooldownEndTime > System.currentTimeMillis()) {
+            persistentTimer.setGenerateCooldown(generateCooldownEndTime - System.currentTimeMillis())
+        }
+        if (lastMorsePlayTime > 0) {
+            val morseEndTime = lastMorsePlayTime + MORSE_COOLDOWN
+            if (morseEndTime > System.currentTimeMillis()) {
+                persistentTimer.setMorseCooldown(morseEndTime - System.currentTimeMillis())
+            }
+        }
     }
 
     private fun loadState() {
-        val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        remainingTries = prefs.getInt(KEY_REMAINING_TRIES, 3)
-        currentCode = prefs.getString(KEY_CURRENT_CODE, "") ?: ""
-        lastMorsePlayTime = prefs.getLong(KEY_LAST_MORSE_TIME, 0)
-        val isStateActive = prefs.getBoolean(KEY_MORSE_STATE_ACTIVE, false)
-        generateCooldownEndTime = prefs.getLong(KEY_GENERATE_COOLDOWN_END, 0)
+        // Load state from PersistentTimer
+        remainingTries = persistentTimer.getRemainingTries()
+        currentCode = persistentTimer.getCurrentCode()
 
-        // Check and restore generate button cooldown state
-        val currentTime = System.currentTimeMillis()
-        if (generateCooldownEndTime > currentTime) {
-            startGenerateButtonCooldown(generateCooldownEndTime - currentTime)
+        // Check generate button cooldown
+        val generateCooldown = persistentTimer.getGenerateCooldownRemaining()
+        if (generateCooldown > 0) {
+            generateCooldownEndTime = System.currentTimeMillis() + generateCooldown
+            startGenerateButtonCooldown(generateCooldown)
         } else {
             generateCodeButton.isEnabled = true
             generateCodeButton.alpha = 1.0f
@@ -90,17 +92,22 @@ class MCFragment : BaseFragment() {
             generateCooldownEndTime = 0
         }
 
-        if (isStateActive && currentCode.isNotEmpty()) {
+        // Check morse cooldown and restore dialog if needed
+        val morseCooldown = persistentTimer.getMorseCooldownRemaining()
+        if (morseCooldown > 0) {
+            lastMorsePlayTime = System.currentTimeMillis() - (MORSE_COOLDOWN - morseCooldown)
+            morseCooldownEndTime = System.currentTimeMillis() + morseCooldown
+        } else {
+            lastMorsePlayTime = 0
+            morseCooldownEndTime = 0
+        }
+
+        // Restore active morse code session if any
+        if (currentCode.isNotEmpty()) {
             updateGeneratedCodeText()
-
-            // Calculate remaining morse cooldown time
-            val currentTime = System.currentTimeMillis()
-            val remainingMorseCooldown = if (lastMorsePlayTime > 0) {
-                val elapsed = currentTime - lastMorsePlayTime
-                if (elapsed < MORSE_COOLDOWN) MORSE_COOLDOWN - elapsed else 0
-            } else 0
-
-            showMorseCodeDialog(currentCode, remainingMorseCooldown)
+            if (remainingTries > 0) {
+                showMorseCodeDialog(currentCode, morseCooldown)
+            }
         }
     }
 
@@ -181,10 +188,11 @@ class MCFragment : BaseFragment() {
 
     override fun onPause() {
         super.onPause()
-        saveState()
-        // Dismiss dialog but don't reset state
+        saveState() // Save state on pause to handle force exits
+        sessionManager.onPause() // Notify session manager of pause
+        // Keep dialog state but save current state
         if (::dialog.isInitialized && dialog.isShowing) {
-            dialog.dismiss()
+            saveState()
         }
     }
 
@@ -242,9 +250,14 @@ class MCFragment : BaseFragment() {
         generateCodeButton.alpha = 0.5f
 
         generateCooldownEndTime = System.currentTimeMillis() + duration
+        persistentTimer.setGenerateCooldown(duration)
 
         object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
+                if (!sessionManager.isLoggedIn()) {
+                    cancel()
+                    return
+                }
                 val minutes = millisUntilFinished / 1000 / 60
                 val seconds = (millisUntilFinished / 1000) % 60
                 generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
@@ -255,6 +268,7 @@ class MCFragment : BaseFragment() {
                 generateCodeButton.alpha = 1.0f
                 generateCodeButton.text = "Generate Code"
                 generateCooldownEndTime = 0
+                persistentTimer.setGenerateCooldown(0)
             }
         }.start()
     }
@@ -351,14 +365,8 @@ class MCFragment : BaseFragment() {
     private fun navigateToMonitoring() {
         val monitoringFragment = MonitoringFragment.newInstance()
         parentFragmentManager.beginTransaction()
-            .setCustomAnimations(
-                R.anim.slide_in_right,  // Enter animation
-                R.anim.fade_in,         // Exit animation
-                R.anim.fade_in,         // Pop enter animation
-                R.anim.slide_in_right   // Pop exit animation
-            )
             .replace(R.id.fragmentContainer, monitoringFragment)
-            .addToBackStack(null)
+            .addToBackStack(null)  // Add to back stack for proper back navigation
             .commit()
     }
 
@@ -448,8 +456,15 @@ class MCFragment : BaseFragment() {
         playButton?.isEnabled = false
         playButton?.alpha = 0.5f
 
+        morseCooldownEndTime = System.currentTimeMillis() + duration
+        persistentTimer.setMorseCooldown(duration)
+
         morseTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
+                if (!sessionManager.isLoggedIn()) {
+                    cancel()
+                    return
+                }
                 val seconds = millisUntilFinished / 1000
                 activity?.runOnUiThread {
                     cooldownText?.text = "Please wait $seconds seconds before next try"
@@ -462,6 +477,8 @@ class MCFragment : BaseFragment() {
                     playButton?.isEnabled = true
                     playButton?.alpha = 1.0f
                     lastMorsePlayTime = 0
+                    morseCooldownEndTime = 0
+                    persistentTimer.setMorseCooldown(0)
                 }
             }
         }.start()
@@ -519,26 +536,23 @@ class MCFragment : BaseFragment() {
     // Add this to loadState() method
     override fun onResume() {
         super.onResume()
-        sessionManager.userActivityDetected()
-
-        // Get SharedPreferences properly
-        val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-        // Recalculate and synchronize cooldown times
-        val currentTime = System.currentTimeMillis()
-
-        // Check morse cooldown
-        morseCooldownEndTime = prefs.getLong(KEY_MORSE_COOLDOWN_END, 0)
-        if (morseCooldownEndTime > currentTime && currentCode.isNotEmpty() && remainingTries > 0) {
-            // If we have an active morse session with cooldown
-            val remainingCooldown = morseCooldownEndTime - currentTime
+        sessionManager.onResume() // Let session manager handle resume
+        // If session is still valid, restore state
+        if (sessionManager.isLoggedIn()) {
+            loadState()
+        } else {
+            // Session expired or invalid, clear state
+            persistentTimer.clearUserData()
+            remainingTries = 3
+            currentCode = ""
+            lastMorsePlayTime = 0
+            generateCooldownEndTime = 0
+            morseCooldownEndTime = 0
+            generateCodeButton.isEnabled = true
+            generateCodeButton.alpha = 1.0f
+            generateCodeButton.text = "Generate Code"
             if (::dialog.isInitialized && dialog.isShowing) {
-                // Update existing dialog
-                val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
-                cooldownText?.text = "Please wait ${remainingCooldown / 1000} seconds before next try"
-            } else {
-                // Show new dialog with remaining cooldown
-                showMorseCodeDialog(currentCode, remainingCooldown)
+                dialog.dismiss()
             }
         }
     }

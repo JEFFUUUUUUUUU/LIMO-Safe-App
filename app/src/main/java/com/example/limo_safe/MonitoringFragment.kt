@@ -30,6 +30,8 @@ import com.google.firebase.ktx.Firebase
 import com.example.limo_safe.LoginFragment
 
 class MonitoringFragment : Fragment() {
+    private val TAG = "MonitoringFragment"
+
     private lateinit var deviceListRecyclerView: RecyclerView
     private lateinit var deviceAdapter: DeviceAdapter
     private lateinit var backButton: Button
@@ -37,6 +39,7 @@ class MonitoringFragment : Fragment() {
     private lateinit var logsFragment: LogsFragment
     private lateinit var dialogManager: DialogManager
     private lateinit var sessionManager: SessionManager
+    private lateinit var fragmentContainer: View
 
     private lateinit var database: DatabaseReference
     private lateinit var deviceListListener: ValueEventListener
@@ -59,17 +62,23 @@ class MonitoringFragment : Fragment() {
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
+        fragmentContainer = view.findViewById(R.id.fragmentContainer)
+
+        // Initialize Firebase
+        database = FirebaseDatabase.getInstance().reference
 
         // Initialize managers
         dialogManager = DialogManager(requireContext())
-        sessionManager = com.example.limo_safe.Object.SessionManager(requireActivity()) {
-            // Logout callback
-            Toast.makeText(
-                requireContext(),
-                "Session expired. Please log in again.",
-                Toast.LENGTH_LONG
-            ).show()
-            navigateToLogin()
+        sessionManager = SessionManager(requireActivity()) {
+            // Session timeout callback
+            activity?.runOnUiThread {
+                Toast.makeText(
+                    requireContext(),
+                    "Session expired. Please log in again.",
+                    Toast.LENGTH_LONG
+                ).show()
+                handleLogout()
+            }
         }
 
         // Initialize Firebase
@@ -117,36 +126,74 @@ class MonitoringFragment : Fragment() {
 
     private fun setupBackButton() {
         backButton.setOnClickListener {
-            parentFragmentManager.popBackStack()
+            sessionManager.userActivityDetected()
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, MCFragment())
+                .commitAllowingStateLoss()
         }
     }
 
     private fun setupTabs() {
-        // Create logs fragment instance
-        logsFragment = LogsFragment.newInstance()
+        // Add default tabs
+        if (tabLayout.tabCount == 0) {
+            tabLayout.addTab(tabLayout.newTab().setText("Devices"))
+            tabLayout.addTab(tabLayout.newTab().setText("Logs"))
+        }
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
+                sessionManager.userActivityDetected()
                 when (tab?.position) {
                     0 -> { // Device List
                         deviceListRecyclerView.visibility = View.VISIBLE
+                        fragmentContainer.visibility = View.GONE
                         if (logsFragment.isAdded) {
                             childFragmentManager.beginTransaction()
                                 .remove(logsFragment)
-                                .commit()
+                                .commitAllowingStateLoss()
                         }
                     }
                     1 -> { // Logs
-                        deviceListRecyclerView.visibility = View.GONE
-                        childFragmentManager.beginTransaction()
-                            .replace(R.id.fragmentContainer, logsFragment)
-                            .commit()
+                        try {
+                            // Only proceed if we're logged in
+                            if (FirebaseAuth.getInstance().currentUser != null) {
+                                // Hide device list and show fragment container
+                                deviceListRecyclerView.visibility = View.GONE
+                                fragmentContainer.visibility = View.VISIBLE
+
+                                // Create new logs fragment
+                                val logsFragment = LogsFragment()
+
+                                // Replace with new logs fragment using child fragment manager
+                                childFragmentManager.beginTransaction()
+                                    .replace(R.id.fragmentContainer, logsFragment)
+                                    .commit()
+
+                                // Execute transactions immediately
+                                childFragmentManager.executePendingTransactions()
+                            } else {
+                                // If not logged in, stay on devices tab
+                                tabLayout.getTabAt(0)?.select()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error switching to logs tab: ${e.message}")
+                            e.printStackTrace()
+                            // Show device list on error
+                            deviceListRecyclerView.visibility = View.VISIBLE
+                            fragmentContainer.visibility = View.GONE
+                            tabLayout.getTabAt(0)?.select()
+                        }
                     }
                 }
             }
 
-            override fun onTabUnselected(tab: TabLayout.Tab?) {}
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
+            override fun onTabUnselected(tab: TabLayout.Tab?) {
+                sessionManager.userActivityDetected()
+            }
+
+            override fun onTabReselected(tab: TabLayout.Tab?) {
+                sessionManager.userActivityDetected()
+            }
         })
     }
 
@@ -592,9 +639,34 @@ class MonitoringFragment : Fragment() {
         updateUserRole(deviceId, userInfo, "user")
     }
 
+
+
+    private fun handleLogout() {
+        Log.d(TAG, "Handling logout")
+        removeAllListeners()
+        sessionManager.logout()
+
+        activity?.runOnUiThread {
+            Toast.makeText(
+                requireContext(),
+                "Session expired. Please log in again.",
+                Toast.LENGTH_LONG
+            ).show()
+
+            // Navigate to login
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, LoginFragment())
+                .commitAllowingStateLoss()
+        }
+    }
+
     private fun showWifiDialog(deviceId: String) {
-        val dialog = Dialog(requireContext()) // Ensures a non-null context
-        dialog.setContentView(R.layout.dialog_wifi_connection)
+        if (!sessionManager.isLoggedIn()) {
+            handleLogout()
+            return
+        }
+
+        val dialog = dialogManager.createCustomDialog(R.layout.dialog_wifi_connection)
         dialog.setCancelable(true)
 
 
