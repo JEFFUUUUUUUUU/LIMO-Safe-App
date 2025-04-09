@@ -3,7 +3,6 @@
 #include "Accelerometer.h"
 #include "ESPCommunication.h"
 #include "LockControl.h"
-#include "FingerprintSensor.h"
 
 bool tamperDetected = false;
 
@@ -16,13 +15,8 @@ void setup() {
     initializeAccelerometer();
     initializeESPCommunication();
     initializeLock();
-    //initializeFingerprint();
 
     Serial.println("Nano-ESP Secure Safe System Started");
-    
-    // Setup functions (commented out for normal operation)
-    //enrollFingerprint(1);
-    //deleteAllFingerprints();
 }
 
 void loop() {
@@ -39,17 +33,7 @@ void loop() {
         // Update ESP
         sendStatusToESP(safeClosed, tamperDetected);
         lastStatusTime = millis();
-    }
-
-    // Handle fingerprint authentication (now non-blocking)
-    if (authenticateUser()) {
-        Serial.println(F("🔓 Auth success! Unlocking..."));
-        unlockSafe();
-        delay(5000); // Note: This delay could be replaced with a non-blocking timer too
-        Serial.println(F("🔒 Relocking..."));
-        lockSafe();
-    }
-    
+    } 
     // Small delay to prevent CPU overload
     delay(10);
 }

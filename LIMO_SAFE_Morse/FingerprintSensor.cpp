@@ -31,19 +31,22 @@ void initializeFingerprint() {
     finger.setSecurityLevel(1);
 }
 
+// Modified to focus only on sending the command when needed
 bool authenticateUser() {
     static unsigned long stateStartTime = 0;
     const unsigned long STATE_TIMEOUT = 500; // 500ms timeout for each state
     
-    // Only start checking at regular intervals when in IDLE state
+    // Check if there's a finger on the sensor (only once per main loop)
     if (fingerprintState == FP_IDLE) {
-        if (millis() - lastFingerprintCheck < FINGERPRINT_CHECK_INTERVAL) {
+        uint8_t p = finger.getImage();
+        if (p == FINGERPRINT_OK) {
+            // Finger detected! Start the authentication process
+            fingerprintState = FP_CONVERT_IMAGE;
+            stateStartTime = millis();
+        } else {
+            // No finger or error, remain idle
             return false;
         }
-        lastFingerprintCheck = millis();
-        fingerprintState = FP_GET_IMAGE;
-        stateStartTime = millis();
-        return false;
     }
     
     // State timeout check
@@ -53,23 +56,8 @@ bool authenticateUser() {
         return false;
     }
     
-    // Non-blocking state machine for fingerprint processing
+    // State machine for fingerprint processing
     switch (fingerprintState) {
-        case FP_GET_IMAGE:
-            {
-                uint8_t p = finger.getImage();
-                if (p == FINGERPRINT_OK) {
-                    fingerprintState = FP_CONVERT_IMAGE;
-                    stateStartTime = millis();
-                } else if (p == FINGERPRINT_NOFINGER) {
-                    // No finger present, remain in this state
-                } else {
-                    // Error occurred, return to idle
-                    fingerprintState = FP_IDLE;
-                }
-            }
-            return false;
-            
         case FP_CONVERT_IMAGE:
             {
                 uint8_t p = finger.image2Tz();

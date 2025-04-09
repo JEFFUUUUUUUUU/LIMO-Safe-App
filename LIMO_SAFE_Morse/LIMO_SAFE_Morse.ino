@@ -90,12 +90,22 @@ const unsigned long FIREBASE_CHECK_INTERVAL = 30000; // Every 30 seconds
 unsigned long lastSuccess = millis();
 const unsigned long WATCHDOG_TIMEOUT = 60000; // 1 minute
 
+bool unlockSent = false;
+
 void loop() {
-    if (authenticateUser()) {
+    if (!unlockSent && authenticateUser()) {
         Serial.println(F("🔓 Auth success! Unlocking..."));
         sendCommandToNano("UNLOCK");
-        delay(5000); // Note: This delay could be replaced with a non-blocking timer too
-        Serial.println(F("🔒 Relocking..."));
+        unlockSent = true;
+        // Add a small delay to prevent immediate recheck
+        delay(1000); // This brief delay is acceptable since the event is rare
+    }
+    
+    // Reset the flag periodically to allow new unlock attempts
+    static unsigned long lastResetTime = 0;
+    if (unlockSent && millis() - lastResetTime >= 5000) {
+        unlockSent = false;
+        lastResetTime = millis();
     }
 
     // ✅ Ensure WiFi is connected
@@ -143,6 +153,7 @@ void loop() {
     
     // ✅ Handle Nano communication (process safe status)
     handleNanoData();
+    processFirebaseQueue(); 
     // ✅ Process light sensor input (Morse code)
     processLightInput();
 }

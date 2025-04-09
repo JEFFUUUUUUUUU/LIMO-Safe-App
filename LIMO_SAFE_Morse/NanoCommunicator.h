@@ -14,6 +14,7 @@
 void setupNanoCommunication();
 void handleNanoData();
 void logStateChange(bool isClosed, bool isSecure);
+void processFirebaseQueue();
 void sendCommandToNano(const char* command);
 
 #endif

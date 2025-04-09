@@ -3,7 +3,7 @@
 #include "WiFiSetup.h"
 #include "RGBLed.h"
 
-HardwareSerial NanoSerial(1); // UART1 for Nano communication
+HardwareSerial NanoSerial(2); // UART2 for Nano communication
 
 // Define global variables to track previous states
 bool prevSafeClosed = false;
@@ -13,9 +13,56 @@ unsigned long lastStatusUpdateTime = 0;
 // Constants defined using F() macro to store in flash
 const unsigned long STATUS_UPDATE_INTERVAL = 30000;
 
+// Queue for pending log entries to prevent blocking
+#define MAX_LOG_QUEUE 5
+struct LogEntry {
+    bool isValid;
+    bool isClosed;
+    bool isSecure;
+    unsigned long timestamp;
+};
+LogEntry logQueue[MAX_LOG_QUEUE];
+uint8_t logQueueHead = 0;
+uint8_t logQueueTail = 0;
+
+// Flag for pending status update
+bool pendingStatusUpdate = false;
+bool pendingStatusValues[3]; // online, locked, secure
+
 void setupNanoCommunication() {
     NanoSerial.begin(SERIAL2_BAUD, SERIAL_8N1, SERIAL2_RX, SERIAL2_TX);
     Serial.println(F("✅ Nano UART Initialized"));
+    
+    // Initialize log queue
+    for (int i = 0; i < MAX_LOG_QUEUE; i++) {
+        logQueue[i].isValid = false;
+    }
+}
+
+// Check if log queue is full
+bool isLogQueueFull() {
+    return (logQueueTail + 1) % MAX_LOG_QUEUE == logQueueHead;
+}
+
+// Check if log queue is empty
+bool isLogQueueEmpty() {
+    return logQueueHead == logQueueTail;
+}
+
+// Add an entry to the log queue
+bool queueLogEntry(bool isClosed, bool isSecure) {
+    if (isLogQueueFull()) {
+        Serial.println(F("⚠️ Log queue full! Entry discarded."));
+        return false;
+    }
+    
+    logQueue[logQueueTail].isValid = true;
+    logQueue[logQueueTail].isClosed = isClosed;
+    logQueue[logQueueTail].isSecure = isSecure;
+    logQueue[logQueueTail].timestamp = millis();
+    
+    logQueueTail = (logQueueTail + 1) % MAX_LOG_QUEUE;
+    return true;
 }
 
 void handleNanoData() {
@@ -82,52 +129,84 @@ void handleNanoData() {
     bool locked = isSafeClosed;
     bool secure = !motionDetected;
     
-    // Update Firebase only if state changed or periodic update time reached
+    // Queue status updates instead of blocking immediately
     unsigned long currentTime = millis();
     if (lockedChanged || secureChanged || (currentTime - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL)) {
         lastStatusUpdateTime = currentTime;
         
-        if (updateDeviceStatus(online, locked, secure)) {
-            Serial.println(F("✅ Status updated in Firebase"));
-            
-            // Log changes if the safe is unlocked, tampered, or states changed
-            if (lockedChanged || secureChanged) {
-                logStateChange(isSafeClosed, !motionDetected);
-            }
-            
-            // Update previous states only after successful Firebase update
-            prevSafeClosed = isSafeClosed;
-            prevMotionDetected = motionDetected;
-        } else {
-            Serial.println(F("⚠️ Firebase status update failed!"));
+        // Queue status update instead of immediately updating
+        pendingStatusUpdate = true;
+        pendingStatusValues[0] = online;
+        pendingStatusValues[1] = locked;
+        pendingStatusValues[2] = secure;
+        
+        // Queue log entry if states changed (doesn't block)
+        if (lockedChanged || secureChanged) {
+            queueLogEntry(isSafeClosed, !motionDetected);
         }
+        
+        // Update previous states immediately so we don't queue duplicates
+        prevSafeClosed = isSafeClosed;
+        prevMotionDetected = motionDetected;
     }
 }
 
-void logStateChange(bool isClosed, bool isSecure) {
-    // Construct Firebase path
-    char logsPath[64];
-    snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
+// Process any pending Firebase operations
+// Call this function regularly from your main loop
+void processFirebaseQueue() {
+    static unsigned long lastFirebaseOpTime = 0;
+    unsigned long currentTime = millis();
     
-    // Use static FirebaseJson to avoid repeated allocations
-    static FirebaseJson logJson;
-    logJson.clear();
-    logJson.set("timestamp", isTimeSynchronized());
-    
-    // Only log the state that changed
-    if (isClosed != prevSafeClosed) {
-        logJson.set("locked", isClosed);
+    // Add a small delay between Firebase operations to prevent overwhelming
+    if (currentTime - lastFirebaseOpTime < 200) {
+        return;
     }
     
-    if (isSecure != !prevMotionDetected) {
-        logJson.set("secure", isSecure);
+    // Process pending status update first (higher priority)
+    if (pendingStatusUpdate) {
+        if (updateDeviceStatus(pendingStatusValues[0], pendingStatusValues[1], pendingStatusValues[2])) {
+            Serial.println(F("✅ Status updated in Firebase"));
+            pendingStatusUpdate = false;
+            lastFirebaseOpTime = currentTime;
+        } else {
+            Serial.println(F("⚠️ Firebase status update failed!"));
+            // Will retry on next call
+        }
+        return; // Process one operation per call to avoid blocking
     }
     
-    if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
-        Serial.println(F("✅ Log entry added to Firebase"));
-    } else {
-        Serial.print(F("❌ Firebase log update failed: "));
-        Serial.println(fbdo.errorReason());
+    // Process log queue if not empty and no status update is pending
+    if (!isLogQueueEmpty()) {
+        LogEntry &entry = logQueue[logQueueHead];
+        
+        if (entry.isValid) {
+            // Construct Firebase path
+            char logsPath[64];
+            snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
+            
+            // Use static FirebaseJson to avoid repeated allocations
+            static FirebaseJson logJson;
+            logJson.clear();
+            logJson.set("timestamp", isTimeSynchronized());
+            logJson.set("locked", entry.isClosed);
+            logJson.set("secure", entry.isSecure);
+            
+            if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
+                Serial.println(F("✅ Log entry added to Firebase"));
+                
+                // Mark as processed and move head
+                entry.isValid = false;
+                logQueueHead = (logQueueHead + 1) % MAX_LOG_QUEUE;
+                lastFirebaseOpTime = currentTime;
+            } else {
+                Serial.print(F("❌ Firebase log update failed: "));
+                Serial.println(fbdo.errorReason());
+                // Will retry on next call
+            }
+        } else {
+            // Invalid entry, just skip it
+            logQueueHead = (logQueueHead + 1) % MAX_LOG_QUEUE;
+        }
     }
 }
 

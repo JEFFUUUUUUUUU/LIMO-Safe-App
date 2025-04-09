@@ -1,6 +1,6 @@
 #include "LockControl.h"
 
-const int relayPin = 11;  // Relay connected to digital pin 5
+const int relayPin = 11;  // Relay connected to digital pin 11
 
 void initializeLock() {
     pinMode(relayPin, OUTPUT);
