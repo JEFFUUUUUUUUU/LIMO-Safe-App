@@ -4,7 +4,8 @@ const int relayPin = 11;  // Relay connected to digital pin 5
 
 void initializeLock() {
     pinMode(relayPin, OUTPUT);
-    lockSafe();  // Ensure safe is locked by default
+    digitalWrite(relayPin, HIGH); 
+    //lockSafe();  // Ensure safe is locked by default
 }
 
 void lockSafe() {

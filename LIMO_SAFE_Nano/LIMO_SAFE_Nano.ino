@@ -16,7 +16,7 @@ void setup() {
     initializeAccelerometer();
     initializeESPCommunication();
     initializeLock();
-    initializeFingerprint();
+    //initializeFingerprint();
 
     Serial.println("Nano-ESP Secure Safe System Started");
     
@@ -26,7 +26,10 @@ void setup() {
 }
 
 void loop() {
-    // Read sensors
+    // Always check for ESP commands first
+    checkESPResponse();
+    
+    // Read sensors (these should be non-blocking too)
     bool safeClosed = isSafeClosed();
     bool tamperDetected = checkForTamper();
 
@@ -37,24 +40,16 @@ void loop() {
         sendStatusToESP(safeClosed, tamperDetected);
         lastStatusTime = millis();
     }
-    
-    // Check for ESP commands (high priority)
-    if (espSerial.available()) {
-        String command = espSerial.readStringUntil('\n');
-        command.trim();
-        Serial.print(F("📥 Command: "));
-        Serial.println(command);
-        processESPCommand(command.c_str());
-    }
 
-    // Handle fingerprint authentication
+    // Handle fingerprint authentication (now non-blocking)
     if (authenticateUser()) {
         Serial.println(F("🔓 Auth success! Unlocking..."));
         unlockSafe();
-        delay(5000);
+        delay(5000); // Note: This delay could be replaced with a non-blocking timer too
         Serial.println(F("🔒 Relocking..."));
         lockSafe();
     }
     
-    delay(50); // Prevent serial buffer overflow
+    // Small delay to prevent CPU overload
+    delay(10);
 }

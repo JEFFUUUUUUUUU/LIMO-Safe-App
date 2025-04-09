@@ -16,6 +16,7 @@
 #include "OTPVerifier.h"
 #include "UserManager.h"
 #include "RGBLed.h"
+#include "FingerprintSensor.h"
 #include "secrets.h"
 
 void setup() {
@@ -25,6 +26,8 @@ void setup() {
 
     initRGB();
     setupLightSensor();
+    initializeFingerprint();
+    //deleteAllFingerprint();
 
     // ✅ Ensure WiFi is available
     int wifiAttempts = 5;
@@ -88,6 +91,13 @@ unsigned long lastSuccess = millis();
 const unsigned long WATCHDOG_TIMEOUT = 60000; // 1 minute
 
 void loop() {
+    if (authenticateUser()) {
+        Serial.println(F("🔓 Auth success! Unlocking..."));
+        sendCommandToNano("UNLOCK");
+        delay(5000); // Note: This delay could be replaced with a non-blocking timer too
+        Serial.println(F("🔒 Relocking..."));
+    }
+
     // ✅ Ensure WiFi is connected
     if (!checkWiFiConnection()) {
         Serial.println("❌ WiFi lost! Restarting...");
@@ -130,7 +140,7 @@ void loop() {
             }
         }
     }
-
+    
     // ✅ Handle Nano communication (process safe status)
     handleNanoData();
     // ✅ Process light sensor input (Morse code)

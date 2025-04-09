@@ -45,12 +45,6 @@ void handleNanoData() {
     Serial.print(F("[Nano→ESP32] "));
     Serial.println(buffer);
     
-    // Acknowledge receipt
-    NanoSerial.print(F("ESP32: Received ("));
-    NanoSerial.print(buffer);
-    NanoSerial.println(F(")"));
-    
-    // Parse message - Expected format: "Nano:SafeStatus:TamperStatus"
     // Find delimiters
     char* prefix = strtok(buffer, ":");
     if (!prefix || strcmp(prefix, "Nano") != 0) {
