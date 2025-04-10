@@ -141,14 +141,17 @@ void handleNanoData() {
         pendingStatusValues[2] = secure;
         
         // Queue log entry if states changed (doesn't block)
-        if (lockedChanged || secureChanged) {
-            queueLogEntry(isSafeClosed, !motionDetected);
+        static unsigned long lastLogEntryTime = 0;
+        if (millis() - lastLogEntryTime > 1000) {
+            if (lockedChanged || secureChanged) {
+                queueLogEntry(isSafeClosed, !motionDetected);
+                lastLogEntryTime = millis();
+            }
         }
-        
-        // Update previous states immediately so we don't queue duplicates
-        prevSafeClosed = isSafeClosed;
-        prevMotionDetected = motionDetected;
     }
+    // Update previous states immediately so we don't queue duplicates
+    prevSafeClosed = isSafeClosed;
+    prevMotionDetected = motionDetected;
 }
 
 // Process any pending Firebase operations

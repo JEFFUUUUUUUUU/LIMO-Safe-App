@@ -22,7 +22,6 @@ void setLEDStatus(Status status) {
             break;
         case STATUS_UNLOCKED:
         case STATUS_OTP_VERIFIED:
-        case STATUS_FINGERPRINT_OK:
         case STATUS_SECURE:
             setColorRGB(COLOR_GREEN);  // Solid Green
             break;
@@ -42,6 +41,9 @@ void setLEDStatus(Status status) {
             break;
         case STATUS_SCANNING:
             pulseColor(COLOR_YELLOW, 5, 400); // Pulsing Yellow
+            break;
+        case STATUS_FINGERPRINT_OK:
+            setColorRGB(COLOR_PURPLE);  // Solid Purple
             break;
     }
 }

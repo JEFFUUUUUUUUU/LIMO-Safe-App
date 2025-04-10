@@ -97,6 +97,7 @@ void loop() {
         Serial.println(F("🔓 Auth success! Unlocking..."));
         sendCommandToNano("UNLOCK");
         unlockSent = true;
+        setLEDStatus(STATUS_FINGERPRINT_OK);
         // Add a small delay to prevent immediate recheck
         delay(1000); // This brief delay is acceptable since the event is rare
     }
