@@ -3,7 +3,7 @@
 #include "WiFiSetup.h"
 #include "RGBLed.h"
 
-HardwareSerial NanoSerial(2); // UART2 for Nano communication
+HardwareSerial NanoSerial(1); // UART2 for Nano communication
 
 // Define global variables to track previous states
 bool prevSafeClosed = false;

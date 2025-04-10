@@ -3,7 +3,7 @@
 
 // Define pins for fingerprint sensor (adjust if necessary)
 
-HardwareSerial FingerSerial(1);  // Use UART1
+HardwareSerial FingerSerial(2);  // Use UART1
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&FingerSerial);
 
 // State machine for fingerprint authentication
