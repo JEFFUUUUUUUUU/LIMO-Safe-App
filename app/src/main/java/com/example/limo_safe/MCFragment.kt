@@ -15,21 +15,22 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.limo_safe.Object.PersistentTimer
-import com.example.limo_safe.base.BaseFragment
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.MorseCodeHelper
+import com.example.limo_safe.Object.SessionManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import kotlin.concurrent.thread
 
-class MCFragment : BaseFragment() {
+class MCFragment : Fragment() {
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
@@ -37,6 +38,7 @@ class MCFragment : BaseFragment() {
     private lateinit var codeDisplayText: TextView
     private lateinit var dialogManager: DialogManager
     private lateinit var database: DatabaseReference
+    private lateinit var sessionManager: SessionManager
     private lateinit var persistentTimer: PersistentTimer
     private var countDownTimer: CountDownTimer? = null
     private var morseTimer: CountDownTimer? = null
@@ -111,22 +113,62 @@ class MCFragment : BaseFragment() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Handle back press
+        val callback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Only allow back if not in cooldown and has tries remaining
+                if (System.currentTimeMillis() - lastMorsePlayTime >= MORSE_COOLDOWN && remainingTries > 0) {
+                    if (parentFragmentManager.backStackEntryCount > 0) {
+                        parentFragmentManager.popBackStack()
+                    } else {
+                        isEnabled = false
+                        requireActivity().onBackPressedDispatcher.onBackPressed()
+                    }
+                } else {
+                    Toast.makeText(requireContext(), 
+                        "Please wait for cooldown or check remaining tries", 
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(this, callback)
+    }
+
+
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        // Remove any existing fragments
-        parentFragmentManager.fragments.forEach { fragment ->
-            if (fragment != this && fragment.isVisible) {
-                parentFragmentManager.beginTransaction()
-                    .remove(fragment)
-                    .commitNow()
+        val view = inflater.inflate(R.layout.fragment_mc, container, false)
+
+        // Check if we're coming from monitoring fragment
+        val fromMonitoring = arguments?.getBoolean("fromMonitoring", false) ?: false
+        
+        // Initialize session manager
+        sessionManager = SessionManager(requireActivity()) {
+            // Only handle session timeout if not coming from monitoring
+            if (!fromMonitoring) {
+                // Handle session timeout
+                activity?.runOnUiThread {
+                    // Clear session and show login
+                    sessionManager.logout()
+                    (activity as MainActivity).showMainScreen()
+                }
             }
         }
 
-        val view = inflater.inflate(R.layout.fragment_mc, container, false)
-        view.visibility = View.VISIBLE
+        // Initialize other components
+        dialogManager = DialogManager(requireContext())
+        persistentTimer = PersistentTimer(requireContext())
+        initializeViews(view)
+        setupClickListeners()
+        checkCameraPermission()
+
         return view
     }
 
@@ -143,11 +185,6 @@ class MCFragment : BaseFragment() {
         view.visibility = View.VISIBLE
         view.bringToFront()
 
-        dialogManager = DialogManager(requireContext())
-        persistentTimer = PersistentTimer(requireContext())
-        initializeViews(view)
-        setupClickListeners()
-        checkCameraPermission()
         loadState()  // Load saved state
 
         // Make sure all views are visible
@@ -194,6 +231,24 @@ class MCFragment : BaseFragment() {
         if (::dialog.isInitialized && dialog.isShowing) {
             saveState()
         }
+    }
+
+    private fun handleSessionTimeout() {
+        // Save current state before navigating
+        saveState()
+        
+        // Create login fragment with return information
+        val loginFragment = LoginFragment.newInstance().apply {
+            arguments = Bundle().apply {
+                putBoolean("fromTimeout", true)
+                putString("returnFragment", "MCFragment")
+            }
+        }
+        
+        // Navigate to login
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, loginFragment)
+            .commitAllowingStateLoss()
     }
 
     private fun initializeViews(view: View) {
@@ -366,17 +421,14 @@ class MCFragment : BaseFragment() {
         // Save state before navigation
         saveState()
         
-        val monitoringFragment = MonitoringFragment.newInstance()
+        // Create monitoring fragment
+        val monitoringFragment = MonitoringFragment()
+        
+        // Navigate to monitoring fragment
         parentFragmentManager.beginTransaction()
-            .setCustomAnimations(
-                android.R.anim.fade_in,
-                android.R.anim.fade_out,
-                android.R.anim.fade_in,
-                android.R.anim.fade_out
-            )
             .replace(R.id.fragmentContainer, monitoringFragment)
-            .addToBackStack("monitoring")  // Named back stack entry for better control
-            .commitAllowingStateLoss()
+            .addToBackStack(null)  // Add to back stack
+            .commit()
     }
 
     private fun showExitConfirmationDialog() {

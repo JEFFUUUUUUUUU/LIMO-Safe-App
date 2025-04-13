@@ -113,7 +113,7 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         supportFragmentManager.executePendingTransactions()
     }
 
-    private fun showMainScreen() {
+    fun showMainScreen() {
         // Clear the entire back stack
         supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
         
@@ -170,6 +170,15 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             .commitAllowingStateLoss()
     }
 
+    fun navigateToMonitoring() {
+        // Create and show monitoring fragment
+        val monitoringFragment = MonitoringFragment()
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, monitoringFragment)
+            .addToBackStack(null) // Add to back stack so we can pop back
+            .commit()
+    }
+
     override fun onResume() {
         super.onResume()
         sessionManager.onResume()
@@ -184,6 +193,32 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         super.onDestroy()
         supportFragmentManager.removeOnBackStackChangedListener(this)
         sessionManager.onPause() // Treat destroy as a pause to detect force-close
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // Get current fragment
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+        
+        when (currentFragment) {
+            is MonitoringFragment -> {
+                // Navigate to MC Fragment
+                val mcFragment = MCFragment()
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.fragmentContainer, mcFragment)
+                    .commit()
+            }
+            is MCFragment -> {
+                // Handle back press in MC Fragment
+                val callback = currentFragment.requireActivity()
+                    .onBackPressedDispatcher
+                    .hasEnabledCallbacks()
+                if (!callback) {
+                    super.onBackPressed()
+                }
+            }
+            else -> super.onBackPressed()
+        }
     }
 
     override fun onBackStackChanged() {

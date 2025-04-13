@@ -3,25 +3,29 @@ package com.example.limo_safe
 import android.app.Dialog
 import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.FragmentTransaction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.utils.DialogManager
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.tasks.Task
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -34,19 +38,14 @@ import com.google.firebase.database.ValueEventListener
 class MonitoringFragment : Fragment() {
     private lateinit var deviceListRecyclerView: RecyclerView
     private lateinit var deviceAdapter: DeviceAdapter
-    private lateinit var backButton: Button
+    private lateinit var backButton: MaterialButton
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
     private lateinit var dialogManager: DialogManager
     private lateinit var sessionManager: SessionManager
 
-    override fun onAttach(context: Context) {
-        super.onAttach(context)
-        sessionManager = (requireActivity() as MainActivity).sessionManager
-    }
-
     private lateinit var database: DatabaseReference
-    private lateinit var deviceListListener: ValueEventListener
+    private var deviceListListener: ValueEventListener? = null
     private val deviceStatusListeners = mutableMapOf<String, ValueEventListener>()
     private val deviceUsersListeners = mutableMapOf<String, ValueEventListener>()
     private val connectedDevices = mutableSetOf<String>()
@@ -54,6 +53,19 @@ class MonitoringFragment : Fragment() {
     private val devices = mutableListOf<Device>()
     private val currentUserId: String
         get() = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+    fun isDeviceConnected(device: Device): Boolean {
+        return connectedDevices.contains(device.id)
+    }
+
+    private fun updateDeviceConnectionStatus(deviceId: String, isConnected: Boolean) {
+        if (isConnected) {
+            connectedDevices.add(deviceId)
+        } else {
+            connectedDevices.remove(deviceId)
+        }
+        deviceAdapter.notifyDataSetChanged()
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -74,24 +86,96 @@ class MonitoringFragment : Fragment() {
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
 
+        // Setup back button with consistent behavior
+        backButton.setOnClickListener {
+            // Remove all listeners first
+            removeAllListeners()
+            
+            // Get main activity and update session
+            val activity = requireActivity() as MainActivity
+            activity.sessionManager.userActivityDetected()
+            
+            // Create and show MC fragment
+            val mcFragment = MCFragment()
+            activity.supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, mcFragment)
+                .commit()
+        }
+
         setupRecyclerView()
-        setupBackButton()
         setupTabs()
         fetchUserDevices()
 
-        // Add touch listener for session activity
-        view.setOnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
-        }
-
         return view
+    }
+
+    private fun setupTabs() {
+        // Create logs fragment instance
+        logsFragment = LogsFragment()
+
+        // Handle tab selection
+        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab?) {
+                when (tab?.position) {
+                    0 -> { // Device List
+                        deviceListRecyclerView.visibility = View.VISIBLE
+                        view?.findViewById<FrameLayout>(R.id.logsContainer)?.visibility = View.GONE
+                    }
+                    1 -> { // Logs
+                        deviceListRecyclerView.visibility = View.GONE
+                        if (!logsFragment.isAdded) {
+                            childFragmentManager.beginTransaction()
+                                .add(R.id.logsContainer, logsFragment)
+                                .commit()
+                        }
+                        view?.findViewById<FrameLayout>(R.id.logsContainer)?.visibility = View.VISIBLE
+                    }
+                }
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab?) {}
+            override fun onTabReselected(tab: TabLayout.Tab?) {}
+        })
+    }
+
+    override fun onPause() {
+        super.onPause()
+        removeAllListeners()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reset session timeout and update activity
+        sessionManager.userActivityDetected()
+        // Re-fetch data if needed
+        fetchUserDevices()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         // Clean up all listeners
         removeAllListeners()
+    }
+
+    private fun removeAllListeners() {
+        // Remove device list listener
+        deviceListListener?.let { listener ->
+            database.child("devices").removeEventListener(listener)
+        }
+
+        // Remove all device status listeners
+        deviceStatusListeners.forEach { (deviceId, listener) ->
+            database.child("devices").child(deviceId).child("isOnline")
+                .removeEventListener(listener)
+        }
+        deviceStatusListeners.clear()
+
+        // Remove all device users listeners
+        deviceUsersListeners.forEach { (deviceId, listener) ->
+            database.child("devices").child(deviceId).child("registeredUsers")
+                .removeEventListener(listener)
+        }
+        deviceUsersListeners.clear()
     }
 
     private fun setupRecyclerView() {
@@ -109,41 +193,6 @@ class MonitoringFragment : Fragment() {
             layoutManager = LinearLayoutManager(context)
             adapter = deviceAdapter
         }
-    }
-
-    private fun setupBackButton() {
-        backButton.setOnClickListener {
-            parentFragmentManager.popBackStack()
-        }
-    }
-
-    private fun setupTabs() {
-        // Create logs fragment instance
-        logsFragment = LogsFragment.newInstance()
-
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                when (tab?.position) {
-                    0 -> { // Device List
-                        deviceListRecyclerView.visibility = View.VISIBLE
-                        if (logsFragment.isAdded) {
-                            childFragmentManager.beginTransaction()
-                                .remove(logsFragment)
-                                .commit()
-                        }
-                    }
-                    1 -> { // Logs
-                        deviceListRecyclerView.visibility = View.GONE
-                        childFragmentManager.beginTransaction()
-                            .replace(R.id.fragmentContainer, logsFragment)
-                            .commit()
-                    }
-                }
-            }
-
-            override fun onTabUnselected(tab: TabLayout.Tab?) {}
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
-        })
     }
 
     private fun removeDeviceListeners(deviceId: String) {
@@ -164,12 +213,13 @@ class MonitoringFragment : Fragment() {
 
     private fun fetchUserDevices() {
         // Remove previous listener if exists
-        if (::deviceListListener.isInitialized) {
+        deviceListListener?.let { listener ->
             database.child("users").child(currentUserId).child("registeredDevices")
-                .removeEventListener(deviceListListener)
+                .removeEventListener(listener)
         }
 
-        deviceListListener = object : ValueEventListener {
+        // Create and set new listener
+        val newListener = object : ValueEventListener {
             // Initial setup to get list of devices user has access to
             override fun onDataChange(snapshot: DataSnapshot) {
                 // First, note which devices we had before
@@ -200,7 +250,7 @@ class MonitoringFragment : Fragment() {
                             devices.add(device)
 
                             // Set up listeners for this device
-                            fetchDeviceStatus(deviceId)
+                            updateDeviceStatus(deviceId)
                             fetchDeviceUsers(deviceId)
                         }
                         // Existing devices keep their current status and listeners
@@ -225,61 +275,50 @@ class MonitoringFragment : Fragment() {
             }
         }
 
+        // Store the listener before adding it
+        deviceListListener = newListener
+
+        // Add the listener to the database reference
         database.child("users").child(currentUserId).child("registeredDevices")
-            .addValueEventListener(deviceListListener)
+            .addValueEventListener(newListener)
     }
 
-    private fun fetchDeviceStatus(deviceId: String) {
-        // Remove previous listener if exists
-        deviceStatusListeners[deviceId]?.let { listener ->
-            database.child("devices").child(deviceId).child("status")
-                .removeEventListener(listener)
-        }
+    private fun updateDeviceStatus(deviceId: String) {
+        // Remove existing listener if any
+        removeDeviceListeners(deviceId)
 
-        val statusListener = object : ValueEventListener {
+        // Create new listener for device status
+        val deviceStatusListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val isOnline = snapshot.child("online").getValue(Boolean::class.java) ?: false
-                val isLocked = snapshot.child("locked").getValue(Boolean::class.java) ?: false
-                val isSecure = snapshot.child("secure").getValue(Boolean::class.java) ?: false
-                val name = snapshot.child("name").getValue(String::class.java) ?: deviceId
-
-                // Check timestamp of last heartbeat
-                val lastUpdateTimestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
-                val currentTime = System.currentTimeMillis()
-                val timeoutPeriod = 60000L // 60 seconds
-
-                // Override online status if heartbeat is too old
-                val actualOnlineStatus = if (currentTime - lastUpdateTimestamp > timeoutPeriod) {
-                    false // Mark as offline if no heartbeat within timeout period
-                } else {
-                    isOnline
-                }
-
-                // Find and update device in our list
                 val deviceIndex = devices.indexOfFirst { it.id == deviceId }
-                if (deviceIndex >= 0) {
-                    val device = devices[deviceIndex]
-                    devices[deviceIndex] = device.copy(
-                        name = name,
-                        isOnline = actualOnlineStatus,
-                        isLocked = isLocked,
-                        isSecure = isSecure
-                    )
+                if (deviceIndex < 0) return
 
-                    // Only notify the adapter about this specific item
-                    deviceAdapter.notifyItemChanged(deviceIndex)
-                }
+                val actualOnlineStatus = snapshot.getValue(Boolean::class.java) ?: false
+
+                // Update device status in list
+                val updatedDevice = devices[deviceIndex].copy(
+                    isOnline = actualOnlineStatus
+                )
+                devices[deviceIndex] = updatedDevice
+
+                // Only notify the adapter about this specific item
+                deviceAdapter.notifyItemChanged(deviceIndex)
+
+                // Update device connection status
+                updateDeviceConnectionStatus(deviceId, actualOnlineStatus)
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Toast.makeText(context, "Failed to load device status: ${error.message}", Toast.LENGTH_SHORT).show()
+                // Handle error
             }
         }
 
-        database.child("devices").child(deviceId).child("status")
-            .addValueEventListener(statusListener)
-
-        deviceStatusListeners[deviceId] = statusListener
+        // Add listener to database
+        database.child("devices").child(deviceId).child("isOnline")
+            .addValueEventListener(deviceStatusListener)
+        
+        // Store listener reference
+        deviceStatusListeners[deviceId] = deviceStatusListener
     }
 
     private fun fetchDeviceUsers(deviceId: String) {
@@ -299,13 +338,6 @@ class MonitoringFragment : Fragment() {
                 val userList = mutableListOf<UserInfo>()
                 var pendingFetches = snapshot.childrenCount.toInt()
 
-                Log.d("UserDebug", "Found ${pendingFetches} registered users for device $deviceId")
-
-                if (pendingFetches == 0) {
-                    updateDeviceWithUsers(deviceId, emptyList())
-                    return
-                }
-
                 for (userSnapshot in snapshot.children) {
                     val tag = userSnapshot.key ?: continue
                     val userId = userSnapshot.getValue(String::class.java) ?: continue
@@ -315,7 +347,6 @@ class MonitoringFragment : Fragment() {
                         .get()
                         .addOnSuccessListener { emailSnapshot ->
                             val email = emailSnapshot.getValue(String::class.java)
-                            Log.d("UserDebug", "Retrieved email for userId=$userId: $email")
 
                             if (email != null) {
                                 // Get user's role from the user's registeredDevices node
@@ -333,19 +364,12 @@ class MonitoringFragment : Fragment() {
                                         }
                                     }
                                     .addOnFailureListener { e ->
-                                        Log.e("UserDebug", "Error getting role for user $userId: ${e.message}")
-                                        // Fallback to using the registeredUsers value in device node if available
-                                        val defaultRole = if (tag in listOf("5", "D", "O")) "admin" else "user"
-                                        val userInfo = UserInfo(email, defaultRole)
-                                        userList.add(userInfo)
-
                                         pendingFetches--
                                         if (pendingFetches == 0) {
                                             updateDeviceWithUsers(deviceId, userList)
                                         }
                                     }
                             } else {
-                                Log.d("UserDebug", "Email is null for userId=$userId")
                                 pendingFetches--
                                 if (pendingFetches == 0) {
                                     updateDeviceWithUsers(deviceId, userList)
@@ -353,7 +377,6 @@ class MonitoringFragment : Fragment() {
                             }
                         }
                         .addOnFailureListener { e ->
-                            Log.e("UserDebug", "Error getting email for user $userId: ${e.message}")
                             pendingFetches--
                             if (pendingFetches == 0) {
                                 updateDeviceWithUsers(deviceId, userList)
@@ -373,8 +396,6 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun updateDeviceWithUsers(deviceId: String, userList: List<UserInfo>) {
-        Log.d("UserDebug", "Updating device $deviceId with users: $userList")
-
         val deviceIndex = devices.indexOfFirst { it.id == deviceId }
         if (deviceIndex >= 0) {
             val device = devices[deviceIndex]
@@ -407,8 +428,6 @@ class MonitoringFragment : Fragment() {
                                 val existingTag = tagSnapshot.getValue(String::class.java)
 
                                 if (!existingTag.isNullOrEmpty()) {
-                                    Log.d("UserDebug", "Using existing tag: $existingTag for user: $addedUserId")
-
                                     // Prepare log entry
                                     val logEntry = mapOf(
                                         "timestamp" to ServerValue.TIMESTAMP,
@@ -441,7 +460,6 @@ class MonitoringFragment : Fragment() {
                                             Toast.makeText(context, "User added successfully", Toast.LENGTH_SHORT).show()
                                         }
                                         .addOnFailureListener { e ->
-                                            Log.e("UserDebug", "Failed to add user: ${e.message}")
                                             Toast.makeText(context, "Failed to add user: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
                                 } else {
@@ -459,7 +477,6 @@ class MonitoringFragment : Fragment() {
                 }
             }
             .addOnFailureListener { e ->
-                Log.e("UserDebug", "Failed to check user: ${e.message}")
                 Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
@@ -483,8 +500,6 @@ class MonitoringFragment : Fragment() {
             .addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
                     val removedUserId = snapshot.children.first().key ?: return@addOnSuccessListener
-                    Log.d("FirebaseDebug", "Found user UID: $removedUserId")
-
                     // Get the user's existing tag from their profile
                     database.child("users").child(removedUserId).child("tag")
                         .get()
@@ -492,8 +507,6 @@ class MonitoringFragment : Fragment() {
                             val existingTag = tagSnapshot.getValue(String::class.java)
 
                             if (!existingTag.isNullOrEmpty()) {
-                                Log.d("FirebaseDebug", "Using existing tag: $existingTag for user: $removedUserId")
-
                                 // Prepare log entry
                                 val logEntry = mapOf(
                                     "timestamp" to ServerValue.TIMESTAMP,
@@ -536,7 +549,6 @@ class MonitoringFragment : Fragment() {
                 }
             }
             .addOnFailureListener { e ->
-                Log.e("FirebaseDebug", "Error fetching user: ${e.message}")
                 Toast.makeText(context, "Error checking user existence: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
@@ -548,8 +560,6 @@ class MonitoringFragment : Fragment() {
                 Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
                 return
             }
-
-        Log.d("UpdateUserRole", "Updating role for deviceId: $deviceId, userInfo: $userInfo, newRole: $newRole")
 
         database.child("users")
             .orderByChild("email")
@@ -683,37 +693,6 @@ class MonitoringFragment : Fragment() {
         }
 
         dialog.show()
-    }
-
-    fun isDeviceConnected(deviceId: String): Boolean {
-        return connectedDevices.contains(deviceId)
-    }
-
-    private fun removeAllDeviceListeners() {
-        // Remove all device status listeners
-        for ((deviceId, listener) in deviceStatusListeners) {
-            database.child("devices").child(deviceId).child("status")
-                .removeEventListener(listener)
-        }
-        deviceStatusListeners.clear()
-
-        // Remove all device users listeners
-        for ((deviceId, listener) in deviceUsersListeners) {
-            database.child("devices").child(deviceId).child("registeredUsers")
-                .removeEventListener(listener)
-        }
-        deviceUsersListeners.clear()
-    }
-
-    private fun removeAllListeners() {
-        // Remove device list listener
-        if (::deviceListListener.isInitialized) {
-            database.child("users").child(currentUserId).child("registeredDevices")
-                .removeEventListener(deviceListListener)
-        }
-
-        // Remove all device-specific listeners
-        removeAllDeviceListeners()
     }
 
     companion object {
@@ -872,7 +851,7 @@ class DeviceAdapter(
 
         // Update WiFi button color based on connection status
         val isConnected = (holder.itemView.context as? FragmentActivity)?.supportFragmentManager?.fragments?.firstOrNull { it is MonitoringFragment }?.let {
-            (it as MonitoringFragment).isDeviceConnected(device.id)
+            (it as MonitoringFragment).isDeviceConnected(device)
         } ?: false
 
         holder.wifiButton.setColorFilter(

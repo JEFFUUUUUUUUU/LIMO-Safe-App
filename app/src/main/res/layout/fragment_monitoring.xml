@@ -35,13 +35,12 @@
         android:layout_width="match_parent"
         android:layout_height="16dp" />
 
-    <!-- Content Container with white background -->
+    <!-- White Card Container -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="16dp"
+        android:layout_margin="16dp"
         app:cardCornerRadius="8dp"
         app:cardElevation="4dp">
 
@@ -51,6 +50,7 @@
             android:orientation="vertical"
             android:background="#FFFFFF">
 
+            <!-- Tab Layout -->
             <com.google.android.material.tabs.TabLayout
                 android:id="@+id/tabLayout"
                 android:layout_width="match_parent"
@@ -74,17 +74,25 @@
 
             </com.google.android.material.tabs.TabLayout>
 
+            <!-- Content Area -->
             <FrameLayout
-                android:id="@+id/fragmentContainer"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1">
 
+                <!-- Device List -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/deviceListRecyclerView"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:layout_margin="16dp"/>
+                    android:padding="16dp"/>
+
+                <!-- Logs Container -->
+                <FrameLayout
+                    android:id="@+id/logsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone"/>
 
             </FrameLayout>
 
@@ -101,13 +109,14 @@
         android:layout_gravity="center"
         android:background="@drawable/button_bg"
         android:padding="16dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
         android:textColor="@android:color/white" />
 
     <!-- Bottom Orange Bar -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:background="#FFA500"
-        android:layout_marginTop="16dp"/>
+        android:layout_height="50dp"
+        android:background="#FFA500"/>
 
 </LinearLayout>
