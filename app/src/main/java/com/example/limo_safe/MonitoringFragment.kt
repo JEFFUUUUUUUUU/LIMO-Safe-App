@@ -40,6 +40,11 @@ class MonitoringFragment : Fragment() {
     private lateinit var dialogManager: DialogManager
     private lateinit var sessionManager: SessionManager
 
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        sessionManager = (requireActivity() as MainActivity).sessionManager
+    }
+
     private lateinit var database: DatabaseReference
     private lateinit var deviceListListener: ValueEventListener
     private val deviceStatusListeners = mutableMapOf<String, ValueEventListener>()
@@ -64,15 +69,7 @@ class MonitoringFragment : Fragment() {
 
         // Initialize managers
         dialogManager = DialogManager(requireContext())
-        sessionManager = com.example.limo_safe.Object.SessionManager(requireActivity()) {
-            // Logout callback
-            Toast.makeText(
-                requireContext(),
-                "Session expired. Please log in again.",
-                Toast.LENGTH_LONG
-            ).show()
-            navigateToLogin()
-        }
+        sessionManager = (requireActivity() as MainActivity).sessionManager
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
@@ -105,7 +102,8 @@ class MonitoringFragment : Fragment() {
             onUserPromoted = { deviceId, userInfo -> promoteUser(deviceId, userInfo) },
             onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) },
             onWifiClicked = { deviceId -> showWifiDialog(deviceId) },
-            context = requireContext()
+            context = requireContext(),
+            sessionManager = sessionManager
         )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
@@ -718,13 +716,6 @@ class MonitoringFragment : Fragment() {
         removeAllDeviceListeners()
     }
 
-    private fun navigateToLogin() {
-        val loginFragment = LoginFragment.newInstance()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commit()
-    }
-
     companion object {
         fun newInstance(): MonitoringFragment {
             return MonitoringFragment()
@@ -754,13 +745,9 @@ class DeviceAdapter(
     private val onUserPromoted: (String, UserInfo) -> Unit,
     private val onUserDemoted: (String, UserInfo) -> Unit,
     private val onWifiClicked: (String) -> Unit,
-    private val context: Context
+    private val context: Context,
+    private val sessionManager: SessionManager
 ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
-
-    private val dialogManager = DialogManager(context)
-    private val sessionManager = SessionManager(context as FragmentActivity) {
-        // Logout callback - will be handled by parent fragment
-    }
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
