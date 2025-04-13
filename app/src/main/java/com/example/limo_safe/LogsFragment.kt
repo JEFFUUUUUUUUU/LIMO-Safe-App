@@ -68,8 +68,6 @@ class LogsFragment : Fragment() {
         return view
     }
 
-
-
     override fun onDestroyView() {
         try {
             // Clean up Firebase listeners
@@ -171,7 +169,7 @@ class LogsFragment : Fragment() {
                     val logData = logSnapshot.getValue(logMapType)
 
                     if (logData != null) {
-                        val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData, "user")
+                        val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData, "user", currentUserId)
 
                         // Prevent duplicate logs using timestamp
                         if (!processedLogTimestamps.contains(log.timestamp)) {
@@ -208,9 +206,10 @@ class LogsFragment : Fragment() {
                     // Check if device is admin by checking its value
                     val isAdminDevice = deviceSnapshot.getValue(String::class.java) == "admin"
 
+                    // In fetchLogs() method, where it creates the device log listener:
                     if (isAdminDevice) {
-                        // Create a new listener for this device's logs
-                        val deviceLogListener = createDeviceLogListener(deviceId)
+                        // Create a new listener for this device's logs, passing the currentUserId
+                        val deviceLogListener = createDeviceLogListener(deviceId, currentUserId)
 
                         // Store reference to listener
                         deviceLogsListeners[deviceId] = deviceLogListener
@@ -228,7 +227,7 @@ class LogsFragment : Fragment() {
         })
     }
 
-    private fun createDeviceLogListener(deviceId: String): ValueEventListener {
+    private fun createDeviceLogListener(deviceId: String, currentUserId: String): ValueEventListener {
         return object : ValueEventListener {
             override fun onDataChange(deviceLogsSnapshot: DataSnapshot) {
                 // Use GenericTypeIndicator for Map retrieval
@@ -242,7 +241,12 @@ class LogsFragment : Fragment() {
                     val logData = logSnapshot.getValue(deviceLogMapType)
 
                     if (logData != null) {
-                        val log = convertSnapshotToLogEntry(logSnapshot.key ?: "", logData, deviceId)
+                        val log = convertSnapshotToLogEntry(
+                            logSnapshot.key ?: "",
+                            logData,
+                            deviceId,
+                            currentUserId
+                        )
 
                         // Prevent duplicate logs using timestamp
                         if (!processedLogTimestamps.contains(log.timestamp)) {
@@ -295,7 +299,12 @@ class LogsFragment : Fragment() {
     }
 
     // Modified to accept a deviceId parameter
-    private fun convertSnapshotToLogEntry(key: String, logData: Map<String, Any>, deviceId: String): LogEntry {
+    private fun convertSnapshotToLogEntry(
+        key: String,
+        logData: Map<String, Any>,
+        deviceId: String,
+        currentUserId: String? = null
+    ): LogEntry {
         // Extract timestamp safely
         val timestamp = (logData["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
@@ -311,11 +320,16 @@ class LogsFragment : Fragment() {
         // Check for specific fields first to handle events without an "event" field
         if (logData.containsKey("locked")) {
             val isLocked = logData["locked"] as? Boolean ?: false
+            val userName = if (logData.containsKey("user")) {
+                val userData = logData["user"] as? Map<String, Any>
+                userData?.get("email") as? String ?: "System"
+            } else "System"
+
             return LogEntry(
                 deviceName = resolvedDeviceId,
                 timestamp = timestamp,
                 status = if (isLocked) "Device Locked" else "Device Unlocked",
-                userName = "System",
+                userName = userName,
                 eventType = "Security",
                 uniqueId = key
             )
@@ -350,15 +364,33 @@ class LogsFragment : Fragment() {
                 )
             }
             "otp" -> {
-                val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
-                LogEntry(
-                    deviceName = "System",  // Keep using "System" for system-wide events
+                // Create log entry with placeholder, then fetch email
+                val logEntry = LogEntry(
+                    deviceName = "System",
                     timestamp = timestamp,
                     status = "OTP Generated",
-                    userName = userData["email"] as? String ?: "Unknown",
+                    userName = "Loading...", // Placeholder while loading
                     eventType = "Authentication",
                     uniqueId = key
                 )
+
+                // Start email fetch if we have the current user ID
+                if (currentUserId != null) {
+                    fetchUserEmail(currentUserId) { email ->
+                        // Find and update this log entry in the list
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: currentUserId)
+                            allLogs[index] = updatedLog
+                            // Notify adapter on UI thread
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                return logEntry
             }
             "otp_verified" -> {
                 // Create log entry with placeholder, then fetch email
@@ -369,6 +401,38 @@ class LogsFragment : Fragment() {
                     status = "OTP Verified",
                     userName = "Loading...", // Placeholder while loading
                     eventType = "Authentication",
+                    uniqueId = key
+                )
+
+                // Start email fetch if we have a valid userId
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        // Find and update this log entry in the list
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            // Notify adapter on UI thread
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                return logEntry
+            }
+            "fingerprint_enrolled" -> {
+                // Handle fingerprint enrollment logs
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val fingerprintId = (logData["fingerprintId"] as? Number)?.toInt() ?: 0
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint #$fingerprintId Enrolled",
+                    userName = "Loading...", // Placeholder while loading
+                    eventType = "Biometric",
                     uniqueId = key
                 )
 
@@ -429,6 +493,33 @@ class LogsFragment : Fragment() {
                     status = "WiFi Connected: ${logData["ssid"] as? String ?: "Unknown Network"}",
                     userName = logData["ip_address"] as? String ?: "N/A",
                     eventType = "Network",
+                    uniqueId = key
+                )
+            }
+            "lock" -> {
+                val isLocked = logData["locked"] as? Boolean ?: false
+                val userName = if (logData.containsKey("user")) {
+                    val userData = logData["user"] as? Map<String, Any>
+                    userData?.get("email") as? String ?: "System"
+                } else "System"
+
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = if (isLocked) "Device Locked" else "Device Unlocked",
+                    userName = userName,
+                    eventType = "Security",
+                    uniqueId = key
+                )
+            }
+            "security" -> {
+                val isSecure = logData["secure"] as? Boolean ?: false
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = if (isSecure) "Device Secured" else "Tamper Detected",
+                    userName = "System",
+                    eventType = "Security",
                     uniqueId = key
                 )
             }

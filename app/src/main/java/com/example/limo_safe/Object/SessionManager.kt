@@ -93,18 +93,10 @@ class SessionManager(private val activity: Activity, private val onSessionTimeou
     fun onResume() {
         val currentTime = System.currentTimeMillis()
         val sessionExpiryTime = prefs.getLong("sessionExpiryTime", 0)
-        val lastPauseTime = prefs.getLong("lastPauseTime", 0)
 
-        // Check for force-close (pause time > 1 second)
-        if (lastPauseTime > 0 && currentTime - lastPauseTime > 1000) {
-            performTimeout()
-            return
-        }
-
-        if (currentTime > sessionExpiryTime || !isValidSession()) {
+        if (currentTime > sessionExpiryTime) {
             performTimeout()
         } else {
-            prefs.edit().putLong("lastPauseTime", 0).apply()
             resetSessionTimeout()
         }
     }

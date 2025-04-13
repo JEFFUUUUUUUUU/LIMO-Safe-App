@@ -21,13 +21,15 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.limo_safe.Object.SessionManager
 import com.example.limo_safe.utils.DialogManager
+import com.google.android.gms.tasks.Tasks
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.*
-import com.google.android.gms.tasks.Tasks
-import com.google.firebase.database.ktx.database
-import com.google.firebase.ktx.Firebase
-import com.example.limo_safe.LoginFragment
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
+import com.google.firebase.database.ValueEventListener
 
 class MonitoringFragment : Fragment() {
     private lateinit var deviceListRecyclerView: RecyclerView
