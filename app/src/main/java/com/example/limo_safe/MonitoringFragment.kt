@@ -148,6 +148,22 @@ class MonitoringFragment : Fragment() {
         })
     }
 
+    private fun removeDeviceListeners(deviceId: String) {
+        // Remove device status listener if it exists
+        deviceStatusListeners[deviceId]?.let { listener ->
+            database.child("devices").child(deviceId).child("status")
+                .removeEventListener(listener)
+            deviceStatusListeners.remove(deviceId)
+        }
+
+        // Remove device users listener if it exists
+        deviceUsersListeners[deviceId]?.let { listener ->
+            database.child("devices").child(deviceId).child("registeredUsers")
+                .removeEventListener(listener)
+            deviceUsersListeners.remove(deviceId)
+        }
+    }
+
     private fun fetchUserDevices() {
         // Remove previous listener if exists
         if (::deviceListListener.isInitialized) {
@@ -156,32 +172,50 @@ class MonitoringFragment : Fragment() {
         }
 
         deviceListListener = object : ValueEventListener {
+            // Initial setup to get list of devices user has access to
             override fun onDataChange(snapshot: DataSnapshot) {
-                // Clear previous device listeners
-                removeAllDeviceListeners()
-                devices.clear()
+                // First, note which devices we had before
+                val previousDeviceIds = devices.map { it.id }.toSet()
+                val currentDeviceIds = mutableSetOf<String>()
 
+                // Process all devices user has access to
                 for (deviceSnapshot in snapshot.children) {
-                    // The key is now the deviceId, and the value is the role
                     val deviceId = deviceSnapshot.key ?: continue
                     val role = deviceSnapshot.getValue(String::class.java) ?: "user"
+                    currentDeviceIds.add(deviceId)
 
                     // Only process devices where the user is an admin
                     if (role == "admin") {
-                        // Create placeholder device
-                        val device = Device(
-                            id = deviceId,
-                            name = deviceId, // Temporary name until we get details
-                            isOnline = false,
-                            isLocked = false,
-                            isSecure = false,
-                            users = emptyList()
-                        )
-                        devices.add(device)
+                        // Check if device is already in our list
+                        val existingDeviceIndex = devices.indexOfFirst { it.id == deviceId }
 
-                        // Fetch device status and users
-                        fetchDeviceStatus(deviceId)
-                        fetchDeviceUsers(deviceId)
+                        if (existingDeviceIndex == -1) {
+                            // New device - add to list
+                            val device = Device(
+                                id = deviceId,
+                                name = deviceId, // Temporary name until we get details
+                                isOnline = false,
+                                isLocked = false,
+                                isSecure = false,
+                                users = emptyList()
+                            )
+                            devices.add(device)
+
+                            // Set up listeners for this device
+                            fetchDeviceStatus(deviceId)
+                            fetchDeviceUsers(deviceId)
+                        }
+                        // Existing devices keep their current status and listeners
+                    }
+                }
+
+                // Remove devices user no longer has access to
+                val devicesToRemove = previousDeviceIds.minus(currentDeviceIds)
+                if (devicesToRemove.isNotEmpty()) {
+                    devices.removeAll { it.id in devicesToRemove }
+                    // Also remove listeners for these devices
+                    for (deviceId in devicesToRemove) {
+                        removeDeviceListeners(deviceId)
                     }
                 }
 
@@ -211,16 +245,30 @@ class MonitoringFragment : Fragment() {
                 val isSecure = snapshot.child("secure").getValue(Boolean::class.java) ?: false
                 val name = snapshot.child("name").getValue(String::class.java) ?: deviceId
 
+                // Check timestamp of last heartbeat
+                val lastUpdateTimestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
+                val currentTime = System.currentTimeMillis()
+                val timeoutPeriod = 60000L // 60 seconds
+
+                // Override online status if heartbeat is too old
+                val actualOnlineStatus = if (currentTime - lastUpdateTimestamp > timeoutPeriod) {
+                    false // Mark as offline if no heartbeat within timeout period
+                } else {
+                    isOnline
+                }
+
                 // Find and update device in our list
                 val deviceIndex = devices.indexOfFirst { it.id == deviceId }
                 if (deviceIndex >= 0) {
                     val device = devices[deviceIndex]
                     devices[deviceIndex] = device.copy(
                         name = name,
-                        isOnline = isOnline,
+                        isOnline = actualOnlineStatus,
                         isLocked = isLocked,
                         isSecure = isSecure
                     )
+
+                    // Only notify the adapter about this specific item
                     deviceAdapter.notifyItemChanged(deviceIndex)
                 }
             }
