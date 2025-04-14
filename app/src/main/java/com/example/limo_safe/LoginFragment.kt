@@ -131,44 +131,40 @@ class LoginFragment : Fragment() {
     }
 
     private fun handleSuccessfulLogin() {
-        val currentUser = auth.currentUser
-        if (currentUser != null && currentUser.isEmailVerified) {
-            // Dismiss any active dialogs
-            dialogManager.dismissActiveDialog()
+        try {
+            val currentUser = auth.currentUser
+            if (currentUser != null && currentUser.isEmailVerified) {
+                // Dismiss any active dialogs
+                try {
+                    dialogManager.dismissActiveDialog()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    // Continue even if dialog dismissal fails
+                }
 
-            // Check if we're returning from a timeout
-            arguments?.let { args ->
-                if (args.getBoolean("fromTimeout", false)) {
-                    val returnFragment = args.getString("returnFragment")
-                    val returnTab = args.getInt("returnTab", 0)
+                // Default navigation - no timeout handling needed
 
-                    when (returnFragment) {
-                        "MonitoringFragment" -> {
-                            val monitoringFragment = MonitoringFragment().apply {
-                                arguments = Bundle().apply {
-                                    putBoolean("fromLogin", true)
-                                    putInt("returnTab", returnTab)
-                                }
-                            }
-                            parentFragmentManager.beginTransaction()
-                                .replace(R.id.fragmentContainer, monitoringFragment)
-                                .commitAllowingStateLoss()
-                            return
-                        }
+                // Default navigation through MainActivity
+                try {
+                    val mainActivity = activity as? MainActivity
+                    if (mainActivity != null && !mainActivity.isFinishing && isAdded) {
+                        mainActivity.onLoginSuccessful()
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(context, "Please verify your email first", Toast.LENGTH_LONG).show()
+                auth.signOut()
             }
-
-            // Default navigation through MainActivity
-            (activity as? MainActivity)?.let { mainActivity ->
-                // Ensure we're on the main thread
-                view?.post {
-                    mainActivity.onLoginSuccessful()
-                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            try {
+                Toast.makeText(context, "Login error: ${e.message}", Toast.LENGTH_SHORT).show()
+            } catch (e2: Exception) {
+                e2.printStackTrace()
             }
-        } else {
-            Toast.makeText(requireContext(), "Please verify your email first", Toast.LENGTH_LONG).show()
-            auth.signOut()
         }
     }
 

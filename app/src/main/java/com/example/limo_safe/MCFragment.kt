@@ -2,7 +2,6 @@ package com.example.limo_safe
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -20,107 +19,49 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.example.limo_safe.Object.PersistentTimer
-import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.MorseCodeHelper
-import com.example.limo_safe.Object.SessionManager
+import com.example.limo_safe.utils.DialogManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ServerValue
 import kotlin.concurrent.thread
+import android.content.DialogInterface
+import android.view.View.GONE
+import android.view.View.VISIBLE
 
 class MCFragment : Fragment() {
+    private lateinit var morseCodeHelper: MorseCodeHelper
+    private var generateCooldownEndTime: Long = 0
+    private var morseCooldownEndTime: Long = 0
+    private var lastMorsePlayTime: Long = 0
+    private var currentCode = ""
+    private var remainingTries = 3
+    private val MORSE_COOLDOWN: Long = 15000 // 15 seconds
+    private val GENERATE_COOLDOWN: Long = 60000 // 1 minute
+
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
     private lateinit var exitButton: Button
     private lateinit var generatedCodeText: TextView
     private lateinit var codeDisplayText: TextView
-    private lateinit var dialogManager: DialogManager
     private lateinit var database: DatabaseReference
-    private lateinit var sessionManager: SessionManager
-    private lateinit var persistentTimer: PersistentTimer
-    private var countDownTimer: CountDownTimer? = null
-    private var morseTimer: CountDownTimer? = null
-    private var currentCode = ""
-    private var remainingTries = 3
-    private val MORSE_COOLDOWN: Long = 15000 // 15 seconds in milliseconds
-    private val GENERATE_COOLDOWN: Long = 60000 // 1 minute in milliseconds
-    private var lastMorsePlayTime: Long = 0
-    private val PREFS_NAME = "MorseCodePrefs"
-    private val KEY_REMAINING_TRIES = "remaining_tries"
-    private val KEY_CURRENT_CODE = "current_code"
-    private val KEY_LAST_MORSE_TIME = "last_morse_time"
-    private val KEY_MORSE_STATE_ACTIVE = "morse_state_active"
-    private val KEY_GENERATE_COOLDOWN_END = "generate_cooldown_end"
-    private val KEY_MORSE_COOLDOWN_END = "morse_cooldown_end"
-
-    private var generateCooldownEndTime: Long = 0
-    private var morseCooldownEndTime: Long = 0
-
     private lateinit var cooldownText: TextView
     private lateinit var dialog: AlertDialog
-
-    private fun saveState() {
-        persistentTimer.setRemainingTries(remainingTries)
-        if (currentCode.isNotEmpty()) {
-            persistentTimer.startTimer(generateCooldownEndTime - System.currentTimeMillis(), currentCode)
-        }
-        if (generateCooldownEndTime > System.currentTimeMillis()) {
-            persistentTimer.setGenerateCooldown(generateCooldownEndTime - System.currentTimeMillis())
-        }
-        if (lastMorsePlayTime > 0) {
-            val morseEndTime = lastMorsePlayTime + MORSE_COOLDOWN
-            if (morseEndTime > System.currentTimeMillis()) {
-                persistentTimer.setMorseCooldown(morseEndTime - System.currentTimeMillis())
-            }
-        }
-    }
-
-    private fun loadState() {
-        // Load state from PersistentTimer
-        remainingTries = persistentTimer.getRemainingTries()
-        currentCode = persistentTimer.getCurrentCode()
-
-        // Check generate button cooldown
-        val generateCooldown = persistentTimer.getGenerateCooldownRemaining()
-        if (generateCooldown > 0) {
-            generateCooldownEndTime = System.currentTimeMillis() + generateCooldown
-            startGenerateButtonCooldown(generateCooldown)
-        } else {
-            generateCodeButton.isEnabled = true
-            generateCodeButton.alpha = 1.0f
-            generateCodeButton.text = "Generate Code"
-            generateCooldownEndTime = 0
-        }
-
-        // Check morse cooldown and restore dialog if needed
-        val morseCooldown = persistentTimer.getMorseCooldownRemaining()
-        if (morseCooldown > 0) {
-            lastMorsePlayTime = System.currentTimeMillis() - (MORSE_COOLDOWN - morseCooldown)
-            morseCooldownEndTime = System.currentTimeMillis() + morseCooldown
-        } else {
-            lastMorsePlayTime = 0
-            morseCooldownEndTime = 0
-        }
-
-        // Restore active morse code session if any
-        if (currentCode.isNotEmpty()) {
-            updateGeneratedCodeText()
-            if (remainingTries > 0) {
-                showMorseCodeDialog(currentCode, morseCooldown)
-            }
-        }
-    }
+    private lateinit var dialogManager: DialogManager
+    private var countDownTimer: CountDownTimer? = null
+    private var morseTimer: CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // Handle back press
         val callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Only allow back if not in cooldown and has tries remaining
-                if (System.currentTimeMillis() - lastMorsePlayTime >= MORSE_COOLDOWN && remainingTries > 0) {
+                val currentTime = System.currentTimeMillis()
+                if (generateCooldownEndTime <= currentTime && remainingTries > 0) {
+                    if (::dialog.isInitialized && dialog.isShowing) {
+                        dialog.dismiss()
+                    }
                     if (parentFragmentManager.backStackEntryCount > 0) {
                         parentFragmentManager.popBackStack()
                     } else {
@@ -128,8 +69,8 @@ class MCFragment : Fragment() {
                         requireActivity().onBackPressedDispatcher.onBackPressed()
                     }
                 } else {
-                    Toast.makeText(requireContext(), 
-                        "Please wait for cooldown or check remaining tries", 
+                    Toast.makeText(requireContext(),
+                        "Please wait for cooldown or check remaining tries",
                         Toast.LENGTH_SHORT).show()
                 }
             }
@@ -137,166 +78,128 @@ class MCFragment : Fragment() {
         requireActivity().onBackPressedDispatcher.addCallback(this, callback)
     }
 
-
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        val view = inflater.inflate(R.layout.fragment_mc, container, false)
-
-        // Check if we're coming from monitoring fragment
-        val fromMonitoring = arguments?.getBoolean("fromMonitoring", false) ?: false
+        // Initialize MorseCodeHelper with context
+        MorseCodeHelper.initialize(requireContext())
         
-        // Initialize session manager
-        sessionManager = SessionManager(requireActivity()) {
-            // Only handle session timeout if not coming from monitoring
-            if (!fromMonitoring) {
-                // Handle session timeout
-                activity?.runOnUiThread {
-                    // Clear session and show login
-                    sessionManager.logout()
-                    (activity as MainActivity).showMainScreen()
-                }
-            }
-        }
-
-        // Initialize other components
+        // Initialize DialogManager
         dialogManager = DialogManager(requireContext())
-        persistentTimer = PersistentTimer(requireContext())
-        initializeViews(view)
-        setupClickListeners()
-        checkCameraPermission()
-
+        
+        // Create the view
+        val view = inflater.inflate(R.layout.fragment_mc, container, false)
+        
         return view
+    }
+    
+    private fun setupViews(view: View) {
+        try {
+            // Initialize all UI elements
+            generateCodeButton = view.findViewById(R.id.generateCodeButton)
+            checkMonitoringButton = view.findViewById(R.id.checkMonitoringButton)
+            exitButton = view.findViewById(R.id.exitButton)
+            generatedCodeText = view.findViewById(R.id.generatedCodeText)
+            codeDisplayText = view.findViewById(R.id.codeDisplayText)
+            cooldownText = view.findViewById(R.id.cooldownText)
+            
+            // Ensure all views are properly initialized
+            if (generateCodeButton == null || checkMonitoringButton == null || 
+                exitButton == null || generatedCodeText == null || 
+                codeDisplayText == null || cooldownText == null) {
+                throw IllegalStateException("One or more views could not be found in the layout")
+            }
+        } catch (e: Exception) {
+            Log.e("MCFragment", "Error initializing views: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Ensure this fragment is the only one visible
-        parentFragmentManager.fragments.forEach { fragment ->
-            if (fragment != this) {
-                fragment.view?.visibility = View.GONE
-            }
-        }
-
-        view.visibility = View.VISIBLE
-        view.bringToFront()
-
-        loadState()  // Load saved state
-
-        // Make sure all views are visible
-        view.findViewById<View>(R.id.topBar).visibility = View.VISIBLE
-        view.findViewById<View>(R.id.bottomBar).visibility = View.VISIBLE
-        generateCodeButton.visibility = View.VISIBLE
-        checkMonitoringButton.visibility = View.VISIBLE
-        exitButton.visibility = View.VISIBLE
-        generatedCodeText.visibility = View.VISIBLE
-        codeDisplayText.visibility = View.VISIBLE
-
-        // Check if there's an ongoing timer from previous session
-        if (persistentTimer.isTimerRunning()) {
-            currentCode = persistentTimer.getCurrentCode()
+        try {
+            // Initialize views first
+            setupViews(view)
+            
+            // Initialize Firebase
+            database = FirebaseDatabase.getInstance().reference
+            
+            // Update UI based on current state
             updateGeneratedCodeText()
-            startCountdown(persistentTimer.getRemainingTime(), false)
-            generateCodeButton.isEnabled = false
-            generateCodeButton.alpha = 0.5f
+
+            // Show all UI elements with explicit visibility
+            generateCodeButton.visibility = VISIBLE
+            checkMonitoringButton.visibility = VISIBLE
+            exitButton.visibility = VISIBLE
+            generatedCodeText.visibility = VISIBLE
+            codeDisplayText.visibility = VISIBLE
+            
+            // Setup click listeners after views are initialized
+            setupClickListeners()
+            
+            // Check camera permission
+            checkCameraPermission()
+        } catch (e: Exception) {
+            Log.e("MCFragment", "Error initializing UI: ${e.message}")
+            e.printStackTrace()
         }
-
-        // If there was an active morse code session, restore it
-        val prefs = requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val isStateActive = prefs.getBoolean(KEY_MORSE_STATE_ACTIVE, false)
-        if (isStateActive && currentCode.isNotEmpty() && remainingTries > 0) {
-            // Calculate remaining morse cooldown time if any
-            val currentTime = System.currentTimeMillis()
-            val remainingCooldown = if (lastMorsePlayTime > 0) {
-                val elapsed = currentTime - lastMorsePlayTime
-                if (elapsed < MORSE_COOLDOWN) MORSE_COOLDOWN - elapsed else 0
-            } else 0
-
-            // Show morse code dialog with saved state
-            showMorseCodeDialog(currentCode, remainingCooldown)
-        }
-
-        database = FirebaseDatabase.getInstance().reference
-    }
-
-    override fun onPause() {
-        super.onPause()
-        saveState() // Save state on pause to handle force exits
-        sessionManager.onPause() // Notify session manager of pause
-        // Keep dialog state but save current state
-        if (::dialog.isInitialized && dialog.isShowing) {
-            saveState()
-        }
-    }
-
-    private fun handleSessionTimeout() {
-        // Save current state before navigating
-        saveState()
-        
-        // Create login fragment with return information
-        val loginFragment = LoginFragment.newInstance().apply {
-            arguments = Bundle().apply {
-                putBoolean("fromTimeout", true)
-                putString("returnFragment", "MCFragment")
-            }
-        }
-        
-        // Navigate to login
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commitAllowingStateLoss()
-    }
-
-    private fun initializeViews(view: View) {
-        generateCodeButton = view.findViewById(R.id.generateCodeButton)
-        checkMonitoringButton = view.findViewById(R.id.checkMonitoringButton)
-        exitButton = view.findViewById(R.id.exitButton)
-        generatedCodeText = view.findViewById(R.id.generatedCodeText)
-        codeDisplayText = view.findViewById(R.id.codeDisplayText)
     }
 
     private fun setupClickListeners() {
-        generateCodeButton.setOnClickListener {
-            // Check if we're still in cooldown
-            val currentTime = System.currentTimeMillis()
-            if (currentTime < generateCooldownEndTime) {
-                return@setOnClickListener
+        try {
+            generateCodeButton.setOnClickListener {
+                try {
+                    // Check camera permission first
+                    if (!checkCameraPermission()) {
+                        return@setOnClickListener
+                    }
+
+                    // Check if we're still in cooldown
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime < generateCooldownEndTime) {
+                        return@setOnClickListener
+                    }
+
+                    // Generate new code only when button is clicked
+                    val newCode = generateRandomCode()
+                    remainingTries = 3
+                    currentCode = newCode
+                    lastMorsePlayTime = 0 // Reset morse cooldown when generating new code
+                    updateGeneratedCodeText()
+
+                    // Show the dialog with the new code
+                    showMorseCodeDialog(newCode)
+
+                    // Start the cooldown
+                    startGenerateButtonCooldown()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error generating code: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
 
-            // Generate new code only when button is clicked
-            val newCode = generateRandomCode()
-            remainingTries = 3
-            currentCode = newCode
-            lastMorsePlayTime = 0 // Reset morse cooldown when generating new code
-            updateGeneratedCodeText()
+            checkMonitoringButton.setOnClickListener {
+                try {
+                    navigateToMonitoring()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error navigating to monitoring: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
 
-            // Save the new state
-            requireActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_CURRENT_CODE, currentCode)
-                .putInt(KEY_REMAINING_TRIES, remainingTries)
-                .putBoolean(KEY_MORSE_STATE_ACTIVE, true)
-                .putLong(KEY_LAST_MORSE_TIME, 0) // Reset morse cooldown time
-                .apply()
-
-            // Show the dialog with the new code
-            Log.d("MCFragment", "showMorseCodeDialog() called with code: $currentCode")
-            showMorseCodeDialog(newCode)
-
-            // Start the cooldown
-            startGenerateButtonCooldown()
-        }
-
-        checkMonitoringButton.setOnClickListener {
-            navigateToMonitoring()
-        }
-
-        exitButton.setOnClickListener {
-            showExitConfirmationDialog()
+            exitButton.setOnClickListener {
+                try {
+                    showExitConfirmationDialog()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error showing exit dialog: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -305,14 +208,10 @@ class MCFragment : Fragment() {
         generateCodeButton.alpha = 0.5f
 
         generateCooldownEndTime = System.currentTimeMillis() + duration
-        persistentTimer.setGenerateCooldown(duration)
 
-        object : CountDownTimer(duration, 1000) {
+        countDownTimer?.cancel()
+        countDownTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                if (!sessionManager.isLoggedIn()) {
-                    cancel()
-                    return
-                }
                 val minutes = millisUntilFinished / 1000 / 60
                 val seconds = (millisUntilFinished / 1000) % 60
                 generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
@@ -323,38 +222,13 @@ class MCFragment : Fragment() {
                 generateCodeButton.alpha = 1.0f
                 generateCodeButton.text = "Generate Code"
                 generateCooldownEndTime = 0
-                persistentTimer.setGenerateCooldown(0)
-            }
-        }.start()
-    }
-
-    private fun startCountdown(duration: Long, isNewCountdown: Boolean) {
-        countDownTimer?.cancel()
-        if (isNewCountdown) {
-            persistentTimer.startTimer(duration, currentCode)
-        }
-
-        countDownTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                val minutes = millisUntilFinished / 1000 / 60
-                val seconds = (millisUntilFinished / 1000) % 60
-                generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
-            }
-
-            override fun onFinish() {
-                persistentTimer.stopTimer()
-                currentCode = generateRandomCode()
-                updateGeneratedCodeText()
-                generateCodeButton.text = "Generate Code"
-                generateCodeButton.isEnabled = true
-                generateCodeButton.alpha = 1.0f
             }
         }.start()
     }
 
     private fun updateGeneratedCodeText() {
         generatedCodeText.text = "Generated Code: "
-        codeDisplayText.text = currentCode
+        codeDisplayText.text = if (currentCode.isEmpty()) "-------" else currentCode
     }
 
     @SuppressLint("RestrictedApi")
@@ -374,14 +248,14 @@ class MCFragment : Fragment() {
                 // Store the OTP data
                 val otpData = mapOf(
                     "code" to fullCode,
-                    "created_at" to ServerValue.TIMESTAMP,
+                    "created_at" to System.currentTimeMillis(),
                     "expires_at" to (System.currentTimeMillis() + 30000) // 30 seconds
                 )
 
                 // Prepare log entry using push() to create a unique key
                 val logsRef = database.child("users").child(userId).child("logs").push()
                 val logEntry = mapOf(
-                    "timestamp" to ServerValue.TIMESTAMP,
+                    "timestamp" to System.currentTimeMillis(),
                     "event" to "otp"
                 )
 
@@ -411,151 +285,182 @@ class MCFragment : Fragment() {
     }
 
     private fun navigateToLogin() {
-        val loginFragment = LoginFragment.newInstance()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, loginFragment)
-            .commit()
+        val mainActivity = requireActivity() as MainActivity
+        mainActivity.clearBackStackAndNavigateToLogin()
     }
 
     private fun navigateToMonitoring() {
-        // Save state before navigation
-        saveState()
-        
-        // Create monitoring fragment
-        val monitoringFragment = MonitoringFragment()
-        
-        // Navigate to monitoring fragment
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, monitoringFragment)
-            .addToBackStack(null)  // Add to back stack
-            .commit()
+        try {
+            if (isAdded && activity != null && !requireActivity().isFinishing) {
+                // First, remove all ongoing timers and dialogs
+                countDownTimer?.cancel()
+                morseTimer?.cancel()
+                if (::dialog.isInitialized && dialog.isShowing) {
+                    dialog.dismiss()
+                }
+                
+                // Create the monitoring fragment
+                val monitoringFragment = MonitoringFragment()
+                
+                // Use the activity's supportFragmentManager to ensure proper navigation
+                val mainActivity = activity as MainActivity
+                mainActivity.supportFragmentManager.beginTransaction()
+                    .setCustomAnimations(
+                        android.R.anim.fade_in,
+                        android.R.anim.fade_out
+                    )
+                    .replace(R.id.fragmentContainer, monitoringFragment)
+                    .addToBackStack(null)
+                    .commit()
+                
+                // Log the navigation for debugging
+                Log.d("MCFragment", "Navigated to monitoring fragment")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(context, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showExitConfirmationDialog() {
-        val dialog = dialogManager.createCustomDialog(R.layout.dialog_exit_confirmation)
-        dialog.show()
-
-        // Get dialog buttons
-        val yesButton = dialog.findViewById<Button>(R.id.yesButton)
-        val noButton = dialog.findViewById<Button>(R.id.noButton)
-
-        // Set click listeners
-        yesButton?.setOnClickListener {
-            dialog.dismiss()
-            // Save state before logging out
-            saveState()
-            // Sign out from Firebase
-            FirebaseAuth.getInstance().signOut()
-            // Navigate to login
-            navigateToLogin()
-        }
-
-        noButton?.setOnClickListener {
-            dialog.dismiss()
-        }
-
-        // Session timeout handling is already managed by DialogManager
+        AlertDialog.Builder(requireContext())
+            .setTitle("Exit Confirmation")
+            .setMessage("Are you sure you want to exit?")
+            .setPositiveButton("Yes") { dialog, _ ->
+                dialog.dismiss()
+                FirebaseAuth.getInstance().signOut()
+                navigateToLogin()
+            }
+            .setNegativeButton("No") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .create()
+            .show()
     }
 
-    // Modify the showMorseCodeDialog method
     private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
-        // Dismiss any existing dialog first
-        if (::dialog.isInitialized && dialog.isShowing) {
-            dialog.dismiss()
-        }
-
-        // Create new dialog
-        dialog = dialogManager.createMorseCodeDialog(
-            code = code,
-            remainingTries = remainingTries,
-            remainingCooldown = remainingCooldown
-        ) { playButton, cooldownText ->
-            // Play button click handler
-            sessionManager.userActivityDetected()
-
-            // Calculate actual cooldown based on current time
+        try {
+            val builder = AlertDialog.Builder(requireContext())
+            val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
+            
+            // Initialize dialog views
+            val codeTextView = dialogView.findViewById<TextView>(R.id.codeDisplayText)
+            val triesText = dialogView.findViewById<TextView>(R.id.triesText)
+            val playButton = dialogView.findViewById<Button>(R.id.playButton)
+            val cooldownText = dialogView.findViewById<TextView>(R.id.cooldownText)
+            
+            codeTextView.text = "Code: $code"
+            triesText.text = "Remaining tries: $remainingTries"
+            
+            // Set up play button
             val currentTime = System.currentTimeMillis()
-            val actualCooldown = if (lastMorsePlayTime > 0) {
-                val elapsed = currentTime - lastMorsePlayTime
-                if (elapsed < MORSE_COOLDOWN && remainingTries > 1) MORSE_COOLDOWN - elapsed else 0
-            } else 0
-
-            // Only proceed if cooldown is complete
-            if (actualCooldown > 0) {
-                cooldownText.text = "Please wait ${actualCooldown / 1000} seconds before next try"
-                return@createMorseCodeDialog
+            if (remainingCooldown > 0) {
+                startMorseCooldown(remainingCooldown)
+                playButton.isEnabled = false
+                playButton.alpha = 0.5f
             }
-
-            // Process the morse code play
-            if (remainingTries > 0) {
+            
+            playButton.setOnClickListener {
+                if (!checkCameraPermission()) {
+                    return@setOnClickListener
+                }
+                
+                playButton.isEnabled = false
+                playButton.alpha = 0.5f
+                
+                val currentTime = System.currentTimeMillis()
                 playMorseCode(code)
                 remainingTries--
-                dialogManager.updateTriesText(remainingTries)
-                saveState()
+                triesText.text = "Remaining tries: $remainingTries"
 
                 if (remainingTries > 0) {
                     lastMorsePlayTime = currentTime
                     startMorseCooldown(MORSE_COOLDOWN)
                 } else {
-                    // Show max tries dialog
+                    // Close the current dialog
+                    dialog.dismiss()
+                    
+                    // Show maximum tries reached dialog
                     dialogManager.showMaxTriesDialog()
                 }
             }
+            
+            builder.setView(dialogView)
+                .setTitle("Morse Code")
+                .setNegativeButton("Close") { dialog, _ -> dialog.dismiss() }
+            
+            dialog = builder.create()
+            dialog.show()
+        } catch (e: Exception) {
+            Log.e("MCFragment", "Error showing dialog: ${e.message}")
+            e.printStackTrace()
         }
-
-        // Show the dialog
-        dialog.show()
     }
 
     private fun startMorseCooldown(duration: Long) {
         morseTimer?.cancel()
 
         val currentDialog = dialog
-        val playButton = currentDialog?.findViewById<Button>(R.id.playButton)
-        val cooldownText = currentDialog?.findViewById<TextView>(R.id.cooldownText)
+        val playButton = currentDialog.findViewById<Button>(R.id.playButton)
+        val cooldownText = currentDialog.findViewById<TextView>(R.id.cooldownText)
 
         playButton?.isEnabled = false
         playButton?.alpha = 0.5f
 
         morseCooldownEndTime = System.currentTimeMillis() + duration
-        persistentTimer.setMorseCooldown(duration)
 
         morseTimer = object : CountDownTimer(duration, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                if (!sessionManager.isLoggedIn()) {
-                    cancel()
-                    return
-                }
                 val seconds = millisUntilFinished / 1000
-                activity?.runOnUiThread {
-                    cooldownText?.text = "Please wait $seconds seconds before next try"
-                }
+                cooldownText?.text = "Please wait $seconds seconds before next try"
             }
 
             override fun onFinish() {
-                activity?.runOnUiThread {
-                    cooldownText?.text = "Ready to play"
-                    playButton?.isEnabled = true
-                    playButton?.alpha = 1.0f
-                    lastMorsePlayTime = 0
-                    morseCooldownEndTime = 0
-                    persistentTimer.setMorseCooldown(0)
-                }
+                cooldownText?.text = "Ready to play"
+                playButton?.isEnabled = true
+                playButton?.alpha = 1.0f
+                lastMorsePlayTime = 0
+                morseCooldownEndTime = 0
             }
         }.start()
     }
 
     private fun playMorseCode(code: String) {
-        val transmitCode = codeDisplayText.text.toString() // Contains tag+code
-        val pulses = MorseCodeHelper.convertToMorsePulseSequence(transmitCode)
-        MorseCodeHelper.playMorsePulseSequence(requireContext(), pulses)
+        thread {
+            try {
+                MorseCodeHelper.playMorseCode(code)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
-    private fun flashlightOn() = Unit
-    private fun flashlightOff() = Unit
-    private fun textToMorse(text: String) = ""
+    private fun flashlightOn() {
+        try {
+            MorseCodeHelper.flashlightOn()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
-    private fun checkCameraPermission() {
+    private fun flashlightOff() {
+        try {
+            MorseCodeHelper.flashlightOff()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun textToMorse(text: String): String {
+        return try {
+            MorseCodeHelper.textToMorse(text)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            ""
+        }
+    }
+
+    private fun checkCameraPermission(): Boolean {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
@@ -563,7 +468,9 @@ class MCFragment : Fragment() {
                 arrayOf(Manifest.permission.CAMERA),
                 CAMERA_PERMISSION_REQUEST_CODE
             )
+            return false
         }
+        return true
     }
 
     override fun onRequestPermissionsResult(
@@ -587,64 +494,143 @@ class MCFragment : Fragment() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        cleanup()
-        // Remove endSession call as it's no longer needed
-        // The SessionManager will handle cleanup through its lifecycle observer
+    private fun resetGenerateButton() {
+        generateCodeButton.apply {
+            isEnabled = true
+            alpha = 1.0f
+            text = "Generate Code"
+        }
     }
 
-    // Add this to loadState() method
-    override fun onResume() {
-        super.onResume()
-        sessionManager.onResume() // Let session manager handle resume
-        // If session is still valid, restore state
-        if (sessionManager.isLoggedIn()) {
-            loadState()
-        } else {
-            // Session expired or invalid, clear state
-            persistentTimer.clearUserData()
-            remainingTries = 3
-            currentCode = ""
-            lastMorsePlayTime = 0
-            generateCooldownEndTime = 0
-            morseCooldownEndTime = 0
-            generateCodeButton.isEnabled = true
-            generateCodeButton.alpha = 1.0f
-            generateCodeButton.text = "Generate Code"
+    private fun initializeViews(view: View) {
+        generateCodeButton = view.findViewById(R.id.generateCodeButton)
+        checkMonitoringButton = view.findViewById(R.id.checkMonitoringButton)
+        exitButton = view.findViewById(R.id.exitButton)
+        generatedCodeText = view.findViewById(R.id.generatedCodeText)
+        codeDisplayText = view.findViewById(R.id.codeDisplayText)
+        cooldownText = view.findViewById(R.id.cooldownText)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            // Cancel any running timers
+            morseTimer?.cancel()
+            countDownTimer?.cancel()
+            
+            // Dismiss dialog if showing
             if (::dialog.isInitialized && dialog.isShowing) {
                 dialog.dismiss()
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
-    // Create a single method to handle all cooldown timers
-    private fun handleCooldowns() {
-        val currentTime = System.currentTimeMillis()
-
-        // Handle generate button cooldown
-        if (generateCooldownEndTime > currentTime) {
-            startGenerateButtonCooldown(generateCooldownEndTime - currentTime)
-        }
-
-        // Handle morse code cooldown if dialog is active
-        if (currentCode.isNotEmpty() && remainingTries > 0 && lastMorsePlayTime > 0) {
-            val elapsed = currentTime - lastMorsePlayTime
-            if (elapsed < MORSE_COOLDOWN) {
-                morseCooldownEndTime = lastMorsePlayTime + MORSE_COOLDOWN
-                // Only start cooldown if dialog is showing
-                if (::dialog.isInitialized && dialog.isShowing) {
-                    startMorseCooldown(MORSE_COOLDOWN - elapsed)
-                }
+    override fun onResume() {
+        super.onResume()
+        try {
+            // Reset UI state
+            resetGenerateButton()
+            
+            // Check cooldowns
+            val currentTime = System.currentTimeMillis()
+            if (generateCooldownEndTime > currentTime) {
+                startGenerateButtonCooldown(generateCooldownEndTime - currentTime)
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+    }
+
+    override fun onDestroyView() {
+        try {
+            // Cancel timers
+            morseTimer?.cancel()
+            countDownTimer?.cancel()
+            
+            // Dismiss dialog
+            if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.dismiss()
+            }
+            
+            // Dismiss any active dialogs from DialogManager
+            if (::dialogManager.isInitialized) {
+                dialogManager.dismissActiveDialog()
+            }
+            
+            // Clear state
+            resetGenerateButton()
+            lastMorsePlayTime = 0
+            morseCooldownEndTime = 0
+            generateCooldownEndTime = 0
+            
+            // Cleanup morse code helper
+            MorseCodeHelper.cleanup()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            // Ensure timers are nulled
+            morseTimer = null
+            countDownTimer = null
+            super.onDestroyView()
+        }
+    }
+
+    override fun onDestroy() {
+        try {
+            // Cancel timers
+            morseTimer?.cancel()
+            countDownTimer?.cancel()
+            
+            // Dismiss dialog
+            if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.dismiss()
+            }
+            
+            // Clear state
+            resetGenerateButton()
+            lastMorsePlayTime = 0
+            morseCooldownEndTime = 0
+            generateCooldownEndTime = 0
+            
+            // Cleanup morse code helper
+            MorseCodeHelper.cleanup()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            // Ensure timers are nulled
+            morseTimer = null
+            countDownTimer = null
+            super.onDestroy()
+        }
+    }
+
+    private fun handleOnBackPressed() {
+        showExitConfirmationDialog()
     }
 
     private fun cleanup() {
-        morseTimer?.cancel()
-        countDownTimer?.cancel()
-        if (::dialog.isInitialized && dialog.isShowing) {
-            dialog.dismiss()
+        try {
+            // Cancel timers
+            morseTimer?.cancel()
+            countDownTimer?.cancel()
+            
+            // Dismiss dialog
+            if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.dismiss()
+            }
+            
+            // Clear state
+            resetGenerateButton()
+            lastMorsePlayTime = 0
+            morseCooldownEndTime = 0
+            generateCooldownEndTime = 0
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            morseTimer = null
+            countDownTimer = null
         }
     }
 

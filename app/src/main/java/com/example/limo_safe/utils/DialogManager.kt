@@ -16,31 +16,30 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import com.example.limo_safe.MainActivity
-import com.example.limo_safe.Object.SessionManager
+
 import com.example.limo_safe.R
 
 class DialogManager(private val context: Context) {
 
     private var activeDialog: AlertDialog? = null
     private var triesTextView: TextView? = null
-    private val sessionManager: SessionManager by lazy {
-        (context as MainActivity).sessionManager
-    }
 
-    init {
-        // Set up session timeout listener
-        sessionManager.setOnSessionTimeoutListener {
-            dismissActiveDialog()
+    fun dismissActiveDialog() {
+        try {
+            if (activeDialog?.isShowing == true) {
+                activeDialog?.dismiss()
+            }
+            activeDialog = null
+            triesTextView = null  // Added from the removed duplicate method
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
+
 
     private fun setupTouchListener(view: View) {
-        view.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                sessionManager.userActivityDetected()
-            }
-            false
-        }
+        // Touch listener simplified without session management
+        view.setOnTouchListener { _, _ -> false }
     }
 
     private fun setupDialogTouchListener(dialog: AlertDialog) {
@@ -90,7 +89,7 @@ class DialogManager(private val context: Context) {
 
         playButton.setOnClickListener {
             onPlayClick(playButton, cooldownText)
-            sessionManager.userActivityDetected()
+
         }
 
         val builder = AlertDialog.Builder(context)
@@ -130,7 +129,7 @@ class DialogManager(private val context: Context) {
             .setTitle("Maximum Tries Reached")
             .setMessage("You have reached the maximum number of tries.")
             .setPositiveButton("OK") { dialog, _ ->
-                sessionManager.userActivityDetected()
+    
                 dialog.dismiss()
             }
             .create()
@@ -143,12 +142,12 @@ class DialogManager(private val context: Context) {
             .setTitle("Exit Confirmation")
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { dialog, _ ->
-                sessionManager.userActivityDetected()
+    
                 dialog.dismiss()
                 onConfirm()
             }
             .setNegativeButton("No") { dialog, _ ->
-                sessionManager.userActivityDetected()
+    
                 dialog.dismiss()
             }
             .create()
@@ -161,7 +160,7 @@ class DialogManager(private val context: Context) {
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton("OK") { dialog, _ ->
-                sessionManager.userActivityDetected()
+    
                 dialog.dismiss()
             }
             .create()
@@ -211,11 +210,6 @@ class DialogManager(private val context: Context) {
         return dialog
     }
 
-    fun dismissActiveDialog() {
-        activeDialog?.dismiss()
-        activeDialog = null
-        triesTextView = null
-    }
 
     companion object {
         fun createLoadingDialog(context: Context): AlertDialog {

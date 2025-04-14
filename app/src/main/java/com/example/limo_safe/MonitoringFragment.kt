@@ -21,7 +21,7 @@ import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.limo_safe.Object.SessionManager
+
 import com.example.limo_safe.utils.DialogManager
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.tasks.Task
@@ -42,7 +42,7 @@ class MonitoringFragment : Fragment() {
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
     private lateinit var dialogManager: DialogManager
-    private lateinit var sessionManager: SessionManager
+
 
     private lateinit var database: DatabaseReference
     private var deviceListListener: ValueEventListener? = null
@@ -81,25 +81,30 @@ class MonitoringFragment : Fragment() {
 
         // Initialize managers
         dialogManager = DialogManager(requireContext())
-        sessionManager = (requireActivity() as MainActivity).sessionManager
+
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
 
         // Setup back button with consistent behavior
         backButton.setOnClickListener {
-            // Remove all listeners first
-            removeAllListeners()
-            
-            // Get main activity and update session
-            val activity = requireActivity() as MainActivity
-            activity.sessionManager.userActivityDetected()
-            
-            // Create and show MC fragment
-            val mcFragment = MCFragment()
-            activity.supportFragmentManager.beginTransaction()
-                .replace(R.id.fragmentContainer, mcFragment)
-                .commit()
+            try {
+                // Remove all listeners first
+                removeAllListeners()
+                
+                // Get main activity and update session safely
+                if (isAdded && activity != null && !requireActivity().isFinishing) {
+                    // Use proper fragment transaction with animations
+                    parentFragmentManager.popBackStack()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                try {
+                    Toast.makeText(context, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+                } catch (e2: Exception) {
+                    e2.printStackTrace()
+                }
+            }
         }
 
         setupRecyclerView()
@@ -146,7 +151,7 @@ class MonitoringFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         // Reset session timeout and update activity
-        sessionManager.userActivityDetected()
+
         // Re-fetch data if needed
         fetchUserDevices()
     }
@@ -187,7 +192,7 @@ class MonitoringFragment : Fragment() {
             onUserDemoted = { deviceId, userInfo -> demoteUser(deviceId, userInfo) },
             onWifiClicked = { deviceId -> showWifiDialog(deviceId) },
             context = requireContext(),
-            sessionManager = sessionManager
+
         )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
@@ -660,7 +665,7 @@ class MonitoringFragment : Fragment() {
 
 
         connectButton?.setOnClickListener {
-            sessionManager.userActivityDetected()
+    
             val ssid = ssidInput?.text.toString().trim()
             val password = passwordInput?.text.toString().trim()
 
@@ -688,7 +693,7 @@ class MonitoringFragment : Fragment() {
         }
 
         cancelButton?.setOnClickListener {
-            sessionManager.userActivityDetected()
+    
             dialog.dismiss()
         }
 
@@ -725,7 +730,7 @@ class DeviceAdapter(
     private val onUserDemoted: (String, UserInfo) -> Unit,
     private val onWifiClicked: (String) -> Unit,
     private val context: Context,
-    private val sessionManager: SessionManager
+
 ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -805,7 +810,7 @@ class DeviceAdapter(
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
         addButton?.setOnClickListener {
-            sessionManager.userActivityDetected()
+    
             val email = emailInput?.text.toString().trim()
             if (email.isNotEmpty()) {
                 onUserAdded(deviceId, email)
@@ -816,15 +821,12 @@ class DeviceAdapter(
         }
 
         cancelButton?.setOnClickListener {
-            sessionManager.userActivityDetected()
+    
             dialog.dismiss()
         }
 
-        // Add touch listener for session activity
-        dialog.window?.decorView?.setOnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
-        }
+        // Simple touch listener (no session management)
+        dialog.window?.decorView?.setOnTouchListener { _, _ -> false }
 
         dialog.show()
     }
@@ -838,81 +840,148 @@ class DeviceAdapter(
     override fun getItemCount() = devices.size
 
     override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
-        val device = devices[position]
-        holder.deviceNameText.text = device.name
-        holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
-        holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
+        try {
+            if (position >= 0 && position < devices.size) {
+                val device = devices[position]
+                holder.deviceNameText.text = device.name ?: "Unknown Device"
+                
+                // Set status texts with null safety
+                holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
+                try {
+                    holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
-        holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
+                holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
+                try {
+                    holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
-        holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
+                holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
+                try {
+                    holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        // Update WiFi button color based on connection status
-        val isConnected = (holder.itemView.context as? FragmentActivity)?.supportFragmentManager?.fragments?.firstOrNull { it is MonitoringFragment }?.let {
-            (it as MonitoringFragment).isDeviceConnected(device)
-        } ?: false
+                // Update WiFi button color based on connection status - safely
+                var isConnected = false
+                try {
+                    val activity = holder.itemView.context as? FragmentActivity
+                    if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                        val fragment = activity.supportFragmentManager.fragments.firstOrNull { it is MonitoringFragment }
+                        if (fragment != null && fragment.isAdded) {
+                            isConnected = (fragment as MonitoringFragment).isDeviceConnected(device)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        holder.wifiButton.setColorFilter(
-            holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
-        )
+                try {
+                    holder.wifiButton.setColorFilter(
+                        holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        // Clear previous users
-        holder.usersContainer.removeAllViews()
+                // Clear previous users
+                try {
+                    holder.usersContainer.removeAllViews()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-        // Add user views
-        device.users.forEach { userInfo ->
-            val userView = LayoutInflater.from(holder.itemView.context)
-                .inflate(R.layout.item_user, holder.usersContainer, false)
+                // Add user views safely
+                device.users.forEach { userInfo ->
+                    try {
+                        val userView = LayoutInflater.from(holder.itemView.context)
+                            .inflate(R.layout.item_user, holder.usersContainer, false)
 
-            val userText = userView.findViewById<TextView>(R.id.userText)
-            val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
+                        val userText = userView.findViewById<TextView>(R.id.userText)
+                        val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
 
-            userText.text = "• ${userInfo.email}"
-            userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
+                        userText.text = "• ${userInfo.email ?: "Unknown User"}"
+                        userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
 
-            userOptionsButton.setOnClickListener {
-                showUserOptionsMenu(it, device.id, userInfo)
+                        userOptionsButton.setOnClickListener {
+                            try {
+                                showUserOptionsMenu(it, device.id, userInfo)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
+                        holder.usersContainer.addView(userView)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             }
-
-            holder.usersContainer.addView(userView)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
-        val popupMenu = PopupMenu(view.context, view).apply {
-            inflate(R.menu.user_options_menu)
+        try {
+            val context = view.context ?: return
+            
+            val popupMenu = PopupMenu(context, view).apply {
+                try {
+                    inflate(R.menu.user_options_menu)
 
-            // Set text color for all menu items
-            for (i in 0 until menu.size()) {
-                val item = menu.getItem(i)
-                val spanString = android.text.SpannableString(item.title.toString())
-                spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
-                item.title = spanString
+                    // Set text color for all menu items
+                    for (i in 0 until menu.size()) {
+                        try {
+                            val item = menu.getItem(i)
+                            val spanString = android.text.SpannableString(item.title.toString())
+                            spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
+                            item.title = spanString
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
-        }
 
-        // Add touch listener for session activity
-        popupMenu.setOnMenuItemClickListener { item ->
-            sessionManager.userActivityDetected()
-            when (item.itemId) {
-                R.id.action_delete_user -> {
-                    onUserDeleted(deviceId, userInfo)
-                    true
+            // Add touch listener for session activity
+            popupMenu.setOnMenuItemClickListener { item ->
+                try {
+                    when (item.itemId) {
+                        R.id.action_delete_user -> {
+                            onUserDeleted(deviceId, userInfo)
+                            true
+                        }
+                        R.id.action_promote_user -> {
+                            onUserPromoted(deviceId, userInfo)
+                            true
+                        }
+                        R.id.action_demote_user -> {
+                            onUserDemoted(deviceId, userInfo)
+                            true
+                        }
+                        else -> false
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    false
                 }
-                R.id.action_promote_user -> {
-                    onUserPromoted(deviceId, userInfo)
-                    true
-                }
-                R.id.action_demote_user -> {
-                    onUserDemoted(deviceId, userInfo)
-                    true
-                }
-                else -> false
             }
-        }
 
-        popupMenu.show()
+            try {
+                popupMenu.show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

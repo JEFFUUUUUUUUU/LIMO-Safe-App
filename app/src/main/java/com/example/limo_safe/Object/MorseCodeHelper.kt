@@ -16,6 +16,8 @@ data class MorsePulse(val flash: Boolean, val duration: Long)
 
 object MorseCodeHelper {
     private const val UNIT_TIME = 70L
+    private var cameraManager: CameraManager? = null
+    private var activeContext: Context? = null
 
     // Morse Code Mapping
     private val morseCodeMap = mapOf(
@@ -35,6 +37,68 @@ object MorseCodeHelper {
         // Symbols
         '_' to "..--.-"
     )
+
+    // Play morse code for a given text
+    fun playMorseCode(text: String) {
+        if (activeContext == null) {
+            return
+        }
+        
+        val pulses = convertToMorsePulseSequence(text)
+        playMorsePulseSequence(activeContext!!, pulses)
+    }
+    
+    // Turn flashlight on
+    fun flashlightOn() {
+        if (activeContext == null) {
+            return
+        }
+        toggleFlashlight(activeContext!!, true)
+    }
+    
+    // Turn flashlight off
+    fun flashlightOff() {
+        if (activeContext == null) {
+            return
+        }
+        toggleFlashlight(activeContext!!, false)
+    }
+    
+    // Convert text to morse code
+    fun textToMorse(text: String): String {
+        val result = StringBuilder()
+        for (char in text.uppercase()) {
+            if (char == ' ') {
+                result.append("   ")
+            } else {
+                val morse = morseCodeMap[char]
+                if (morse != null) {
+                    result.append(morse).append(" ")
+                }
+            }
+        }
+        return result.toString().trim()
+    }
+    
+    // Initialize with context
+    fun initialize(context: Context) {
+        activeContext = context
+        cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    }
+    
+    // Cleanup resources
+    fun cleanup() {
+        try {
+            if (activeContext != null) {
+                toggleFlashlight(activeContext!!, false)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            cameraManager = null
+            activeContext = null
+        }
+    }
 
     // Converts a string to Morse code pulses
     fun convertToMorsePulseSequence(input: String): List<MorsePulse> {
@@ -85,13 +149,13 @@ object MorseCodeHelper {
 
     // Toggles the flashlight ON/OFF
     private fun toggleFlashlight(context: Context, turnOn: Boolean) {
-        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cm = cameraManager ?: context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
-            for (cameraId in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            for (cameraId in cm.cameraIdList) {
+                val characteristics = cm.getCameraCharacteristics(cameraId)
                 val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
                 if (hasFlash) {
-                    cameraManager.setTorchMode(cameraId, turnOn)
+                    cm.setTorchMode(cameraId, turnOn)
                     break
                 }
             }

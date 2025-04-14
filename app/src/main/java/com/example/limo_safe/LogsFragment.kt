@@ -14,7 +14,7 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.limo_safe.Object.SessionManager
+
 import com.example.limo_safe.utils.DialogManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -32,7 +32,7 @@ class LogsFragment : Fragment() {
     private lateinit var logsAdapter: LogsAdapter
     private lateinit var searchInput: EditText
     private lateinit var database: DatabaseReference
-    private lateinit var sessionManager: SessionManager
+
     private lateinit var dialogManager: DialogManager
     private var allLogs: MutableList<LogEntry> = mutableListOf()
     private var logsListener: ValueEventListener? = null
@@ -46,8 +46,7 @@ class LogsFragment : Fragment() {
         logsRecyclerView = view.findViewById(R.id.logsRecyclerView)
         searchInput = view.findViewById(R.id.searchInput)
 
-        // Get the existing session manager from MainActivity
-        sessionManager = (requireActivity() as MainActivity).sessionManager
+        // Initialize dialog manager
         dialogManager = DialogManager(requireContext())
         database = FirebaseDatabase.getInstance().reference
 
@@ -55,10 +54,8 @@ class LogsFragment : Fragment() {
         setupRecyclerView()
         fetchLogs()
 
-        // Add touch listeners for session activity
-        val touchListener = View.OnTouchListener { _, _ ->
-            sessionManager.userActivityDetected()
-            false
+        // Simple touch listener (no session management)
+        val touchListener = View.OnTouchListener { _, _ -> false
         }
 
         view.setOnTouchListener(touchListener)
