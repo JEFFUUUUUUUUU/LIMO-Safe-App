@@ -154,10 +154,19 @@
     </LinearLayout>
 
     <!-- Navigation Drawer -->
-    <include
-        layout="@layout/nav_header"
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/nav_view"
         android:layout_width="240dp"
         android:layout_height="match_parent"
-        android:layout_gravity="start" />
+        android:layout_gravity="start"
+        android:fitsSystemWindows="true">
+        
+        <include
+            android:id="@+id/nav_header_layout"
+            layout="@layout/nav_header"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+            
+    </com.google.android.material.navigation.NavigationView>
 
 </androidx.drawerlayout.widget.DrawerLayout>

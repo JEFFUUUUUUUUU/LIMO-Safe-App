@@ -14,6 +14,8 @@ import androidx.fragment.app.Fragment
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
+import com.example.limo_safe.utils.BiometricManager
+import com.example.limo_safe.utils.DialogManager
 
 class SignUpFragment : Fragment() {
     private lateinit var auth: FirebaseAuth
@@ -23,6 +25,8 @@ class SignUpFragment : Fragment() {
     private lateinit var confirmPasswordEditText: EditText
     private lateinit var signUpButton: Button
     private lateinit var loginButton: TextView
+    private lateinit var biometricManager: BiometricManager
+    private lateinit var dialogManager: DialogManager
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -36,6 +40,8 @@ class SignUpFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         auth = FirebaseAuth.getInstance()
         database = FirebaseDatabase.getInstance().getReference("users")
+        biometricManager = BiometricManager(requireContext())
+        dialogManager = DialogManager(requireContext())
 
         initializeViews(view)
         setupClickListeners()
@@ -84,8 +90,13 @@ class SignUpFragment : Fragment() {
             return
         }
 
+        // Show loading dialog
+        val loadingDialog = dialogManager.createLoadingDialog("Creating account...")
+        loadingDialog.show()
+
         auth.createUserWithEmailAndPassword(email, password)
             .addOnCompleteListener { task ->
+                dialogManager.dismissActiveDialog()
                 if (task.isSuccessful) {
                     val user = auth.currentUser
                     user?.sendEmailVerification()
@@ -93,13 +104,42 @@ class SignUpFragment : Fragment() {
                             if (verificationTask.isSuccessful) {
                                 saveUserToDatabase(user.uid, email)
                                 showToast("Registration successful! Please check your email for verification.", true)
-                                navigateToLogin()
+                                
+                                // Check if biometric authentication is available
+                                if (biometricManager.isBiometricAvailable()) {
+                                    promptBiometricEnrollment(email)
+                                } else {
+                                    navigateToLogin()
+                                }
                             }
                         }
                 } else {
                     showToast("Registration failed: ${task.exception?.message}")
                 }
             }
+    }
+
+    private fun promptBiometricEnrollment(email: String) {
+        dialogManager.showBiometricEnrollmentDialog(
+            email = email,
+            onEnable = {
+                // Show biometric prompt for enrollment
+                biometricManager.showBiometricEnrollmentPrompt(
+                    fragment = this,
+                    email = email,
+                    onSuccess = {
+                        showToast("Biometric login enabled successfully!")
+                        navigateToLogin()
+                    },
+                    onCancel = {
+                        navigateToLogin()
+                    }
+                )
+            },
+            onCancel = {
+                navigateToLogin()
+            }
+        ).show()
     }
 
     private fun saveUserToDatabase(userId: String, email: String) {

@@ -20,6 +20,10 @@ class ForgotPasswordFragment : Fragment() {
     private lateinit var auth: FirebaseAuth
     private lateinit var dialogManager: DialogManager
 
+    companion object {
+        fun newInstance() = ForgotPasswordFragment()
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,

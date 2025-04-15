@@ -54,6 +54,8 @@ dependencies {
     implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.compose)
     implementation(libs.androidx.navigation.runtime.ktx)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.biometric.ktx)
 
     // Testing dependencies
     testImplementation(libs.junit)
