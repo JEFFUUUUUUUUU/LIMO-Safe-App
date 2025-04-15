@@ -12,6 +12,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -28,6 +29,8 @@ import kotlin.concurrent.thread
 import android.content.DialogInterface
 import android.view.View.GONE
 import android.view.View.VISIBLE
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 
 class MCFragment : Fragment() {
     private lateinit var morseCodeHelper: MorseCodeHelper
@@ -50,6 +53,10 @@ class MCFragment : Fragment() {
     private lateinit var dialogManager: DialogManager
     private var countDownTimer: CountDownTimer? = null
     private var morseTimer: CountDownTimer? = null
+    private lateinit var drawerLayout: androidx.drawerlayout.widget.DrawerLayout
+    private lateinit var menuIcon: ImageView
+    private lateinit var accountTextView: TextView
+    private lateinit var logoutButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +99,92 @@ class MCFragment : Fragment() {
         // Create the view
         val view = inflater.inflate(R.layout.fragment_mc, container, false)
         
+        // Initialize drawer layout and hamburger menu
+        drawerLayout = view.findViewById(R.id.drawerLayout)
+        menuIcon = view.findViewById(R.id.menuIcon)
+        
+        // Set up account info and logout button in the navigation drawer
+        val navHeader = view.findViewById<View>(R.id.nav_header_root)
+        if (navHeader != null) {
+            accountTextView = navHeader.findViewById(R.id.accountTextView)
+            logoutButton = navHeader.findViewById(R.id.logoutButton)
+            
+            // Set up user account info
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            accountTextView.text = currentUser?.email ?: "account."
+            
+            // Set up logout button
+            logoutButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+                
+                // Show confirmation dialog using DialogManager for consistency
+                dialogManager.showLogoutConfirmationDialog {
+                    try {
+                        // Sign out from Firebase
+                        FirebaseAuth.getInstance().signOut()
+                        
+                        // Navigate to login fragment directly
+                        val mainActivity = activity as? MainActivity
+                        if (mainActivity != null && !mainActivity.isFinishing) {
+                            // Create and show login fragment directly
+                            val loginFragment = LoginFragment()
+                            mainActivity.supportFragmentManager.beginTransaction()
+                                .setCustomAnimations(
+                                    android.R.anim.fade_in,
+                                    android.R.anim.fade_out
+                                )
+                                .replace(R.id.fragmentContainer, loginFragment)
+                                .commit()
+                            
+                            // Update UI visibility
+                            mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
+                            mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
+                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                        } else {
+                            Log.e("MCFragment", "MainActivity is null or finishing")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MCFragment", "Error during logout: ${e.message}")
+                    }
+                }
+            }
+        }
+        
+        // Set up hamburger menu click listener directly
+        menuIcon.setOnClickListener {
+            Log.d("MCFragment", "Menu icon clicked")
+            if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                drawerLayout.closeDrawer(GravityCompat.START)
+            } else {
+                drawerLayout.openDrawer(GravityCompat.START)
+            }
+        }
+        
+        // Add drawer listener to dim background when drawer is opened
+        val mainContent = view.findViewById<androidx.constraintlayout.widget.ConstraintLayout>(R.id.mainContent)
+        drawerLayout.addDrawerListener(object : androidx.drawerlayout.widget.DrawerLayout.DrawerListener {
+            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+                // Apply dim effect based on how far the drawer is open
+                val dimAmount = slideOffset * 0.3f // Max 30% dim when fully open
+                mainContent?.alpha = 1f - dimAmount // Reduce alpha for dimming
+            }
+
+            override fun onDrawerOpened(drawerView: View) {
+                // Drawer fully opened
+                mainContent?.alpha = 0.7f // 30% dim when fully open
+            }
+
+            override fun onDrawerClosed(drawerView: View) {
+                // Drawer fully closed
+                mainContent?.alpha = 1.0f // No dim when closed
+            }
+
+            override fun onDrawerStateChanged(newState: Int) {
+                // Not needed for dimming effect
+            }
+        })
+        
         return view
     }
     
@@ -104,11 +197,17 @@ class MCFragment : Fragment() {
             generatedCodeText = view.findViewById(R.id.generatedCodeText)
             codeDisplayText = view.findViewById(R.id.codeDisplayText)
             cooldownText = view.findViewById(R.id.cooldownText)
+            drawerLayout = view.findViewById(R.id.drawerLayout)
+            menuIcon = view.findViewById(R.id.menuIcon)
+            accountTextView = view.findViewById(R.id.accountTextView)
+            logoutButton = view.findViewById(R.id.logoutButton)
             
             // Ensure all views are properly initialized
             if (generateCodeButton == null || checkMonitoringButton == null || 
                 exitButton == null || generatedCodeText == null || 
-                codeDisplayText == null || cooldownText == null) {
+                codeDisplayText == null || cooldownText == null || 
+                drawerLayout == null || menuIcon == null || 
+                accountTextView == null || logoutButton == null) {
                 throw IllegalStateException("One or more views could not be found in the layout")
             }
         } catch (e: Exception) {
@@ -139,6 +238,9 @@ class MCFragment : Fragment() {
             
             // Setup click listeners after views are initialized
             setupClickListeners()
+            
+            // Setup navigation drawer
+            setupNavigationDrawer()
             
             // Check camera permission
             checkCameraPermission()
@@ -196,6 +298,49 @@ class MCFragment : Fragment() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                     Toast.makeText(context, "Error showing exit dialog: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            
+            // Set up hamburger menu click listener
+            menuIcon.setOnClickListener {
+                try {
+                    if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+                        drawerLayout.closeDrawer(android.view.Gravity.START)
+                    } else {
+                        drawerLayout.openDrawer(android.view.Gravity.START)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Log.e("MCFragment", "Error toggling drawer: ${e.message}")
+                }
+            }
+            
+            // Set up logout button in navigation drawer
+            logoutButton.setOnClickListener {
+                try {
+                    // Close drawer
+                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                    
+                    // Show confirmation dialog
+                    val builder = AlertDialog.Builder(requireContext())
+                    builder.setTitle("Logout Confirmation")
+                        .setMessage("Are you sure you want to logout?")
+                        .setPositiveButton("Yes") { dialog, _ ->
+                            dialog.dismiss()
+                            FirebaseAuth.getInstance().signOut()
+                            
+                            // Navigate back to login
+                            val mainActivity = activity as? MainActivity
+                            mainActivity?.clearBackStackAndNavigateToLogin()
+                        }
+                        .setNegativeButton("No") { dialog, _ ->
+                            dialog.dismiss()
+                        }
+                        .create()
+                        .show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Log.e("MCFragment", "Error handling logout: ${e.message}")
                 }
             }
         } catch (e: Exception) {
@@ -631,6 +776,63 @@ class MCFragment : Fragment() {
         } finally {
             morseTimer = null
             countDownTimer = null
+        }
+    }
+
+    private fun setupNavigationDrawer() {
+        try {
+            // Set up hamburger menu click listener
+            menuIcon.setOnClickListener {
+                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                } else {
+                    drawerLayout.openDrawer(android.view.Gravity.START)
+                }
+            }
+            
+            // Set up user account info
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            accountTextView.text = currentUser?.email ?: "account."
+            
+            // Set up logout button
+            logoutButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+                
+                // Show confirmation dialog using DialogManager for consistency
+                dialogManager.showLogoutConfirmationDialog {
+                    try {
+                        // Sign out from Firebase
+                        FirebaseAuth.getInstance().signOut()
+                        
+                        // Navigate to login fragment directly
+                        val mainActivity = activity as? MainActivity
+                        if (mainActivity != null && !mainActivity.isFinishing) {
+                            // Create and show login fragment directly
+                            val loginFragment = LoginFragment()
+                            mainActivity.supportFragmentManager.beginTransaction()
+                                .setCustomAnimations(
+                                    android.R.anim.fade_in,
+                                    android.R.anim.fade_out
+                                )
+                                .replace(R.id.fragmentContainer, loginFragment)
+                                .commit()
+                            
+                            // Update UI visibility
+                            mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
+                            mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
+                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                        } else {
+                            Log.e("MCFragment", "MainActivity is null or finishing")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MCFragment", "Error during logout: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MCFragment", "Error setting up navigation drawer: ${e.message}")
+            e.printStackTrace()
         }
     }
 

@@ -1,27 +1,27 @@
 package com.example.limo_safe.utils
 
 import android.content.Context
-import android.graphics.Typeface
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.StyleSpan
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import com.example.limo_safe.MainActivity
-
 import com.example.limo_safe.R
 
 class DialogManager(private val context: Context) {
 
-    private var activeDialog: AlertDialog? = null
+    private var activeDialog: androidx.appcompat.app.AlertDialog? = null
     private var triesTextView: TextView? = null
 
     fun dismissActiveDialog() {
@@ -42,7 +42,7 @@ class DialogManager(private val context: Context) {
         view.setOnTouchListener { _, _ -> false }
     }
 
-    private fun setupDialogTouchListener(dialog: AlertDialog) {
+    private fun setupDialogTouchListener(dialog: androidx.appcompat.app.AlertDialog) {
         dialog.window?.decorView?.let { decorView ->
             setupTouchListener(decorView)
         }
@@ -53,7 +53,7 @@ class DialogManager(private val context: Context) {
         remainingTries: Int,
         remainingCooldown: Long = 0,
         onPlayClick: (Button, TextView) -> Unit
-    ): AlertDialog {
+    ): androidx.appcompat.app.AlertDialog {
         val dialog = createMorseCodeDialogInternal(code, remainingTries, remainingCooldown, onPlayClick)
         setupDialogTouchListener(dialog)
         activeDialog = dialog
@@ -65,7 +65,7 @@ class DialogManager(private val context: Context) {
         remainingTries: Int,
         remainingCooldown: Long = 0,
         onPlayClick: (Button, TextView) -> Unit
-    ): AlertDialog {
+    ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
         setupTouchListener(dialogView)
 
@@ -92,7 +92,7 @@ class DialogManager(private val context: Context) {
 
         }
 
-        val builder = AlertDialog.Builder(context)
+        val builder = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(dialogView)
             .setCancelable(false)
 
@@ -101,11 +101,11 @@ class DialogManager(private val context: Context) {
 
     fun createCustomDialog(
         layoutResId: Int
-    ): AlertDialog {
+    ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(layoutResId, null)
         setupTouchListener(dialogView)
 
-        val dialog = AlertDialog.Builder(context)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(dialogView)
             .create()
 
@@ -125,7 +125,7 @@ class DialogManager(private val context: Context) {
         activeDialog = null
         triesTextView = null
 
-        val dialog = AlertDialog.Builder(context)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setTitle("Maximum Tries Reached")
             .setMessage("You have reached the maximum number of tries.")
             .setPositiveButton("OK") { dialog, _ ->
@@ -138,7 +138,7 @@ class DialogManager(private val context: Context) {
     }
 
     fun showExitConfirmationDialog(onConfirm: () -> Unit) {
-        val dialog = AlertDialog.Builder(context)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setTitle("Exit Confirmation")
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { dialog, _ ->
@@ -154,9 +154,104 @@ class DialogManager(private val context: Context) {
         setupDialogTouchListener(dialog)
         dialog.show()
     }
+    
+    fun showLogoutConfirmationDialog(onConfirm: () -> Unit) {
+        try {
+            // Inflate custom layout
+            val inflater = LayoutInflater.from(context)
+            val view = inflater.inflate(R.layout.fragment_logout, null)
+            
+            // Create dialog with custom view
+            val dialog = android.app.Dialog(context)
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+            dialog.setContentView(view)
+            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            // Make dialog more compact (80% of screen width)
+            val displayMetrics = context.resources.displayMetrics
+            val width = (displayMetrics.widthPixels * 0.8).toInt()
+            dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+            dialog.setCancelable(false) // Prevent dismissing by tapping outside
+            
+            // Set up button click listeners
+            val cancelButton = view.findViewById<Button>(R.id.cancelButton)
+            val logoutButton = view.findViewById<Button>(R.id.logoutButton)
+            
+            cancelButton.setOnClickListener {
+                dialog.dismiss()
+            }
+            
+            logoutButton.setOnClickListener {
+                dialog.dismiss()
+                
+                try {
+                    // Sign out from Firebase first
+                    com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                    
+                    // Get the activity context
+                    val activity = context as? com.example.limo_safe.MainActivity
+                    if (activity != null && !activity.isFinishing) {
+                        // Simply create and show the login fragment
+                        val loginFragment = com.example.limo_safe.LoginFragment()
+                        
+                        // Make sure fragment container is visible
+                        activity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                        
+                        // Replace current fragment with login fragment
+                        activity.supportFragmentManager.beginTransaction()
+                            .replace(R.id.fragmentContainer, loginFragment)
+                            .commit()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DialogManager", "Error during logout: ${e.message}")
+                }
+            }
+            
+            // Show the dialog
+            dialog.show()
+        } catch (e: Exception) {
+            android.util.Log.e("DialogManager", "Error showing logout dialog: ${e.message}")
+            e.printStackTrace()
+            
+            // Fallback to standard dialog if custom one fails
+            val fallbackDialog = androidx.appcompat.app.AlertDialog.Builder(context)
+                .setTitle("Logout Confirmation")
+                .setMessage("Are you sure you want to log out of your account?")
+                .setPositiveButton("Yes, Log Out") { dialog, _ ->
+                    dialog.dismiss()
+                    
+                    try {
+                        // Sign out from Firebase first
+                        com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                        
+                        // Get the activity context
+                        val activity = context as? com.example.limo_safe.MainActivity
+                        if (activity != null && !activity.isFinishing) {
+                            // Simply create and show the login fragment
+                            val loginFragment = com.example.limo_safe.LoginFragment()
+                            
+                            // Make sure fragment container is visible
+                            activity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                            
+                            // Replace current fragment with login fragment
+                            activity.supportFragmentManager.beginTransaction()
+                                .replace(R.id.fragmentContainer, loginFragment)
+                                .commit()
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("DialogManager", "Error during logout (fallback): ${e.message}")
+                    }
+                }
+                .setNegativeButton("Cancel") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .create()
+            setupDialogTouchListener(fallbackDialog)
+            fallbackDialog.show()
+        }
+    }
 
     fun showErrorDialog(title: String, message: String) {
-        val dialog = AlertDialog.Builder(context)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton("OK") { dialog, _ ->
@@ -201,7 +296,7 @@ class DialogManager(private val context: Context) {
             addView(loadingText)
         }
 
-        val dialog = AlertDialog.Builder(context)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(layout)
             .setCancelable(false)
             .create()
@@ -212,7 +307,7 @@ class DialogManager(private val context: Context) {
 
 
     companion object {
-        fun createLoadingDialog(context: Context): AlertDialog {
+        fun createLoadingDialog(context: Context): androidx.appcompat.app.AlertDialog {
             return DialogManager(context).createLoadingDialog()
         }
     }

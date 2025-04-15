@@ -1,8 +1,12 @@
 package com.example.limo_safe
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +19,8 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
@@ -42,7 +48,10 @@ class MonitoringFragment : Fragment() {
     private lateinit var tabLayout: TabLayout
     private lateinit var logsFragment: LogsFragment
     private lateinit var dialogManager: DialogManager
-
+    private lateinit var drawerLayout: androidx.drawerlayout.widget.DrawerLayout
+    private lateinit var menuIcon: ImageView
+    private lateinit var accountTextView: TextView
+    private lateinit var logoutButton: Button
 
     private lateinit var database: DatabaseReference
     private var deviceListListener: ValueEventListener? = null
@@ -74,17 +83,108 @@ class MonitoringFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_monitoring, container, false)
 
+        // Initialize managers first to ensure they're available for all UI operations
+        dialogManager = DialogManager(requireContext())
+
         // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
         backButton = view.findViewById(R.id.backButton)
         tabLayout = view.findViewById(R.id.tabLayout)
-
-        // Initialize managers
-        dialogManager = DialogManager(requireContext())
-
+        drawerLayout = view.findViewById(R.id.drawerLayout)
+        menuIcon = view.findViewById(R.id.menuIcon)
+        
+        // Set up account info and logout button in the navigation drawer
+        val navHeader = view.findViewById<View>(R.id.nav_header_root)
+        if (navHeader != null) {
+            accountTextView = navHeader.findViewById(R.id.accountTextView)
+            logoutButton = navHeader.findViewById(R.id.logoutButton)
+            
+            // Set up user account info
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            accountTextView.text = currentUser?.email ?: "account."
+            
+            // Set up logout button
+            logoutButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+                
+                // Show confirmation dialog using DialogManager for consistency
+                dialogManager.showLogoutConfirmationDialog {
+                    try {
+                        // First remove all listeners to prevent memory leaks
+                        removeAllListeners()
+                        
+                        // Sign out from Firebase
+                        FirebaseAuth.getInstance().signOut()
+                        
+                        // Use the MainActivity's method to handle navigation
+                        val mainActivity = activity as? MainActivity
+                        if (mainActivity != null && !mainActivity.isFinishing) {
+                            // Use a handler to post the navigation after the current operation completes
+                            Handler(Looper.getMainLooper()).post {
+                                try {
+                                    // First show the main screen to reset the UI state
+                                    mainActivity.showMainScreen()
+                                    
+                                    // Then navigate to login after a short delay
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        try {
+                                            mainActivity.navigateToLogin()
+                                        } catch (e: Exception) {
+                                            Log.e("MonitoringFragment", "Error in delayed navigation: ${e.message}")
+                                        }
+                                    }, 300)
+                                } catch (e: Exception) {
+                                    Log.e("MonitoringFragment", "Error showing main screen: ${e.message}")
+                                }
+                            }
+                        } else {
+                            Log.e("MonitoringFragment", "MainActivity is null or finishing")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MonitoringFragment", "Error during logout: ${e.message}")
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
+        
+        // Set up hamburger menu click listener directly
+        menuIcon.setOnClickListener {
+            Log.d("MonitoringFragment", "Menu icon clicked")
+            if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                drawerLayout.closeDrawer(GravityCompat.START)
+            } else {
+                drawerLayout.openDrawer(GravityCompat.START)
+            }
+        }
+        
+        // Add drawer listener to dim background when drawer is opened
+        val mainContent = view.findViewById<LinearLayout>(R.id.mainContent)
+        drawerLayout.addDrawerListener(object : androidx.drawerlayout.widget.DrawerLayout.DrawerListener {
+            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+                // Apply dim effect based on how far the drawer is open
+                val dimAmount = slideOffset * 0.3f // Max 30% dim when fully open (reduced from 60%)
+                mainContent?.alpha = 1f - dimAmount // Reduce alpha for dimming
+            }
+
+            override fun onDrawerOpened(drawerView: View) {
+                // Drawer fully opened
+                mainContent?.alpha = 0.7f // 30% dim when fully open (changed from 0.4f)
+            }
+
+            override fun onDrawerClosed(drawerView: View) {
+                // Drawer fully closed
+                mainContent?.alpha = 1.0f // No dim when closed
+            }
+
+            override fun onDrawerStateChanged(newState: Int) {
+                // Not needed for dimming effect
+            }
+        })
 
         // Setup back button with consistent behavior
         backButton.setOnClickListener {
@@ -107,11 +207,91 @@ class MonitoringFragment : Fragment() {
             }
         }
 
-        setupRecyclerView()
-        setupTabs()
-        fetchUserDevices()
-
         return view
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        
+        try {
+            // Create logs fragment instance
+            logsFragment = LogsFragment()
+            // Setup recycler view
+            setupRecyclerView()
+            
+            // Setup tabs
+            setupTabs()
+            
+            // Fetch user devices
+            fetchUserDevices()
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error in onViewCreated: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun setupNavigationDrawer() {
+        try {
+            // Set up hamburger menu click listener
+            menuIcon.setOnClickListener {
+                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                } else {
+                    drawerLayout.openDrawer(android.view.Gravity.START)
+                }
+            }
+            
+            // Set up user account info
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            accountTextView.text = currentUser?.email ?: "account."
+            
+            // Set up logout button
+            logoutButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+                
+                // Show confirmation dialog using DialogManager for consistency
+                dialogManager.showLogoutConfirmationDialog {
+                    try {
+                        // First remove all listeners to prevent memory leaks
+                        removeAllListeners()
+                        
+                        // Sign out from Firebase
+                        FirebaseAuth.getInstance().signOut()
+                        
+                        // Navigate to login fragment directly
+                        val mainActivity = activity as? MainActivity
+                        if (mainActivity != null && !mainActivity.isFinishing) {
+                            try {
+                                // Create and show login fragment directly
+                                val loginFragment = LoginFragment()
+                                mainActivity.supportFragmentManager.beginTransaction()
+                                    .setCustomAnimations(
+                                        android.R.anim.fade_in,
+                                        android.R.anim.fade_out
+                                    )
+                                    .replace(R.id.fragmentContainer, loginFragment)
+                                    .commit()
+                                
+                                // Update UI visibility
+                                mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
+                                mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
+                                mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                            } catch (e: Exception) {
+                                Log.e("MonitoringFragment", "Error navigating to login: ${e.message}")
+                            }
+                        } else {
+                            Log.e("MonitoringFragment", "MainActivity is null or finishing")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MonitoringFragment", "Error during logout: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error setting up navigation drawer: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     private fun setupTabs() {
@@ -276,7 +456,10 @@ class MonitoringFragment : Fragment() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Toast.makeText(context, "Failed to load devices: ${error.message}", Toast.LENGTH_SHORT).show()
+                // Don't show toast if we're in the process of logging out
+                if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) {
+                    Toast.makeText(context, "Failed to load devices: ${error.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 

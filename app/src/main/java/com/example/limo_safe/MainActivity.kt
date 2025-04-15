@@ -1,6 +1,7 @@
 package com.example.limo_safe
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -165,20 +166,47 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     fun clearBackStackAndNavigateToLogin() {
         try {
-            // Clear any existing fragments
-            supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
-            
-            // Clear preferences and sign out
-            clearAllPreferences()
+            // Sign out from Firebase first
             auth.signOut()
             
-            // Navigate to login
-            navigateToLogin()
+            // Clear preferences
+            clearAllPreferences()
+            
+            // Make sure views are initialized
+            if (mainContent == null || pressToEnterButton == null || fragmentContainer == null) {
+                initializeViews()
+            }
+            
+            // Immediately update UI visibility to prevent flashing
+            mainContent?.visibility = View.GONE
+            pressToEnterButton?.visibility = View.GONE
+            fragmentContainer?.visibility = View.VISIBLE
+            
+            // Clear any existing fragments first
+            supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+            
+            // Create and show login fragment directly without delay
+            val loginFragment = LoginFragment()
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, loginFragment)
+                .commitNow() // Use commitNow for immediate execution
             
             Log.d(TAG, "Cleared back stack and navigated to login")
         } catch (e: Exception) {
-            Log.e(TAG, "Error navigating to login: ${e.message}")
-            showMainScreen()
+            Log.e(TAG, "Error in logout navigation: ${e.message}")
+            
+            // Last resort fallback - try a completely different approach
+            try {
+                // Create a new intent to restart the activity cleanly
+                val intent = Intent(this, MainActivity::class.java)
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                startActivity(intent)
+                
+                // Sign out again to be sure
+                auth.signOut()
+            } catch (e2: Exception) {
+                Log.e(TAG, "Failed fallback navigation: ${e2.message}")
+            }
         }
     }
 

@@ -1,125 +1,163 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.drawerlayout.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawerLayout"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#800000">
+    android:layout_height="match_parent">
 
-    <!-- Top Orange Bar -->
-    <View
-        android:id="@+id/topBar"
+    <LinearLayout
+        android:id="@+id/mainContent"
         android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:background="#FFA500"
-        />
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#800000">
 
-
-
-    <!-- Spacer -->
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="16dp" />
-
-    <!-- Title -->
-    <TextView
-        android:id="@+id/titleText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="LIMOnitoring"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        android:gravity="center"
-        android:padding="8dp"/>
-
-    <!-- Spacer -->
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="16dp" />
-
-    <!-- White Card Container -->
-    <androidx.cardview.widget.CardView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_margin="16dp"
-        app:cardCornerRadius="8dp"
-        app:cardElevation="4dp">
-
-        <LinearLayout
+        <!-- Top Orange Bar -->
+        <RelativeLayout
+            android:id="@+id/topBar"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:background="#FFFFFF">
+            android:layout_height="60dp"
+            android:background="#FFA500">
 
-            <!-- Tab Layout -->
-            <com.google.android.material.tabs.TabLayout
-                android:id="@+id/tabLayout"
-                android:layout_width="match_parent"
+            <!-- Hamburger Menu Icon -->
+            <ImageView
+                android:id="@+id/menuIcon"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_menu"
+                android:padding="12dp"
+                android:elevation="15dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:contentDescription="Menu"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true" />
+
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:tabMode="fixed"
-                app:tabGravity="fill"
-                android:background="#FFFFFF"
-                app:tabIndicatorColor="#800000"
-                app:tabSelectedTextColor="#800000"
-                app:tabTextColor="#666666">
+                android:text="LIMO-SAFE"
+                android:textColor="#800000"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:layout_centerInParent="true" />
+        </RelativeLayout>
 
-                <com.google.android.material.tabs.TabItem
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Device List" />
+        <!-- Spacer -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="16dp" />
 
-                <com.google.android.material.tabs.TabItem
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Logs" />
+        <!-- Title -->
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="LIMOnitoring"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:padding="8dp"/>
 
-            </com.google.android.material.tabs.TabLayout>
+        <!-- Spacer -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="16dp" />
 
-            <!-- Content Area -->
-            <FrameLayout
+        <!-- White Card Container -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_margin="16dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1">
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:background="#FFFFFF">
 
-                <!-- Device List -->
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/deviceListRecyclerView"
+                <!-- Tab Layout -->
+                <com.google.android.material.tabs.TabLayout
+                    android:id="@+id/tabLayout"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:padding="16dp"/>
+                    android:layout_height="wrap_content"
+                    app:tabMode="fixed"
+                    app:tabGravity="fill"
+                    android:background="#FFFFFF"
+                    app:tabIndicatorColor="#800000"
+                    app:tabSelectedTextColor="#800000"
+                    app:tabTextColor="#666666">
 
-                <!-- Logs Container -->
+                    <com.google.android.material.tabs.TabItem
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Device List" />
+
+                    <com.google.android.material.tabs.TabItem
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Logs" />
+
+                </com.google.android.material.tabs.TabLayout>
+
+                <!-- Content Area -->
                 <FrameLayout
-                    android:id="@+id/logsContainer"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:visibility="gone"/>
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
 
-            </FrameLayout>
+                    <!-- Device List -->
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/deviceListRecyclerView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:padding="16dp"/>
 
-        </LinearLayout>
+                    <!-- Logs Container -->
+                    <FrameLayout
+                        android:id="@+id/logsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:visibility="gone"/>
 
-    </androidx.cardview.widget.CardView>
+                </FrameLayout>
 
-    <!-- Back Button -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/backButton"
-        android:layout_width="250dp"
-        android:layout_height="wrap_content"
-        android:text="Back"
-        android:layout_gravity="center"
-        android:background="@drawable/button_bg"
-        android:padding="16dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="16dp"
-        android:textColor="@android:color/white" />
+            </LinearLayout>
 
-    <!-- Bottom Orange Bar -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:background="#FFA500"/>
+        </androidx.cardview.widget.CardView>
 
-</LinearLayout>
+        <!-- Back Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/backButton"
+            android:layout_width="250dp"
+            android:layout_height="wrap_content"
+            android:text="Back"
+            android:layout_gravity="center"
+            android:background="@drawable/button_bg"
+            android:padding="16dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:textColor="@android:color/white" />
+
+        <!-- Bottom Orange Bar -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#FFA500"/>
+
+    </LinearLayout>
+
+    <!-- Navigation Drawer -->
+    <include
+        layout="@layout/nav_header"
+        android:layout_width="240dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start" />
+
+</androidx.drawerlayout.widget.DrawerLayout>
