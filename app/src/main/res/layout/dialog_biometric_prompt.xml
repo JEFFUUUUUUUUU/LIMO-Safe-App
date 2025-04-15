@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="16dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="4dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Top orange bar -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#FFA500" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:background="#FFFFFF">
+
+            <TextView
+                android:id="@+id/biometricTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Use Biometric Login"
+                android:textColor="#800000"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/biometricDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Would you like to enable biometric login for faster access to your account?"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:layout_marginBottom="24dp" />
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@android:drawable/ic_lock_lock"
+                android:layout_gravity="center"
+                android:layout_marginBottom="24dp"
+                android:tint="#800000" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <Button
+                    android:id="@+id/biometricCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Not Now"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#800000"
+                    android:layout_marginEnd="8dp" />
+
+                <Button
+                    android:id="@+id/biometricEnableButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Enable"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#FFA500"
+                    android:layout_marginStart="8dp" />
+
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Bottom orange bar -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#FFA500" />
+
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

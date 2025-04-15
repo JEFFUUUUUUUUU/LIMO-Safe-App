@@ -27,6 +27,8 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import kotlin.concurrent.thread
 import android.content.DialogInterface
+import android.content.Context
+import android.content.SharedPreferences
 import android.view.View.GONE
 import android.view.View.VISIBLE
 import androidx.core.view.GravityCompat
@@ -41,6 +43,14 @@ class MCFragment : Fragment() {
     private var remainingTries = 3
     private val MORSE_COOLDOWN: Long = 15000 // 15 seconds
     private val GENERATE_COOLDOWN: Long = 60000 // 1 minute
+    
+    // SharedPreferences keys
+    private val PREFS_NAME = "MCFragmentPrefs"
+    private val GENERATE_COOLDOWN_END_KEY = "generate_cooldown_end"
+    private val CURRENT_CODE_KEY = "current_code"
+    private val REMAINING_TRIES_KEY = "remaining_tries"
+    
+    private lateinit var sharedPreferences: SharedPreferences
 
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
@@ -60,6 +70,9 @@ class MCFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize SharedPreferences
+        sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // Handle back press
         val callback = object : OnBackPressedCallback(true) {
@@ -95,6 +108,9 @@ class MCFragment : Fragment() {
         
         // Initialize DialogManager
         dialogManager = DialogManager(requireContext())
+        
+        // Load saved state from SharedPreferences
+        loadSavedState()
         
         // Create the view
         val view = inflater.inflate(R.layout.fragment_mc, container, false)
@@ -353,6 +369,9 @@ class MCFragment : Fragment() {
         generateCodeButton.alpha = 0.5f
 
         generateCooldownEndTime = System.currentTimeMillis() + duration
+        
+        // Save cooldown end time to SharedPreferences
+        saveGenerateCooldownEndTime(generateCooldownEndTime)
 
         countDownTimer?.cancel()
         countDownTimer = object : CountDownTimer(duration, 1000) {
@@ -367,6 +386,9 @@ class MCFragment : Fragment() {
                 generateCodeButton.alpha = 1.0f
                 generateCodeButton.text = "Generate Code"
                 generateCooldownEndTime = 0
+                
+                // Reset cooldown end time in SharedPreferences
+                saveGenerateCooldownEndTime(0)
             }
         }.start()
     }
@@ -374,6 +396,9 @@ class MCFragment : Fragment() {
     private fun updateGeneratedCodeText() {
         generatedCodeText.text = "Generated Code: "
         codeDisplayText.text = if (currentCode.isEmpty()) "-------" else currentCode
+        
+        // Save current code to SharedPreferences
+        saveCurrentCode(currentCode)
     }
 
     @SuppressLint("RestrictedApi")
@@ -678,10 +703,12 @@ class MCFragment : Fragment() {
             // Reset UI state
             resetGenerateButton()
             
-            // Check cooldowns
-            val currentTime = System.currentTimeMillis()
-            if (generateCooldownEndTime > currentTime) {
-                startGenerateButtonCooldown(generateCooldownEndTime - currentTime)
+            // Resume cooldown timer if needed
+            resumeCooldownIfNeeded()
+            
+            // Update UI with current code
+            if (::generatedCodeText.isInitialized && ::codeDisplayText.isInitialized) {
+                updateGeneratedCodeText()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -836,6 +863,87 @@ class MCFragment : Fragment() {
         }
     }
 
+    /**
+     * Save generate cooldown end time to SharedPreferences
+     */
+    private fun saveGenerateCooldownEndTime(endTime: Long) {
+        sharedPreferences.edit().putLong(GENERATE_COOLDOWN_END_KEY, endTime).apply()
+    }
+    
+    /**
+     * Save current code to SharedPreferences
+     */
+    private fun saveCurrentCode(code: String) {
+        sharedPreferences.edit().putString(CURRENT_CODE_KEY, code).apply()
+    }
+    
+    /**
+     * Save remaining tries to SharedPreferences
+     */
+    private fun saveRemainingTries(tries: Int) {
+        sharedPreferences.edit().putInt(REMAINING_TRIES_KEY, tries).apply()
+    }
+    
+    /**
+     * Load saved state from SharedPreferences
+     */
+    private fun loadSavedState() {
+        // Load cooldown end time
+        generateCooldownEndTime = sharedPreferences.getLong(GENERATE_COOLDOWN_END_KEY, 0)
+        
+        // Load current code
+        currentCode = sharedPreferences.getString(CURRENT_CODE_KEY, "") ?: ""
+        
+        // Load remaining tries
+        remainingTries = sharedPreferences.getInt(REMAINING_TRIES_KEY, 3)
+        
+        // Check if we need to resume a cooldown
+        val currentTime = System.currentTimeMillis()
+        if (generateCooldownEndTime > currentTime) {
+            val remainingTime = generateCooldownEndTime - currentTime
+            Log.d("MCFragment", "Resuming cooldown with ${remainingTime}ms remaining")
+            
+            // We'll start the timer when the button is visible
+        }
+    }
+    
+    /**
+     * Resume cooldown timer if needed
+     */
+    private fun resumeCooldownIfNeeded() {
+        val currentTime = System.currentTimeMillis()
+        
+        // Check if generate button cooldown is active
+        if (generateCooldownEndTime > currentTime && ::generateCodeButton.isInitialized) {
+            val remainingTime = generateCooldownEndTime - currentTime
+            
+            // Disable button and start timer
+            generateCodeButton.isEnabled = false
+            generateCodeButton.alpha = 0.5f
+            
+            countDownTimer?.cancel()
+            countDownTimer = object : CountDownTimer(remainingTime, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    val minutes = millisUntilFinished / 1000 / 60
+                    val seconds = (millisUntilFinished / 1000) % 60
+                    generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
+                }
+                
+                override fun onFinish() {
+                    generateCodeButton.isEnabled = true
+                    generateCodeButton.alpha = 1.0f
+                    generateCodeButton.text = "Generate Code"
+                    generateCooldownEndTime = 0
+                    
+                    // Reset cooldown end time in SharedPreferences
+                    saveGenerateCooldownEndTime(0)
+                }
+            }.start()
+        }
+    }
+    
+
+    
     companion object {
         private const val CAMERA_PERMISSION_REQUEST_CODE = 123
     }

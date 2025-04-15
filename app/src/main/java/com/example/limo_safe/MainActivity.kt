@@ -363,7 +363,7 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
                     pressToEnterButton?.visibility = View.VISIBLE
                     fragmentContainer?.visibility = View.GONE
                 }
-                is LoginFragment, is MCFragment, is MonitoringFragment -> {
+                is LoginFragment, is MCFragment, is MonitoringFragment, is SignUpFragment, is ForgotPasswordFragment -> {
                     // Any app fragment - hide main screen
                     mainContent?.visibility = View.GONE
                     pressToEnterButton?.visibility = View.GONE
@@ -385,6 +385,50 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in onBackStackChanged: ${e.message}")
+        }
+    }
+    
+    fun navigateToSignUp() {
+        try {
+            Log.d(TAG, "Navigating to SignUpFragment")
+            
+            // Make sure fragment container is visible
+            fragmentContainer?.visibility = View.VISIBLE
+            mainContent?.visibility = View.GONE
+            
+            // Create and show sign up fragment
+            val signUpFragment = SignUpFragment.newInstance()
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, signUpFragment)
+                .addToBackStack("to_signup")
+                .commit()
+                
+            Log.d(TAG, "Navigated to SignUpFragment successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error navigating to SignUpFragment: ${e.message}")
+            Toast.makeText(this, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    fun navigateToForgotPassword() {
+        try {
+            Log.d(TAG, "Navigating to ForgotPasswordFragment")
+            
+            // Make sure fragment container is visible
+            fragmentContainer?.visibility = View.VISIBLE
+            mainContent?.visibility = View.GONE
+            
+            // Create and show forgot password fragment
+            val forgotPasswordFragment = ForgotPasswordFragment.newInstance()
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, forgotPasswordFragment)
+                .addToBackStack("to_forgot_password")
+                .commit()
+                
+            Log.d(TAG, "Navigated to ForgotPasswordFragment successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error navigating to ForgotPasswordFragment: ${e.message}")
+            Toast.makeText(this, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 }
