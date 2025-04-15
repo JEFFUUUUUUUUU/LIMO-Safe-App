@@ -53,8 +53,13 @@ class LoginFragment : Fragment() {
         initializeViews(view)
         setupClickListeners()
         
-        // Check if biometric login is enabled and show biometric button if available
-        updateBiometricButtonVisibility()
+        // Hide the biometric login button
+        biometricLoginButton.visibility = View.GONE
+        
+        // Automatically trigger biometric authentication if enabled and available
+        if (biometricManager.isBiometricEnabled() && biometricManager.isBiometricAvailable()) {
+            authenticateWithBiometric()
+        }
 
         // Clear all preferences to ensure fresh state
         clearAllPreferences()

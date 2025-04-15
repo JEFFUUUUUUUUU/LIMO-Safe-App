@@ -53,6 +53,10 @@ class MCFragment : Fragment() {
     private val CURRENT_CODE_KEY = "current_code"
     private val REMAINING_TRIES_KEY = "remaining_tries"
     private val MORSE_COOLDOWN_END_KEY = "morse_cooldown_end_time"
+    private val MC_DIALOG_OPEN_KEY = "mc_dialog_open"
+    private val MC_DIALOG_CODE_KEY = "mc_dialog_code"
+    private val MC_DIALOG_TRIES_KEY = "mc_dialog_tries"
+    private val MC_DIALOG_COOLDOWN_KEY = "mc_dialog_cooldown"
     
     private lateinit var sharedPreferences: SharedPreferences
 
@@ -543,8 +547,9 @@ class MCFragment : Fragment() {
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { dialog, _ ->
                 dialog.dismiss()
-                FirebaseAuth.getInstance().signOut()
-                navigateToLogin()
+                // Exit the app completely
+                requireActivity().finishAffinity()
+                System.exit(0)
             }
             .setNegativeButton("No") { dialog, _ ->
                 dialog.dismiss()
@@ -608,6 +613,13 @@ class MCFragment : Fragment() {
                     saveCurrentCode("")
                     saveRemainingTries(3)
                 }
+                // Always clear dialog state when dismissed
+                sharedPreferences.edit()
+                    .putBoolean(MC_DIALOG_OPEN_KEY, false)
+                    .remove(MC_DIALOG_CODE_KEY)
+                    .remove(MC_DIALOG_TRIES_KEY)
+                    .remove(MC_DIALOG_COOLDOWN_KEY)
+                    .apply()
             }
             
             dialog.show()
@@ -748,6 +760,18 @@ class MCFragment : Fragment() {
             morseTimer?.cancel()
             countDownTimer?.cancel()
             
+            // Save dialog state if open
+            if (::dialog.isInitialized && dialog.isShowing && currentCode.isNotEmpty() && remainingTries > 0) {
+                sharedPreferences.edit()
+                    .putBoolean(MC_DIALOG_OPEN_KEY, true)
+                    .putString(MC_DIALOG_CODE_KEY, currentCode)
+                    .putInt(MC_DIALOG_TRIES_KEY, remainingTries)
+                    .putLong(MC_DIALOG_COOLDOWN_KEY, if (morseCooldownEndTime > System.currentTimeMillis()) morseCooldownEndTime - System.currentTimeMillis() else 0L)
+                    .apply()
+            } else {
+                sharedPreferences.edit().putBoolean(MC_DIALOG_OPEN_KEY, false).apply()
+            }
+            
             // Dismiss dialog if showing
             if (::dialog.isInitialized && dialog.isShowing) {
                 dialog.dismiss()
@@ -769,6 +793,19 @@ class MCFragment : Fragment() {
             // Update UI with current code
             if (::generatedCodeText.isInitialized && ::codeDisplayText.isInitialized) {
                 updateGeneratedCodeText()
+            }
+
+            // Restore Morse dialog if it was open
+            val dialogOpen = sharedPreferences.getBoolean(MC_DIALOG_OPEN_KEY, false)
+            if (dialogOpen) {
+                val code = sharedPreferences.getString(MC_DIALOG_CODE_KEY, "") ?: ""
+                val tries = sharedPreferences.getInt(MC_DIALOG_TRIES_KEY, 3)
+                val cooldown = sharedPreferences.getLong(MC_DIALOG_COOLDOWN_KEY, 0L)
+                if (code.isNotEmpty() && tries > 0) {
+                    currentCode = code
+                    remainingTries = tries
+                    showMorseCodeDialog(code, cooldown)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
