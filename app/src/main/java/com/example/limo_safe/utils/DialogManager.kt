@@ -78,22 +78,31 @@ class DialogManager(private val context: Context) {
         triesText.text = "Remaining tries: $remainingTries"
         this.triesTextView = triesText
 
-        if (remainingCooldown > 0) {
+        // Check if user has remaining tries
+        if (remainingTries <= 0) {
+            playButton.isEnabled = false
+            playButton.alpha = 0.5f
+            cooldownText.visibility = View.VISIBLE
+            cooldownText.text = "No tries remaining"
+        } else if (remainingCooldown > 0) {
             cooldownText.visibility = View.VISIBLE
             cooldownText.text = "Cooldown: ${remainingCooldown}s"
             playButton.isEnabled = false
+            playButton.alpha = 0.5f
         } else {
             cooldownText.visibility = View.GONE
             playButton.isEnabled = true
+            playButton.alpha = 1.0f
         }
 
         playButton.setOnClickListener {
             onPlayClick(playButton, cooldownText)
-
         }
 
         val builder = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(dialogView)
+            .setTitle("Morse Code")
+            .setNegativeButton("Close") { dialog, _ -> dialog.dismiss() }
             .setCancelable(false)
 
         return builder.create()
