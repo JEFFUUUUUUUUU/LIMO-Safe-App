@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.androidx.navigation.runtime.ktx)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.biometric.ktx)
+    implementation(libs.androidx.core)
 
     // Testing dependencies
     testImplementation(libs.junit)

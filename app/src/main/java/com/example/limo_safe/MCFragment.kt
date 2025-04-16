@@ -2,6 +2,8 @@ package com.example.limo_safe
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -10,6 +12,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
+import android.view.View.VISIBLE
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
@@ -19,23 +22,17 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.GravityCompat
 import androidx.fragment.app.Fragment
-import com.example.limo_safe.utils.MorseCodeHelper
 import com.example.limo_safe.utils.DialogManager
+import com.example.limo_safe.utils.MorseCodeHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import kotlin.concurrent.thread
-import android.content.DialogInterface
-import android.content.Context
-import android.content.SharedPreferences
-import android.view.View.GONE
-import android.view.View.VISIBLE
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 
 class MCFragment : Fragment() {
-    private lateinit var morseCodeHelper: MorseCodeHelper
+    private var morseCodeHelper: MorseCodeHelper? = null
     private var generateCooldownEndTime: Long = 0
     private var morseCooldownEndTime: Long = 0
     private var lastMorsePlayTime: Long = 0
@@ -70,7 +67,7 @@ class MCFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+        morseCodeHelper = MorseCodeHelper(requireContext())
         // Initialize SharedPreferences
         sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -104,7 +101,7 @@ class MCFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View? {
         // Initialize MorseCodeHelper with context
-        MorseCodeHelper.initialize(requireContext())
+        morseCodeHelper = MorseCodeHelper(requireContext())
         
         // Initialize DialogManager
         dialogManager = DialogManager(requireContext())
@@ -156,7 +153,8 @@ class MCFragment : Fragment() {
                             // Update UI visibility
                             mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
                             mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
-                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility =
+                                VISIBLE
                         } else {
                             Log.e("MCFragment", "MainActivity is null or finishing")
                         }
@@ -320,10 +318,10 @@ class MCFragment : Fragment() {
             // Set up hamburger menu click listener
             menuIcon.setOnClickListener {
                 try {
-                    if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-                        drawerLayout.closeDrawer(android.view.Gravity.START)
+                    if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                        drawerLayout.closeDrawer(GravityCompat.START)
                     } else {
-                        drawerLayout.openDrawer(android.view.Gravity.START)
+                        drawerLayout.openDrawer(GravityCompat.START)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -335,7 +333,7 @@ class MCFragment : Fragment() {
             logoutButton.setOnClickListener {
                 try {
                     // Close drawer
-                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                    drawerLayout.closeDrawer(GravityCompat.START)
                     
                     // Show confirmation dialog
                     val builder = AlertDialog.Builder(requireContext())
@@ -395,16 +393,26 @@ class MCFragment : Fragment() {
 
     private fun updateGeneratedCodeText() {
         generatedCodeText.text = "Generated Code: "
-        codeDisplayText.text = if (currentCode.isEmpty()) "-------" else currentCode
-        
-        // Save current code to SharedPreferences
-        saveCurrentCode(currentCode)
+        codeDisplayText.text = if (displayCode.isEmpty()) "-------" else displayCode
+
+        // Save current code to SharedPreferences (save both display and full code)
+        saveCurrentCode(displayCode)
+        saveTransmitCode(transmitCode)
     }
 
     @SuppressLint("RestrictedApi")
+    private var displayCode = "" // Code shown to user (without tag)
+    private var transmitCode = "" // Full code with tag for Morse transmission
     private fun generateRandomCode(): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         val randomCode = (1..6).map { chars.random() }.joinToString("")
+
+        // Set the display code immediately
+        displayCode = randomCode
+
+        // Update UI with display code only (without tag)
+        updateGeneratedCodeText()
+
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return randomCode
 
         // First, get the user's tag from Firebase
@@ -413,7 +421,10 @@ class MCFragment : Fragment() {
                 val userTag = tagSnapshot.value as? String ?: ""
                 // Take only the first character if tag exists
                 val tagChar = if (userTag.isNotEmpty()) userTag.first().toString() else ""
+
+                // Create the full code with tag for transmission
                 val fullCode = tagChar + randomCode
+                transmitCode = fullCode
 
                 // Store the OTP data
                 val otpData = mapOf(
@@ -430,18 +441,13 @@ class MCFragment : Fragment() {
                 )
 
                 // Update both OTP and logs
-                val updates = mapOf(
-                    "/users/$userId/otp" to otpData,
-                    "${logsRef.path}" to logEntry
-                )
+                val updates = HashMap<String, Any>()
+                updates["/users/$userId/otp"] = otpData
+                updates["/users/$userId/logs/${logsRef.key}"] = logEntry
 
                 database.updateChildren(updates)
                     .addOnSuccessListener {
-                        // Update the UI with the full code
-                        activity?.runOnUiThread {
-                            currentCode = fullCode
-                            updateGeneratedCodeText()
-                        }
+                        // No need to update UI again since we've already displayed the code
 
                         // Auto-delete after 30 seconds
                         Handler(Looper.getMainLooper()).postDelayed({
@@ -450,7 +456,7 @@ class MCFragment : Fragment() {
                     }
             }
 
-        // Return the random code initially, it will be updated when we get the tag
+        // Return the random code for display
         return randomCode
     }
 
@@ -512,34 +518,37 @@ class MCFragment : Fragment() {
         try {
             val builder = AlertDialog.Builder(requireContext())
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
-            
+
             // Initialize dialog views
             val codeTextView = dialogView.findViewById<TextView>(R.id.codeDisplayText)
             val triesText = dialogView.findViewById<TextView>(R.id.triesText)
             val playButton = dialogView.findViewById<Button>(R.id.playButton)
-            val cooldownText = dialogView.findViewById<TextView>(R.id.cooldownText)
-            
-            codeTextView.text = "Code: $code"
+            dialogView.findViewById<TextView>(R.id.cooldownText)
+
+            // Show only the display code in the dialog
+            codeTextView.text = "Code: $displayCode"
             triesText.text = "Remaining tries: $remainingTries"
-            
+
             // Set up play button
-            val currentTime = System.currentTimeMillis()
             if (remainingCooldown > 0) {
                 startMorseCooldown(remainingCooldown)
                 playButton.isEnabled = false
                 playButton.alpha = 0.5f
             }
-            
+
             playButton.setOnClickListener {
                 if (!checkCameraPermission()) {
                     return@setOnClickListener
                 }
-                
+
                 playButton.isEnabled = false
                 playButton.alpha = 0.5f
-                
+
                 val currentTime = System.currentTimeMillis()
-                playMorseCode(code)
+
+                // Use transmitCode for Morse transmission (includes tag)
+                playMorseCode(transmitCode)
+
                 remainingTries--
                 triesText.text = "Remaining tries: $remainingTries"
 
@@ -549,16 +558,16 @@ class MCFragment : Fragment() {
                 } else {
                     // Close the current dialog
                     dialog.dismiss()
-                    
+
                     // Show maximum tries reached dialog
                     dialogManager.showMaxTriesDialog()
                 }
             }
-            
+
             builder.setView(dialogView)
                 .setTitle("Morse Code")
                 .setNegativeButton("Close") { dialog, _ -> dialog.dismiss() }
-            
+
             dialog = builder.create()
             dialog.show()
         } catch (e: Exception) {
@@ -598,35 +607,10 @@ class MCFragment : Fragment() {
     private fun playMorseCode(code: String) {
         thread {
             try {
-                MorseCodeHelper.playMorseCode(code)
+                morseCodeHelper?.playMorseCode(code)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        }
-    }
-
-    private fun flashlightOn() {
-        try {
-            MorseCodeHelper.flashlightOn()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun flashlightOff() {
-        try {
-            MorseCodeHelper.flashlightOff()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun textToMorse(text: String): String {
-        return try {
-            MorseCodeHelper.textToMorse(text)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            ""
         }
     }
 
@@ -738,7 +722,8 @@ class MCFragment : Fragment() {
             generateCooldownEndTime = 0
             
             // Cleanup morse code helper
-            MorseCodeHelper.cleanup()
+            morseCodeHelper?.cleanup()
+            morseCodeHelper = null
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
@@ -767,7 +752,8 @@ class MCFragment : Fragment() {
             generateCooldownEndTime = 0
             
             // Cleanup morse code helper
-            MorseCodeHelper.cleanup()
+            morseCodeHelper?.cleanup()
+            morseCodeHelper = null
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
@@ -810,10 +796,10 @@ class MCFragment : Fragment() {
         try {
             // Set up hamburger menu click listener
             menuIcon.setOnClickListener {
-                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                    drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
-                    drawerLayout.openDrawer(android.view.Gravity.START)
+                    drawerLayout.openDrawer(GravityCompat.START)
                 }
             }
             
@@ -848,7 +834,8 @@ class MCFragment : Fragment() {
                             // Update UI visibility
                             mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
                             mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
-                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
+                            mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility =
+                                VISIBLE
                         } else {
                             Log.e("MCFragment", "MainActivity is null or finishing")
                         }
@@ -876,6 +863,10 @@ class MCFragment : Fragment() {
     private fun saveCurrentCode(code: String) {
         sharedPreferences.edit().putString(CURRENT_CODE_KEY, code).apply()
     }
+
+    private fun saveTransmitCode(code: String) {
+        sharedPreferences.edit().putString("transmit_code_key", code).apply()
+    }
     
     /**
      * Save remaining tries to SharedPreferences
@@ -890,20 +881,26 @@ class MCFragment : Fragment() {
     private fun loadSavedState() {
         // Load cooldown end time
         generateCooldownEndTime = sharedPreferences.getLong(GENERATE_COOLDOWN_END_KEY, 0)
-        
-        // Load current code
-        currentCode = sharedPreferences.getString(CURRENT_CODE_KEY, "") ?: ""
-        
+
+        // Load display code
+        displayCode = sharedPreferences.getString(CURRENT_CODE_KEY, "") ?: ""
+
+        // Load transmit code
+        transmitCode = sharedPreferences.getString("transmit_code_key", "") ?: ""
+
+        // For backward compatibility, if transmitCode is empty but displayCode isn't
+        if (transmitCode.isEmpty() && displayCode.isNotEmpty()) {
+            transmitCode = displayCode
+        }
+
         // Load remaining tries
         remainingTries = sharedPreferences.getInt(REMAINING_TRIES_KEY, 3)
-        
+
         // Check if we need to resume a cooldown
         val currentTime = System.currentTimeMillis()
         if (generateCooldownEndTime > currentTime) {
             val remainingTime = generateCooldownEndTime - currentTime
             Log.d("MCFragment", "Resuming cooldown with ${remainingTime}ms remaining")
-            
-            // We'll start the timer when the button is visible
         }
     }
     

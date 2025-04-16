@@ -1,6 +1,5 @@
 package com.example.limo_safe
 
-import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.os.Bundle
@@ -20,19 +19,16 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
-import androidx.fragment.app.FragmentManager
-import androidx.fragment.app.FragmentTransaction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 import com.example.limo_safe.utils.BiometricManager
+import com.example.limo_safe.utils.DeviceNotificationManager
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.PasswordConfirmationDialog
 import com.google.android.gms.tasks.Tasks
-import com.google.android.gms.tasks.Task
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.tabs.TabLayout
 import com.google.firebase.auth.FirebaseAuth
@@ -56,6 +52,8 @@ class MonitoringFragment : Fragment() {
     private lateinit var logoutButton: Button
     private lateinit var biometricSetupButton: Button
     private lateinit var biometricManager: BiometricManager
+    private lateinit var notificationManager: DeviceNotificationManager
+    private val previousDeviceStates = mutableMapOf<String, Triple<Boolean, Boolean, Boolean>>()
 
     private lateinit var database: DatabaseReference
     private var deviceListListener: ValueEventListener? = null
@@ -90,6 +88,7 @@ class MonitoringFragment : Fragment() {
         // Initialize managers first to ensure they're available for all UI operations
         dialogManager = DialogManager(requireContext())
         biometricManager = BiometricManager(requireContext())
+        notificationManager = DeviceNotificationManager(requireContext())
 
         // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
@@ -288,10 +287,10 @@ class MonitoringFragment : Fragment() {
         try {
             // Set up hamburger menu click listener
             menuIcon.setOnClickListener {
-                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                    drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
-                    drawerLayout.openDrawer(android.view.Gravity.START)
+                    drawerLayout.openDrawer(GravityCompat.START)
                 }
             }
             
@@ -447,7 +446,7 @@ class MonitoringFragment : Fragment() {
 
         // Remove all device status listeners
         deviceStatusListeners.forEach { (deviceId, listener) ->
-            database.child("devices").child(deviceId).child("isOnline")
+            database.child("devices").child(deviceId).child("status")
                 .removeEventListener(listener)
         }
         deviceStatusListeners.clear()
@@ -578,11 +577,31 @@ class MonitoringFragment : Fragment() {
                 val deviceIndex = devices.indexOfFirst { it.id == deviceId }
                 if (deviceIndex < 0) return
 
-                val actualOnlineStatus = snapshot.getValue(Boolean::class.java) ?: false
+                // Get current status values
+                val actualOnlineStatus = snapshot.child("online").getValue(Boolean::class.java) ?: false
+                val actualLockStatus = snapshot.child("locked").getValue(Boolean::class.java) ?: false
+                val actualSecureStatus = snapshot.child("secure").getValue(Boolean::class.java) ?: false
+
+                // Get device name
+                val deviceName = devices[deviceIndex].name ?: deviceId
+
+                // Current states as a triple
+                val currentStates = Triple(actualOnlineStatus, actualLockStatus, actualSecureStatus)
+
+                // Check for status changes and update previous states
+                val previousState = previousDeviceStates[deviceId]
+                previousDeviceStates[deviceId] = notificationManager.notifyChanges(
+                    deviceId,
+                    deviceName,
+                    previousState,
+                    currentStates
+                )
 
                 // Update device status in list
                 val updatedDevice = devices[deviceIndex].copy(
-                    isOnline = actualOnlineStatus
+                    isOnline = actualOnlineStatus,
+                    isLocked = actualLockStatus,
+                    isSecure = actualSecureStatus
                 )
                 devices[deviceIndex] = updatedDevice
 
@@ -598,10 +617,10 @@ class MonitoringFragment : Fragment() {
             }
         }
 
-        // Add listener to database
-        database.child("devices").child(deviceId).child("isOnline")
+        // Add listener to database - listen to the entire device node to get all status properties
+        database.child("devices").child(deviceId).child("status")
             .addValueEventListener(deviceStatusListener)
-        
+
         // Store listener reference
         deviceStatusListeners[deviceId] = deviceStatusListener
     }
@@ -987,30 +1006,7 @@ class MonitoringFragment : Fragment() {
             biometricSetupButton.text = "Set Up Biometric Login"
         }
     }
-    
-    private fun showEnableBiometricDialog() {
-        val currentUser = FirebaseAuth.getInstance().currentUser
-        val email = currentUser?.email
-        
-        if (email == null) {
-            Toast.makeText(requireContext(), "Unable to get user email", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        // Directly show biometric prompt for enrollment
-        biometricManager.showBiometricEnrollmentPrompt(
-            fragment = this,
-            email = email,
-            onSuccess = {
-                Toast.makeText(requireContext(), "Biometric login enabled successfully!", Toast.LENGTH_SHORT).show()
-                updateBiometricButtonText()
-            },
-            onCancel = {
-                Toast.makeText(requireContext(), "Biometric enrollment canceled", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-    
+
     private fun showDisableBiometricDialog() {
         val dialog = androidx.appcompat.app.AlertDialog.Builder(requireContext())
             .setTitle("Disable Biometric Login")
