@@ -17,8 +17,6 @@ firebaseDatabaseKtx = "20.3.0"
 playServicesCastFramework = "22.0.0"
 compose = "1.0.0-alpha03"
 navigationRuntimeKtx = "2.8.9"
-biometricKtx = "1.2.0-alpha05"
-biometricKtxVersion = "1.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,8 +35,6 @@ firebase-database-ktx = { group = "com.google.firebase", name = "firebase-databa
 play-services-cast-framework = { group = "com.google.android.gms", name = "play-services-cast-framework", version.ref = "playServicesCastFramework" }
 androidx-compose = { group = "androidx.xr.compose", name = "compose", version.ref = "compose" }
 androidx-navigation-runtime-ktx = { group = "androidx.navigation", name = "navigation-runtime-ktx", version.ref = "navigationRuntimeKtx" }
-androidx-biometric = { group = "androidx.biometric", name = "biometric-ktx", version.ref = "biometricKtx" }
-androidx-biometric-ktx = { group = "androidx.biometric", name = "biometric-ktx", version.ref = "biometricKtxVersion" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
