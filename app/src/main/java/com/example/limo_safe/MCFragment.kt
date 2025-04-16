@@ -73,10 +73,10 @@ class MCFragment : Fragment() {
     private var morseTimer: CountDownTimer? = null
     private lateinit var drawerLayout: androidx.drawerlayout.widget.DrawerLayout
     private lateinit var menuIcon: ImageView
-    private lateinit var accountTextView: TextView
     private lateinit var logoutButton: Button
     private lateinit var biometricSetupButton: Button
     private lateinit var biometricManager: BiometricManager
+    private lateinit var navHeaderSubtitle: TextView
 
     private var fromCodeClick = false
 
@@ -135,13 +135,13 @@ class MCFragment : Fragment() {
         // Set up account info and logout button in the navigation drawer
         val navHeader = view.findViewById<View>(R.id.nav_header_root)
         if (navHeader != null) {
-            accountTextView = navHeader.findViewById(R.id.accountTextView)
+            navHeaderSubtitle = navHeader.findViewById(R.id.navHeaderSubtitle)
             logoutButton = navHeader.findViewById(R.id.logoutButton)
             biometricSetupButton = navHeader.findViewById(R.id.biometricSetupButton)
             
             // Set up user account info
             val currentUser = FirebaseAuth.getInstance().currentUser
-            accountTextView.text = currentUser?.email ?: "account."
+            navHeaderSubtitle.text = currentUser?.email ?: "account."
             
             // Update biometric button text
             updateBiometricButtonText()
@@ -238,7 +238,6 @@ class MCFragment : Fragment() {
             cooldownText = view.findViewById(R.id.cooldownText)
             drawerLayout = view.findViewById(R.id.drawerLayout)
             menuIcon = view.findViewById(R.id.menuIcon)
-            accountTextView = view.findViewById(R.id.accountTextView)
             logoutButton = view.findViewById(R.id.logoutButton)
             
             // Ensure all views are properly initialized
@@ -246,7 +245,7 @@ class MCFragment : Fragment() {
                 exitButton == null || generatedCodeText == null || 
                 codeDisplayText == null || cooldownText == null || 
                 drawerLayout == null || menuIcon == null || 
-                accountTextView == null || logoutButton == null) {
+                logoutButton == null) {
                 throw IllegalStateException("One or more views could not be found in the layout")
             }
         } catch (e: Exception) {
@@ -936,7 +935,7 @@ class MCFragment : Fragment() {
             
             // Set up user account info
             val currentUser = FirebaseAuth.getInstance().currentUser
-            accountTextView.text = currentUser?.email ?: "account."
+            navHeaderSubtitle.text = currentUser?.email ?: "account."
             
             // Update biometric button text
             updateBiometricButtonText()
@@ -1111,9 +1110,9 @@ class MCFragment : Fragment() {
         try {
             if (::biometricSetupButton.isInitialized) {
                 biometricSetupButton.text = if (biometricManager.isBiometricEnabled()) {
-                    "Disable Biometric Login"
+                    "Disable Biometric"
                 } else {
-                    "Set Up Biometric Login"
+                    "Set Up Biometric"
                 }
             }
         } catch (e: Exception) {

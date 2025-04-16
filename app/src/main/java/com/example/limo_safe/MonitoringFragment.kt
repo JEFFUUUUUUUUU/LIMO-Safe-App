@@ -102,7 +102,7 @@ class MonitoringFragment : Fragment() {
         val navView = view.findViewById<com.google.android.material.navigation.NavigationView>(R.id.nav_view)
         val navHeader = navView.findViewById<View>(R.id.nav_header_layout)
         if (navHeader != null) {
-            accountTextView = navHeader.findViewById(R.id.accountTextView)
+            accountTextView = navHeader.findViewById(R.id.navHeaderSubtitle)
             logoutButton = navHeader.findViewById(R.id.logoutButton)
             biometricSetupButton = navHeader.findViewById(R.id.biometricSetupButton)
             
