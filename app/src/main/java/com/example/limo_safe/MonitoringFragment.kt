@@ -234,10 +234,10 @@ class MonitoringFragment : Fragment() {
         try {
             // Set up hamburger menu click listener
             menuIcon.setOnClickListener {
-                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-                    drawerLayout.closeDrawer(android.view.Gravity.START)
+                if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                    drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
-                    drawerLayout.openDrawer(android.view.Gravity.START)
+                    drawerLayout.openDrawer(GravityCompat.START)
                 }
             }
             
@@ -275,7 +275,6 @@ class MonitoringFragment : Fragment() {
                                 
                                 // Update UI visibility
                                 mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
-                                mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
                                 mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
                             } catch (e: Exception) {
                                 Log.e("MonitoringFragment", "Error navigating to login: ${e.message}")
