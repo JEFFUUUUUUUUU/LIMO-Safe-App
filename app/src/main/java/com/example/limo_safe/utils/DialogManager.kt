@@ -1,11 +1,9 @@
 package com.example.limo_safe.utils
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.os.Handler
-import android.os.Looper
+import android.os.CountDownTimer
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -86,13 +84,29 @@ class DialogManager(private val context: Context) {
             cooldownText.text = "No tries remaining"
         } else if (remainingCooldown > 0) {
             cooldownText.visibility = View.VISIBLE
-            cooldownText.text = "Cooldown: ${remainingCooldown}s"
+            cooldownText.text = "Cooldown: ${remainingCooldown / 1000}s"
             playButton.isEnabled = false
             playButton.alpha = 0.5f
         } else {
             cooldownText.visibility = View.GONE
             playButton.isEnabled = true
             playButton.alpha = 1.0f
+        }
+
+        // Start a countdown timer to update cooldownText live if cooldown is active
+        var cooldownTimer: CountDownTimer? = null
+        if (remainingCooldown > 0) {
+            cooldownTimer = object : CountDownTimer(remainingCooldown, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    cooldownText.text = "Cooldown: ${millisUntilFinished / 1000}s"
+                }
+                override fun onFinish() {
+                    cooldownText.visibility = View.GONE
+                    playButton.isEnabled = true
+                    playButton.alpha = 1.0f
+                }
+            }
+            cooldownTimer.start()
         }
 
         playButton.setOnClickListener {

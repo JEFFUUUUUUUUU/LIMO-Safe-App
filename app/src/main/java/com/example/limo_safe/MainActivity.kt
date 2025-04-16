@@ -14,73 +14,177 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.FragmentManager
 import com.google.firebase.auth.FirebaseAuth
+import com.example.limo_safe.utils.AppFlags
 
 class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedListener {
     private lateinit var auth: FirebaseAuth
     private var mainContent: LinearLayout? = null
-    private var pressToEnterButton: Button? = null
     private var fragmentContainer: FrameLayout? = null
     
     companion object {
         private const val TAG = "MainActivity"
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    // --- BEGIN: State Persistence for Fragment & Dialog ---
+    private val NAV_STATE_PREFS = "NavStatePrefs"
+    private val KEY_LAST_FRAGMENT = "last_fragment"
+    private val KEY_DIALOG_STATE = "dialog_state"
+
+    override fun onPause() {
+        super.onPause()
+        saveNavigationState()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        restoreNavigationState()
+    }
+
+    private fun saveNavigationState() {
         try {
-            super.onCreate(savedInstanceState)
-            setContentView(R.layout.activity_main)
-            
-            // Hide action bar
-            supportActionBar?.hide()
-            
-            // Initialize Firebase Auth
-            auth = FirebaseAuth.getInstance()
-            
-            // Setup fragment manager listener
-            supportFragmentManager.addOnBackStackChangedListener(this)
-            
-            // Initialize views safely
-            initializeViews()
-            
-            // Setup listeners
-            setupListeners()
-            
-            // Show main screen
-            showMainScreen()
-            
-            Log.d(TAG, "MainActivity initialized successfully")
+            val prefs = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+
+            // Save current fragment
+            val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+            val fragmentTag = when (currentFragment) {
+                is MCFragment -> "MCFragment"
+                is MonitoringFragment -> "MonitoringFragment"
+                is LoginFragment -> "LoginFragment"
+                is SignUpFragment -> "SignUpFragment"
+                is ForgotPasswordFragment -> "ForgotPasswordFragment"
+                else -> ""
+            }
+            editor.putString(KEY_LAST_FRAGMENT, fragmentTag)
+
+            // Save dialog state if needed (handled by fragments/dialog manager)
+            // Optionally, you can trigger the fragment to save its dialog state here if needed
+            // For now, just clear dialog state (dialog state is handled in fragment SharedPreferences)
+            editor.remove(KEY_DIALOG_STATE)
+
+            editor.apply()
         } catch (e: Exception) {
-            Log.e(TAG, "Error in onCreate: ${e.message}")
-            Toast.makeText(this, "Error initializing app: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Error saving navigation state: ${e.message}")
         }
     }
 
-    private fun setupListeners() {
+    private fun restoreNavigationState() {
         try {
-            pressToEnterButton?.setOnClickListener {
+            val prefs = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            val lastFragment = prefs.getString(KEY_LAST_FRAGMENT, "") ?: ""
+            
+            // Check if user is logged in
+            val currentUser = auth.currentUser
+            
+            if (lastFragment.isNotEmpty()) {
+                when (lastFragment) {
+                    // For protected screens, only restore if user is logged in
+                    "MCFragment", "MonitoringFragment" -> {
+                        if (currentUser != null) {
+                            // User is logged in, restore the fragment
+                            val fragment = if (lastFragment == "MCFragment") MCFragment() else MonitoringFragment()
+                            if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is MCFragment &&
+                                supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is MonitoringFragment) {
+                                supportFragmentManager.beginTransaction()
+                                    .replace(R.id.fragmentContainer, fragment)
+                                    .commitAllowingStateLoss()
+                            }
+                        } else {
+                            // User is not logged in, navigate to login
+                            Log.d(TAG, "User not logged in, redirecting to login instead of $lastFragment")
+                            // Clear saved navigation state
+                            prefs.edit().remove(KEY_LAST_FRAGMENT).apply()
+                            navigateToLogin()
+                        }
+                    }
+                    // Login-related screens can be restored regardless of login state
+                    "LoginFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is LoginFragment) {
+                        supportFragmentManager.beginTransaction()
+                            .replace(R.id.fragmentContainer, LoginFragment())
+                            .commitAllowingStateLoss()
+                    }
+                    "SignUpFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is SignUpFragment) {
+                        supportFragmentManager.beginTransaction()
+                            .replace(R.id.fragmentContainer, SignUpFragment())
+                            .commitAllowingStateLoss()
+                    }
+                    "ForgotPasswordFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is ForgotPasswordFragment) {
+                        supportFragmentManager.beginTransaction()
+                            .replace(R.id.fragmentContainer, ForgotPasswordFragment())
+                            .commitAllowingStateLoss()
+                    }
+                }
+            } else if (currentUser == null) {
+                // No saved fragment and no logged in user, ensure we're at login
                 navigateToLogin()
             }
+            // Dialog state is handled by each fragment (see MCFragment, MonitoringFragment)
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting up listeners: ${e.message}")
+            Log.e(TAG, "Error restoring navigation state: ${e.message}")
+            // On error, default to login
+            navigateToLogin()
         }
     }
+    // --- END: State Persistence for Fragment & Dialog ---
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        
+        auth = FirebaseAuth.getInstance()
+        
+        // Initialize views
+        initializeViews()
+        
+        // Add back stack change listener
+        supportFragmentManager.addOnBackStackChangedListener(this)
+
+        // Check if this is a fresh start (not a configuration change)
+        if (savedInstanceState == null) {
+            // This is a fresh start, ensure user is logged out
+            auth.signOut()
+            clearAllPreferences()
+            // Clear navigation state
+            getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+            Log.d(TAG, "Fresh app start: User logged out and navigation state cleared")
+        }
+
+        // Ensure biometric authentication is disabled during splash
+        AppFlags.allowBiometricAuthentication = false
+        
+        // Make sure splash screen is visible
+        mainContent?.visibility = View.VISIBLE
+        fragmentContainer?.visibility = View.GONE
+        
+        // Show splash for 3 seconds, then go to login
+        Handler(Looper.getMainLooper()).postDelayed({
+            // Enable biometric authentication only after splash is complete
+            AppFlags.allowBiometricAuthentication = true
+            navigateToLogin()
+        }, 3000)
+
+        // Ensure proper visibility at startup
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+        if (currentFragment == null) {
+            mainContent?.visibility = View.VISIBLE
+            fragmentContainer?.visibility = View.GONE
+        } else {
+            mainContent?.visibility = View.GONE
+            fragmentContainer?.visibility = View.VISIBLE
+        }
+    }
+
     
     private fun initializeViews() {
-        try {
-            // Initialize views safely
-            mainContent = findViewById(R.id.mainContent)
-            pressToEnterButton = findViewById(R.id.pressToEnterButton)
-            fragmentContainer = findViewById(R.id.fragmentContainer)
-            
-            // Set initial visibility if views are not null
-            fragmentContainer?.visibility = View.GONE
+        mainContent = findViewById(R.id.mainContent)
+        fragmentContainer = findViewById(R.id.fragmentContainer)
+
+        // Ensure splash/main screen is visible, hide fragment container by default
+        if (mainContent != null) {
             mainContent?.visibility = View.VISIBLE
-            pressToEnterButton?.visibility = View.VISIBLE
-            
-            Log.d(TAG, "Views initialized successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing views: ${e.message}")
-            Toast.makeText(this, "Error initializing views: ${e.message}", Toast.LENGTH_SHORT).show()
+            fragmentContainer?.visibility = View.GONE
+        } else {
+            Log.e(TAG, "Failed to initialize mainContent view")
         }
     }
 
@@ -104,7 +208,7 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     fun onLoginSuccessful() {
         try {
             // Make sure views are initialized
-            if (mainContent == null || pressToEnterButton == null || fragmentContainer == null) {
+            if (mainContent == null || fragmentContainer == null) {
                 initializeViews()
             }
 
@@ -115,7 +219,6 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
             // Update UI visibility
             mainContent?.visibility = View.GONE
-            pressToEnterButton?.visibility = View.GONE
             fragmentContainer?.visibility = View.VISIBLE
 
             // Create and show MC fragment with a small delay to ensure UI is ready
@@ -148,19 +251,29 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     fun showMainScreen() {
         try {
-            // Clear any existing fragments
-            supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+            // Clear back stack
+            val fragmentManager = supportFragmentManager
+            val backStackCount = fragmentManager.backStackEntryCount
+            for (i in 0 until backStackCount) {
+                fragmentManager.popBackStack()
+            }
             
-            // Update UI visibility with null safety
+            // Remove any fragments in the container
+            val currentFragment = fragmentManager.findFragmentById(R.id.fragmentContainer)
+            if (currentFragment != null) {
+                fragmentManager.beginTransaction()
+                    .remove(currentFragment)
+                    .commit()
+                fragmentManager.executePendingTransactions()
+            }
+            
+            // Show main content, hide fragment container
             mainContent?.visibility = View.VISIBLE
-            pressToEnterButton?.visibility = View.VISIBLE
             fragmentContainer?.visibility = View.GONE
             
-            Log.d(TAG, "Main screen shown successfully")
+            Log.d(TAG, "Showing main screen")
         } catch (e: Exception) {
             Log.e(TAG, "Error showing main screen: ${e.message}")
-            // Don't finish the activity, just show a toast
-            Toast.makeText(this, "Error showing main screen", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -173,13 +286,12 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             clearAllPreferences()
             
             // Make sure views are initialized
-            if (mainContent == null || pressToEnterButton == null || fragmentContainer == null) {
+            if (mainContent == null || fragmentContainer == null) {
                 initializeViews()
             }
             
             // Immediately update UI visibility to prevent flashing
             mainContent?.visibility = View.GONE
-            pressToEnterButton?.visibility = View.GONE
             fragmentContainer?.visibility = View.VISIBLE
             
             // Clear any existing fragments first
@@ -223,53 +335,44 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     fun navigateToLogin() {
         try {
-            // Make sure views are initialized
-            if (mainContent == null || pressToEnterButton == null || fragmentContainer == null) {
-                initializeViews()
+            Log.d(TAG, "Navigating to login")
+            
+            // Clear any existing fragments from the back stack
+            val fragmentManager = supportFragmentManager
+            val backStackCount = fragmentManager.backStackEntryCount
+            for (i in 0 until backStackCount) {
+                fragmentManager.popBackStack()
             }
             
-            // Create a smooth transition animation
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    // Update UI visibility
-                    mainContent?.visibility = View.GONE
-                    pressToEnterButton?.visibility = View.GONE
-                    fragmentContainer?.visibility = View.VISIBLE
-                    
-                    // Create and show login fragment with maroon and orange theme
-                    val loginFragment = LoginFragment()
-                    supportFragmentManager.beginTransaction()
-                        .setCustomAnimations(
-                            android.R.anim.fade_in,
-                            android.R.anim.fade_out
-                        )
-                        .replace(R.id.fragmentContainer, loginFragment)
-                        .commit()
-                    
-                    Log.d(TAG, "Navigated to login successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in delayed navigation: ${e.message}")
-                    showMainScreen()
-                }
-            }, 300) // Short delay for smooth transition
+            // Make sure fragment container is visible and main content is hidden
+            fragmentContainer?.visibility = View.VISIBLE
+            mainContent?.visibility = View.GONE
+            
+            // Create and show login fragment
+            val loginFragment = LoginFragment.newInstance()
+            fragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, loginFragment)
+                .commit()
+                
+            // Execute pending transactions to ensure fragment is added immediately
+            fragmentManager.executePendingTransactions()
+            
+            Log.d(TAG, "Navigated to login successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error navigating to login: ${e.message}")
-            Toast.makeText(this, "Error navigating to login", Toast.LENGTH_SHORT).show()
-            e.printStackTrace()
-            showMainScreen()
+            Toast.makeText(this, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun navigateToMonitoring() {
         try {
             // Make sure views are initialized
-            if (mainContent == null || pressToEnterButton == null || fragmentContainer == null) {
+            if (mainContent == null || fragmentContainer == null) {
                 initializeViews()
             }
             
             // Update UI visibility
             mainContent?.visibility = View.GONE
-            pressToEnterButton?.visibility = View.GONE
             fragmentContainer?.visibility = View.VISIBLE
             
             // Create and show monitoring fragment
@@ -291,23 +394,18 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Only check initial state when first launching the app
-        if (supportFragmentManager.backStackEntryCount == 0) {
-            checkInitialState()
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        // Save any necessary state
-    }
-
     override fun onDestroy() {
         try {
             supportFragmentManager.removeOnBackStackChangedListener(this)
+            
+            // Ensure user is logged out when app is destroyed
+            auth.signOut()
             clearAllPreferences()
+            
+            // Clear navigation state to prevent auto-redirect on app restart
+            getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+            
+            Log.d(TAG, "App destroyed, user logged out and navigation state cleared")
         } finally {
             super.onDestroy()
         }
@@ -344,6 +442,12 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             .setTitle("Exit Confirmation")
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { _, _ ->
+                // Log out user completely instead of just showing main screen
+                clearBackStackAndNavigateToLogin()
+                // Clear navigation state to prevent auto-redirect on app restart
+                getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+                
+                // Show main screen after logout
                 showMainScreen()
             }
             .setNegativeButton("No", null)
@@ -360,29 +464,20 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
                 null -> {
                     // No fragments - show main screen
                     mainContent?.visibility = View.VISIBLE
-                    pressToEnterButton?.visibility = View.VISIBLE
                     fragmentContainer?.visibility = View.GONE
                 }
                 is LoginFragment, is MCFragment, is MonitoringFragment, is SignUpFragment, is ForgotPasswordFragment -> {
                     // Any app fragment - hide main screen
                     mainContent?.visibility = View.GONE
-                    pressToEnterButton?.visibility = View.GONE
                     fragmentContainer?.visibility = View.VISIBLE
                 }
                 else -> {
                     // Unknown fragment - show main screen
-                    showMainScreen()
+                    mainContent?.visibility = View.VISIBLE
+                    fragmentContainer?.visibility = View.GONE
                 }
             }
-            
-            Log.d(TAG, "Back stack changed, updated UI")
-
-            // Ensure all fragment transactions are complete
-            try {
-                supportFragmentManager.executePendingTransactions()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error executing pending transactions: ${e.message}")
-            }
+            supportFragmentManager.executePendingTransactions()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onBackStackChanged: ${e.message}")
         }

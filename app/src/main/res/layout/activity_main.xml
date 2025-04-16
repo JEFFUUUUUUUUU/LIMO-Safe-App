@@ -35,16 +35,7 @@
             android:textStyle="bold"
             android:layout_marginTop="16dp" />
 
-        <Button
-            android:id="@+id/pressToEnterButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            style="@style/BlackButton"
-            android:text="Press to Enter"
-            android:textStyle="bold"
-            android:minWidth="200dp" />
-
+        
     </LinearLayout>
 
     <androidx.fragment.app.FragmentContainerView

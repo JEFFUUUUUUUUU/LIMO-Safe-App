@@ -15,7 +15,6 @@ import java.security.KeyStore
 import java.util.concurrent.Executor
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
 
 /**
  * Utility class to manage biometric authentication in the app

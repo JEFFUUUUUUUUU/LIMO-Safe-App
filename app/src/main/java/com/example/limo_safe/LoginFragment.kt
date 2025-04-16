@@ -14,6 +14,7 @@ import androidx.fragment.app.Fragment
 import com.google.firebase.auth.FirebaseAuth
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.BiometricManager
+import com.example.limo_safe.utils.AppFlags
 
 class LoginFragment : Fragment() {
     private lateinit var emailEditText: EditText
@@ -25,6 +26,9 @@ class LoginFragment : Fragment() {
     private lateinit var dialogManager: DialogManager
     private lateinit var biometricManager: BiometricManager
     private lateinit var auth: FirebaseAuth
+    
+    // Flag to control when biometric authentication can be triggered
+    private var canShowBiometricPrompt = false
 
     companion object {
         fun newInstance() = LoginFragment()
@@ -35,16 +39,15 @@ class LoginFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        val view = inflater.inflate(R.layout.fragment_login, container, false)
-        view.visibility = View.VISIBLE
-        return view
+        // Inflate the layout without setting visibility here
+        return inflater.inflate(R.layout.fragment_login, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Ensure fragment container is visible
-        requireActivity().findViewById<View>(R.id.fragmentContainer).visibility = View.VISIBLE
+        // Don't manipulate MainActivity's views directly
+        // Let MainActivity handle the container visibility
 
         auth = FirebaseAuth.getInstance()
         dialogManager = DialogManager(requireContext())
@@ -53,16 +56,24 @@ class LoginFragment : Fragment() {
         initializeViews(view)
         setupClickListeners()
         
-        // Hide the biometric login button
-        biometricLoginButton.visibility = View.GONE
+        // Update biometric button visibility
+        updateBiometricButtonVisibility()
         
-        // Automatically trigger biometric authentication if enabled and available
-        if (biometricManager.isBiometricEnabled() && biometricManager.isBiometricAvailable()) {
-            authenticateWithBiometric()
-        }
-
         // Clear all preferences to ensure fresh state
         clearAllPreferences()
+
+        // --- FIX: Trigger biometric instantly, no delay ---
+        canShowBiometricPrompt = true
+        val activity = requireActivity()
+        val fragmentManager = activity.supportFragmentManager
+        val currentFragment = fragmentManager.findFragmentById(R.id.fragmentContainer)
+        if (currentFragment === this 
+            && biometricManager.isBiometricEnabled() 
+            && biometricManager.isBiometricAvailable() 
+            && view.visibility == View.VISIBLE
+            && AppFlags.allowBiometricAuthentication) { // Check global flag
+            authenticateWithBiometric()
+        }
     }
 
     private fun clearAllPreferences() {
@@ -168,6 +179,12 @@ class LoginFragment : Fragment() {
     }
     
     private fun authenticateWithBiometric() {
+        // Never show biometric prompt if either flag is not set
+        // This prevents it from showing during splash screen
+        if (!canShowBiometricPrompt || !AppFlags.allowBiometricAuthentication) {
+            return
+        }
+        
         val email = biometricManager.getBiometricEmail()
         if (email.isNullOrEmpty()) {
             Toast.makeText(requireContext(), "Biometric login not properly set up", Toast.LENGTH_SHORT).show()
@@ -343,8 +360,27 @@ class LoginFragment : Fragment() {
         }
     }
 
+
     override fun onDestroyView() {
         super.onDestroyView()
+        // Reset the flag when view is destroyed
+        canShowBiometricPrompt = false
         dialogManager.dismissActiveDialog()
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Only try biometric authentication if flag is set
+        // This prevents it from showing during splash screen
+        if (canShowBiometricPrompt && isAdded && view != null && view?.visibility == View.VISIBLE && AppFlags.allowBiometricAuthentication) {
+            val activity = requireActivity()
+            val fragmentManager = activity.supportFragmentManager
+            val currentFragment = fragmentManager.findFragmentById(R.id.fragmentContainer)
+            if (currentFragment === this 
+                && biometricManager.isBiometricEnabled() 
+                && biometricManager.isBiometricAvailable()) {
+                authenticateWithBiometric()
+            }
+        }
     }
 }

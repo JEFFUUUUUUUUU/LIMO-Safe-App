@@ -372,7 +372,6 @@ class MonitoringFragment : Fragment() {
                                 
                                 // Update UI visibility
                                 mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
-                                mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
                                 mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
                             } catch (e: Exception) {
                                 Log.e("MonitoringFragment", "Error navigating to login: ${e.message}")

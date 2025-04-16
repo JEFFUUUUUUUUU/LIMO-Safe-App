@@ -78,6 +78,8 @@ class MCFragment : Fragment() {
     private lateinit var biometricSetupButton: Button
     private lateinit var biometricManager: BiometricManager
 
+    private var fromCodeClick = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -177,7 +179,6 @@ class MCFragment : Fragment() {
                             
                             // Update UI visibility
                             mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
-                            mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
                             mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
                         } else {
                             Log.e("MCFragment", "MainActivity is null or finishing")
@@ -282,8 +283,58 @@ class MCFragment : Fragment() {
             
             // Check camera permission
             checkCameraPermission()
+            
+            // Make the codeDisplayText clickable if tries remain
+            codeDisplayText.setOnClickListener {
+                if (remainingTries > 0) {
+                    // Only allow reopening if dialog is not already showing
+                    if (!::dialog.isInitialized || !dialog.isShowing) {
+                        // Restore dialog state from preferences if needed
+                        val code = sharedPreferences.getString(MC_DIALOG_CODE_KEY, currentCode)
+                        val tries = sharedPreferences.getInt(MC_DIALOG_TRIES_KEY, remainingTries)
+                        currentCode = code ?: ""
+                        remainingTries = tries
+                        if (currentCode.isNotEmpty() && remainingTries > 0) {
+                            // Always restore the correct cooldown (do not reset)
+                            showMorseCodeDialog(currentCode)
+                        }
+                    }
+                } else {
+                    Toast.makeText(requireContext(), "No remaining tries for this code.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            // Optionally add a visual cue for clickability if tries remain
+            updateCodeClickableStyle()
         } catch (e: Exception) {
             Log.e("MCFragment", "Error initializing UI: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            // Restore Morse Code dialog if it was open before minimize and not currently showing
+            val wasDialogOpen = sharedPreferences.getBoolean(MC_DIALOG_OPEN_KEY, false)
+            if (wasDialogOpen && (!::dialog.isInitialized || !dialog.isShowing)) {
+                val code = sharedPreferences.getString(MC_DIALOG_CODE_KEY, "") ?: ""
+                val tries = sharedPreferences.getInt(MC_DIALOG_TRIES_KEY, 3)
+                val cooldown = sharedPreferences.getLong(MC_DIALOG_COOLDOWN_KEY, 0)
+                remainingTries = tries
+                currentCode = code
+                if (code.isNotEmpty() && tries > 0) {
+                    showMorseCodeDialog(code, cooldown)
+                }
+            }
+            // Reset UI state
+            resetGenerateButton()
+            // Resume cooldown timer if needed
+            resumeCooldownIfNeeded()
+            // Update UI with current code
+            if (::generatedCodeText.isInitialized && ::codeDisplayText.isInitialized) {
+                updateGeneratedCodeText()
+            }
+        } catch (e: Exception) {
             e.printStackTrace()
         }
     }
@@ -302,49 +353,16 @@ class MCFragment : Fragment() {
                     if (currentTime < generateCooldownEndTime) {
                         // If we have an existing code and we're in cooldown, just reopen the dialog
                         if (currentCode.isNotEmpty()) {
-                            // Calculate remaining cooldown if any
-                            val remainingCooldown = if (morseCooldownEndTime > currentTime) {
-                                morseCooldownEndTime - currentTime
-                            } else {
-                                0L
-                            }
-                            
-                            // Show the dialog with the existing code and remaining tries
-                            showMorseCodeDialog(currentCode, remainingCooldown)
-                            return@setOnClickListener
+                            showMorseCodeDialog(currentCode)
                         }
                         return@setOnClickListener
                     }
 
-                    // If we have an existing code and remaining tries, reuse it
-                    if (currentCode.isNotEmpty() && remainingTries > 0) {
-                        // Calculate remaining cooldown if any
-                        val remainingCooldown = if (morseCooldownEndTime > currentTime) {
-                            morseCooldownEndTime - currentTime
-                        } else {
-                            0L
-                        }
-                        
-                        // Show the dialog with the existing code and remaining cooldown
-                        showMorseCodeDialog(currentCode, remainingCooldown)
-                    } else {
-                        // Generate new code
-                        val newCode = generateRandomCode()
-                        remainingTries = 3
-                        currentCode = newCode
-                        lastMorsePlayTime = 0 // Reset morse cooldown when generating new code
-                        morseCooldownEndTime = 0 // Reset morse cooldown end time
-                        updateGeneratedCodeText()
-
-                        // Show the dialog with the new code
-                        showMorseCodeDialog(newCode)
-
-                        // Start the cooldown
-                        startGenerateButtonCooldown()
-                    }
+                    // Reset tries and show dialog for new code
+                    generateNewMorseCodeAndShowDialog()
+                    startGenerateButtonCooldown()
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Toast.makeText(context, "Error generating code: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -448,6 +466,7 @@ class MCFragment : Fragment() {
         
         // Save current code to SharedPreferences
         saveCurrentCode(currentCode)
+        updateCodeClickableStyle()
     }
 
     @SuppressLint("RestrictedApi")
@@ -558,75 +577,109 @@ class MCFragment : Fragment() {
             .show()
     }
 
-    private fun showMorseCodeDialog(code: String, remainingCooldown: Long = 0) {
-        try {
-            // Save remaining tries to SharedPreferences
-            saveRemainingTries(remainingTries)
-            
-            // Create dialog using DialogManager
-            dialog = dialogManager.createMorseCodeDialog(
-                code = code,
-                remainingTries = remainingTries,
-                remainingCooldown = remainingCooldown
-            ) { playButton, cooldownText ->
-                if (!checkCameraPermission()) {
-                    return@createMorseCodeDialog
-                }
-                
-                playButton.isEnabled = false
-                playButton.alpha = 0.5f
-                
-                val currentTime = System.currentTimeMillis()
-                playMorseCode(code)
-                remainingTries--
-                
-                // Update the tries text in the dialog
-                dialogManager.updateTriesText(remainingTries)
-                
-                // Save updated remaining tries to SharedPreferences
-                saveRemainingTries(remainingTries)
+    private fun showMorseCodeDialog(code: String, cooldown: Long = 0) {
+        val now = System.currentTimeMillis()
+        val cooldownEnd = sharedPreferences.getLong(MORSE_COOLDOWN_END_KEY, 0)
+        val remainingCooldown = if (cooldownEnd > now) cooldownEnd - now else 0L
 
-                if (remainingTries > 0) {
-                    lastMorsePlayTime = currentTime
-                    // Always apply the 15-second cooldown after playing
-                    startMorseCooldown(MORSE_COOLDOWN)
-                } else {
-                    // Close the current dialog
-                    dialog.dismiss()
-                    
-                    // Show maximum tries reached dialog
-                    dialogManager.showMaxTriesDialog()
-                }
-            }
-            
-            // If there's a remaining cooldown from before, apply it
-            if (remainingCooldown > 0) {
-                startMorseCooldown(remainingCooldown)
-            }
-
-            // Add logic to clear code and tries if dialog is closed by the user
-            dialog.setOnDismissListener {
-                // Only clear if tries are not exhausted (otherwise, already handled by max tries dialog)
-                if (remainingTries > 0) {
-                    currentCode = ""
-                    remainingTries = 3
-                    saveCurrentCode("")
-                    saveRemainingTries(3)
-                }
-                // Always clear dialog state when dismissed
-                sharedPreferences.edit()
-                    .putBoolean(MC_DIALOG_OPEN_KEY, false)
-                    .remove(MC_DIALOG_CODE_KEY)
-                    .remove(MC_DIALOG_TRIES_KEY)
-                    .remove(MC_DIALOG_COOLDOWN_KEY)
-                    .apply()
-            }
-            
-            dialog.show()
-        } catch (e: Exception) {
-            Log.e("MCFragment", "Error showing dialog: ${e.message}")
-            e.printStackTrace()
+        if (!::dialog.isInitialized || !dialog.isShowing) {
+            val tries = sharedPreferences.getInt(MC_DIALOG_TRIES_KEY, remainingTries)
+            remainingTries = tries
         }
+
+        // Only show max tries dialog if remainingTries is 0 or less and the user is trying to PLAY, not when generating a new code
+        if (remainingTries <= 0 && code.isNotEmpty()) {
+            dialogManager.showMaxTriesDialog()
+            currentCode = ""
+            saveCurrentCode("")
+            saveRemainingTries(3)
+            return
+        }
+
+        dialog = dialogManager.createMorseCodeDialog(
+            code,
+            remainingTries,
+            remainingCooldown
+        ) { playButton, cooldownText ->
+            playMorseCode(code)
+            remainingTries--
+            sharedPreferences.edit().putInt(MC_DIALOG_TRIES_KEY, remainingTries).apply()
+            updateCodeClickableStyle()
+            updateGeneratedCodeText()
+            dialogManager.updateTriesText(remainingTries)
+            startMorseCooldown(MORSE_COOLDOWN)
+            if (remainingTries <= 0) {
+                dialogManager.showMaxTriesDialog()
+                currentCode = ""
+                saveCurrentCode("")
+                saveRemainingTries(3)
+                dialog.dismiss()
+            }
+        }
+        val playButton = dialog.findViewById<Button>(R.id.playButton)
+        val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
+        if (playButton != null && cooldownText != null && remainingCooldown > 0) {
+            playButton.isEnabled = false
+            playButton.alpha = 0.5f
+            morseTimer?.cancel()
+            morseTimer = object : CountDownTimer(remainingCooldown, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    val seconds = millisUntilFinished / 1000
+                    cooldownText.text = "Please wait $seconds seconds before next try"
+                    playButton.text = "PLAY MORSE CODE ($seconds)"
+                }
+
+                override fun onFinish() {
+                    cooldownText.text = "Ready to play"
+                    if (remainingTries > 0) {
+                        playButton.isEnabled = true
+                        playButton.alpha = 1.0f
+                    }
+                    playButton.text = "PLAY MORSE CODE"
+                    lastMorsePlayTime = 0
+                    morseCooldownEndTime = 0
+                    sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
+                }
+            }.start()
+        }
+        dialog.show()
+    }
+
+    private fun showMorseCodeDialogForce(code: String, cooldown: Long = 0) {
+        // For new code generation, always start with NO cooldown
+        val remainingCooldown = 0L
+
+        dialog = dialogManager.createMorseCodeDialog(
+            code,
+            remainingTries,
+            remainingCooldown
+        ) { playButton, cooldownText ->
+            playMorseCode(code)
+            remainingTries--
+            sharedPreferences.edit().putInt(MC_DIALOG_TRIES_KEY, remainingTries).apply()
+            updateCodeClickableStyle()
+            updateGeneratedCodeText()
+            dialogManager.updateTriesText(remainingTries)
+            startMorseCooldown(MORSE_COOLDOWN)
+            // If this was the last try, show max tries dialog after playing
+            if (remainingTries <= 0) {
+                dialogManager.showMaxTriesDialog()
+                currentCode = ""
+                saveCurrentCode("")
+                saveRemainingTries(3)
+                dialog.dismiss()
+            }
+        }
+        val playButton = dialog.findViewById<Button>(R.id.playButton)
+        val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
+        // No cooldown for new code, so enable play immediately
+        if (playButton != null && cooldownText != null) {
+            playButton.isEnabled = true
+            playButton.alpha = 1.0f
+            cooldownText.text = "Ready to play"
+            playButton.text = "PLAY MORSE CODE"
+        }
+        dialog.show()
     }
 
     private fun startMorseCooldown(duration: Long) {
@@ -636,35 +689,37 @@ class MCFragment : Fragment() {
         val playButton = currentDialog.findViewById<Button>(R.id.playButton)
         val cooldownText = currentDialog.findViewById<TextView>(R.id.cooldownText)
 
-        playButton?.isEnabled = false
-        playButton?.alpha = 0.5f
+        if (playButton != null && cooldownText != null) {
+            playButton.isEnabled = false
+            playButton.alpha = 0.5f
 
-        morseCooldownEndTime = System.currentTimeMillis() + duration
-        
-        // Save cooldown end time to SharedPreferences
-        sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, morseCooldownEndTime).apply()
+            morseCooldownEndTime = System.currentTimeMillis() + duration
+            
+            // Save cooldown end time to SharedPreferences
+            sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, morseCooldownEndTime).apply()
 
-        morseTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                val seconds = millisUntilFinished / 1000
-                cooldownText?.text = "Please wait $seconds seconds before next try"
-                playButton?.text = "PLAY MORSE CODE ($seconds)"
-            }
-
-            override fun onFinish() {
-                cooldownText?.text = "Ready to play"
-                if (remainingTries > 0) {
-                    playButton?.isEnabled = true
-                    playButton?.alpha = 1.0f
+            morseTimer = object : CountDownTimer(duration, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    val seconds = millisUntilFinished / 1000
+                    cooldownText.text = "Please wait $seconds seconds before next try"
+                    playButton.text = "PLAY MORSE CODE ($seconds)"
                 }
-                playButton?.text = "PLAY MORSE CODE"
-                lastMorsePlayTime = 0
-                morseCooldownEndTime = 0
-                
-                // Reset cooldown end time in SharedPreferences
-                sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
-            }
-        }.start()
+
+                override fun onFinish() {
+                    cooldownText.text = "Ready to play"
+                    if (remainingTries > 0) {
+                        playButton.isEnabled = true
+                        playButton.alpha = 1.0f
+                    }
+                    playButton.text = "PLAY MORSE CODE"
+                    lastMorsePlayTime = 0
+                    morseCooldownEndTime = 0
+                    
+                    // Reset cooldown end time in SharedPreferences
+                    sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
+                }
+            }.start()
+        }
     }
 
     private fun playMorseCode(code: String) {
@@ -760,7 +815,7 @@ class MCFragment : Fragment() {
             morseTimer?.cancel()
             countDownTimer?.cancel()
             
-            // Save dialog state if open
+            // Save dialog state if open (preserve even if dialog is showing)
             if (::dialog.isInitialized && dialog.isShowing && currentCode.isNotEmpty() && remainingTries > 0) {
                 sharedPreferences.edit()
                     .putBoolean(MC_DIALOG_OPEN_KEY, true)
@@ -771,42 +826,7 @@ class MCFragment : Fragment() {
             } else {
                 sharedPreferences.edit().putBoolean(MC_DIALOG_OPEN_KEY, false).apply()
             }
-            
-            // Dismiss dialog if showing
-            if (::dialog.isInitialized && dialog.isShowing) {
-                dialog.dismiss()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        try {
-            // Reset UI state
-            resetGenerateButton()
-            
-            // Resume cooldown timer if needed
-            resumeCooldownIfNeeded()
-            
-            // Update UI with current code
-            if (::generatedCodeText.isInitialized && ::codeDisplayText.isInitialized) {
-                updateGeneratedCodeText()
-            }
-
-            // Restore Morse dialog if it was open
-            val dialogOpen = sharedPreferences.getBoolean(MC_DIALOG_OPEN_KEY, false)
-            if (dialogOpen) {
-                val code = sharedPreferences.getString(MC_DIALOG_CODE_KEY, "") ?: ""
-                val tries = sharedPreferences.getInt(MC_DIALOG_TRIES_KEY, 3)
-                val cooldown = sharedPreferences.getLong(MC_DIALOG_COOLDOWN_KEY, 0L)
-                if (code.isNotEmpty() && tries > 0) {
-                    currentCode = code
-                    remainingTries = tries
-                    showMorseCodeDialog(code, cooldown)
-                }
-            }
+            // Do NOT dismiss dialog here; allow system to restore
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -954,7 +974,6 @@ class MCFragment : Fragment() {
                             
                             // Update UI visibility
                             mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
-                            mainActivity.findViewById<View>(R.id.pressToEnterButton)?.visibility = View.GONE
                             mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
                         } else {
                             Log.e("MCFragment", "MainActivity is null or finishing")
@@ -1011,7 +1030,6 @@ class MCFragment : Fragment() {
         val currentTime = System.currentTimeMillis()
         if (generateCooldownEndTime > currentTime) {
             val remainingTime = generateCooldownEndTime - currentTime
-            Log.d("MCFragment", "Resuming cooldown with ${remainingTime}ms remaining")
             
             // We'll start the timer when the button is visible
         }
@@ -1057,32 +1075,32 @@ class MCFragment : Fragment() {
             
             // Disable play button and start timer
             val playButton = dialog.findViewById<Button>(R.id.playButton)
-            playButton?.isEnabled = false
-            playButton?.alpha = 0.5f
-            
-            morseTimer?.cancel()
-            morseTimer = object : CountDownTimer(remainingTime, 1000) {
-                override fun onTick(millisUntilFinished: Long) {
-                    val seconds = millisUntilFinished / 1000
-                    val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
-                    cooldownText?.text = "Please wait $seconds seconds before next try"
-                }
+            val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
+            if (playButton != null && cooldownText != null) {
+                playButton.isEnabled = false
+                playButton.alpha = 0.5f
                 
-                override fun onFinish() {
-                    val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
-                    cooldownText?.text = "Ready to play"
-                    if (remainingTries > 0) {
-                        val playButton = dialog.findViewById<Button>(R.id.playButton)
-                        playButton?.isEnabled = true
-                        playButton?.alpha = 1.0f
+                morseTimer?.cancel()
+                morseTimer = object : CountDownTimer(remainingTime, 1000) {
+                    override fun onTick(millisUntilFinished: Long) {
+                        val seconds = millisUntilFinished / 1000
+                        cooldownText.text = "Please wait $seconds seconds before next try"
                     }
-                    lastMorsePlayTime = 0
-                    morseCooldownEndTime = 0
                     
-                    // Reset cooldown end time in SharedPreferences
-                    sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
-                }
-            }.start()
+                    override fun onFinish() {
+                        cooldownText.text = "Ready to play"
+                        if (remainingTries > 0) {
+                            playButton.isEnabled = true
+                            playButton.alpha = 1.0f
+                        }
+                        lastMorsePlayTime = 0
+                        morseCooldownEndTime = 0
+                        
+                        // Reset cooldown end time in SharedPreferences
+                        sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
+                    }
+                }.start()
+            }
         }
     }
     
@@ -1160,6 +1178,33 @@ class MCFragment : Fragment() {
             }
             .create()
             .show()
+    }
+    
+    private fun updateCodeClickableStyle() {
+        if (remainingTries > 0) {
+            codeDisplayText.isClickable = true
+            codeDisplayText.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light))
+            codeDisplayText.paint.isUnderlineText = true
+        } else {
+            codeDisplayText.isClickable = false
+            codeDisplayText.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.white))
+            codeDisplayText.paint.isUnderlineText = false
+        }
+    }
+    
+    private fun generateNewMorseCodeAndShowDialog() {
+        // Always reset tries to 3 for every new code generation
+        remainingTries = 3
+        saveRemainingTries(remainingTries)
+        // Generate a new code
+        currentCode = generateRandomCode()
+        saveCurrentCode(currentCode)
+        // Reset cooldown for new code
+        lastMorsePlayTime = 0L
+        morseCooldownEndTime = 0L
+        sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0L).apply()
+        // Show the play Morse code dialog with 3 tries (force skip max tries logic)
+        showMorseCodeDialogForce(currentCode)
     }
     
     companion object {
