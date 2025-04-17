@@ -36,6 +36,21 @@ class DeviceNotificationManager(private val context: Context) {
     }
 
     /**
+     * Check if notification permissions are granted
+     * @return true if permissions are granted or not needed (pre-Android 13)
+     */
+    fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    /**
      * Creates notification channel for Android 8.0+
      */
     private fun createNotificationChannel() {
@@ -47,6 +62,7 @@ class DeviceNotificationManager(private val context: Context) {
                 description = descriptionText
                 enableVibration(true)
                 enableLights(true)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC // Show on lockscreen
             }
             // Register the channel with the system
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -130,7 +146,7 @@ class DeviceNotificationManager(private val context: Context) {
             .setPriority(priority)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show full content on lockscreen
 
         // For heads-up notification, add these for alert conditions
         if (!statusValue) {
