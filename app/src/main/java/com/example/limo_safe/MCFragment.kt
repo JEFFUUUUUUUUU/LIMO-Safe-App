@@ -423,7 +423,7 @@ class MCFragment : Fragment() {
                         tries,
                         actualCooldown,
                         { playButton, cooldownText ->
-                            playMorseCode(code)
+                            playMorseCode(transmitCode)
                             remainingTries--
                             sharedPreferences.edit().putInt(MC_DIALOG_TRIES_KEY, remainingTries).apply()
                             updateCodeClickableStyle()
@@ -824,7 +824,7 @@ class MCFragment : Fragment() {
             remainingTries,
             remainingCooldown,
             { playButton, cooldownText ->
-                playMorseCode(code)
+                playMorseCode(transmitCode)
                 remainingTries--
                 sharedPreferences.edit().putInt(MC_DIALOG_TRIES_KEY, remainingTries).apply()
                 updateCodeClickableStyle()
@@ -891,7 +891,7 @@ class MCFragment : Fragment() {
             remainingTries,
             remainingCooldown,
             { playButton, cooldownText ->
-                playMorseCode(code)
+                playMorseCode(transmitCode)
                 remainingTries--
                 sharedPreferences.edit().putInt(MC_DIALOG_TRIES_KEY, remainingTries).apply()
                 updateCodeClickableStyle()
