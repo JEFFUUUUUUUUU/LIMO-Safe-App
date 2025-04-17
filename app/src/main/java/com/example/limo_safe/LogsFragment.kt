@@ -14,6 +14,7 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+
 import com.example.limo_safe.utils.DialogManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -427,6 +428,38 @@ class LogsFragment : Fragment() {
                     deviceName = resolvedDeviceId,
                     timestamp = timestamp,
                     status = "Fingerprint #$fingerprintId Enrolled",
+                    userName = "Loading...", // Placeholder while loading
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                // Start email fetch if we have a valid userId
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        // Find and update this log entry in the list
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            // Notify adapter on UI thread
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                return logEntry
+            }
+            "fingerprint_enrollment_failed" -> {
+                // Handle fingerprint enrollment failure logs
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val reason = logData["reason"] as? String ?: "Unknown"
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint Enrollment Failed: ${reason.replace("_", " ").capitalize()}",
                     userName = "Loading...", // Placeholder while loading
                     eventType = "Biometric",
                     uniqueId = key

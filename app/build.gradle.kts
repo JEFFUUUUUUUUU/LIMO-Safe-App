@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.example.limo_safe"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.limo_safe"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -54,7 +54,9 @@ dependencies {
     implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.compose)
     implementation(libs.androidx.navigation.runtime.ktx)
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    // Use ktx implementation, that contains the non-ktx one too
+    implementation("androidx.biometric:biometric-ktx:1.4.0-alpha02")
+    //implementation(libs.androidx.core)
 
     // Testing dependencies
     testImplementation(libs.junit)

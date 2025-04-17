@@ -30,16 +30,6 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     private val KEY_LAST_FRAGMENT = "last_fragment"
     private val KEY_DIALOG_STATE = "dialog_state"
 
-    override fun onPause() {
-        super.onPause()
-        saveNavigationState()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        restoreNavigationState()
-    }
-
     private fun saveNavigationState() {
         try {
             val prefs = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
@@ -173,7 +163,6 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             fragmentContainer?.visibility = View.VISIBLE
         }
     }
-
 
     private fun initializeViews() {
         mainContent = findViewById(R.id.mainContent)
@@ -360,38 +349,23 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             Log.d(TAG, "Navigated to login successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error navigating to login: ${e.message}")
-            Toast.makeText(this, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error navigating to login", Toast.LENGTH_SHORT).show()
+            e.printStackTrace()
+            showMainScreen()
         }
     }
 
-    fun navigateToMonitoring() {
-        try {
-            // Make sure views are initialized
-            if (mainContent == null || fragmentContainer == null) {
-                initializeViews()
-            }
-
-            // Update UI visibility
-            mainContent?.visibility = View.GONE
-            fragmentContainer?.visibility = View.VISIBLE
-
-            // Create and show monitoring fragment
-            val monitoringFragment = MonitoringFragment()
-            supportFragmentManager.beginTransaction()
-                .setCustomAnimations(
-                    android.R.anim.fade_in,
-                    android.R.anim.fade_out
-                )
-                .replace(R.id.fragmentContainer, monitoringFragment)
-                .addToBackStack(null)
-                .commit()
-
-            Log.d(TAG, "Navigated to monitoring successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error navigating to monitoring: ${e.message}")
-            Toast.makeText(this, "Error navigating to monitoring", Toast.LENGTH_SHORT).show()
-            showMainScreen()
+    override fun onResume() {
+        super.onResume()
+        // Only check initial state when first launching the app
+        if (supportFragmentManager.backStackEntryCount == 0) {
+            checkInitialState()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Save any necessary state
     }
 
     override fun onDestroy() {
@@ -473,11 +447,18 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
                 }
                 else -> {
                     // Unknown fragment - show main screen
-                    mainContent?.visibility = View.VISIBLE
-                    fragmentContainer?.visibility = View.GONE
+                    showMainScreen()
                 }
             }
-            supportFragmentManager.executePendingTransactions()
+
+            Log.d(TAG, "Back stack changed, updated UI")
+
+            // Ensure all fragment transactions are complete
+            try {
+                supportFragmentManager.executePendingTransactions()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error executing pending transactions: ${e.message}")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error in onBackStackChanged: ${e.message}")
         }

@@ -56,6 +56,9 @@ class LoginFragment : Fragment() {
         initializeViews(view)
         setupClickListeners()
 
+        // Check if biometric login is enabled and show biometric button if available
+        updateBiometricButtonVisibility()
+
         // Update biometric button visibility
         updateBiometricButtonVisibility()
 
@@ -167,6 +170,10 @@ class LoginFragment : Fragment() {
             authenticateWithBiometric()
         }
 
+        biometricLoginButton.setOnClickListener {
+            authenticateWithBiometric()
+        }
+
         signUpText.setOnClickListener {
             Log.d("LoginFragment", "Sign Up text clicked")
             navigateToSignUp()
@@ -179,12 +186,6 @@ class LoginFragment : Fragment() {
     }
 
     private fun authenticateWithBiometric() {
-        // Never show biometric prompt if either flag is not set
-        // This prevents it from showing during splash screen
-        if (!canShowBiometricPrompt || !AppFlags.allowBiometricAuthentication) {
-            return
-        }
-
         val email = biometricManager.getBiometricEmail()
         if (email.isNullOrEmpty()) {
             Toast.makeText(requireContext(), "Biometric login not properly set up", Toast.LENGTH_SHORT).show()
