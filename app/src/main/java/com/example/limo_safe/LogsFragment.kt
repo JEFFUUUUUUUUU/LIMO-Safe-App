@@ -68,15 +68,15 @@ class LogsFragment : Fragment() {
         try {
             // Clean up Firebase listeners
             removeAllListeners()
-            
+
             // Clean up RecyclerView
             logsRecyclerView.adapter = null
-            
+
             // Remove touch listeners
             view?.setOnTouchListener(null)
             logsRecyclerView.setOnTouchListener(null)
             searchInput.setOnTouchListener(null)
-            
+
             // Clear data
             allLogs.clear()
             processedLogTimestamps.clear()
@@ -128,7 +128,7 @@ class LogsFragment : Fragment() {
     private fun fetchLogs() {
         val currentUser = FirebaseAuth.getInstance().currentUser
         val currentUserId = currentUser?.uid
-        
+
         if (currentUser == null || currentUserId == null) {
             // Update UI to show no permission
             view?.findViewById<TextView>(R.id.emptyStateText)?.apply {
@@ -427,38 +427,6 @@ class LogsFragment : Fragment() {
                     deviceName = resolvedDeviceId,
                     timestamp = timestamp,
                     status = "Fingerprint #$fingerprintId Enrolled",
-                    userName = "Loading...", // Placeholder while loading
-                    eventType = "Biometric",
-                    uniqueId = key
-                )
-
-                // Start email fetch if we have a valid userId
-                if (userId != "Unknown") {
-                    fetchUserEmail(userId) { email ->
-                        // Find and update this log entry in the list
-                        val index = allLogs.indexOfFirst { it.uniqueId == key }
-                        if (index != -1) {
-                            val updatedLog = logEntry.copy(userName = email ?: userId)
-                            allLogs[index] = updatedLog
-                            // Notify adapter on UI thread
-                            Handler(Looper.getMainLooper()).post {
-                                logsAdapter.notifyItemChanged(index)
-                            }
-                        }
-                    }
-                }
-
-                return logEntry
-            }
-            "fingerprint_enrollment_failed" -> {
-                // Handle fingerprint enrollment failure logs
-                val userId = logData["userId"] as? String ?: "Unknown"
-                val reason = logData["reason"] as? String ?: "Unknown"
-
-                val logEntry = LogEntry(
-                    deviceName = resolvedDeviceId,
-                    timestamp = timestamp,
-                    status = "Fingerprint Enrollment Failed: ${reason.replace("_", " ").capitalize()}",
                     userName = "Loading...", // Placeholder while loading
                     eventType = "Biometric",
                     uniqueId = key

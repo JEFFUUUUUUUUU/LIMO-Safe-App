@@ -20,18 +20,18 @@ import javax.crypto.KeyGenerator
  * Utility class to manage biometric authentication in the app
  */
 class BiometricManager(private val context: Context) {
-    
+
     private val sharedPreferences: SharedPreferences = context.getSharedPreferences("BiometricPrefs", Context.MODE_PRIVATE)
     private val executor: Executor = ContextCompat.getMainExecutor(context)
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     private val keyName = "limo_safe_biometric_key"
-    
+
     companion object {
         const val BIOMETRIC_ENABLED_KEY = "biometric_enabled"
         const val USER_EMAIL_KEY = "user_email"
         const val PASSWORD_SUFFIX = "_password"
     }
-    
+
     /**
      * Check if biometric authentication is available on the device
      */
@@ -42,14 +42,14 @@ class BiometricManager(private val context: Context) {
             else -> false
         }
     }
-    
+
     /**
      * Check if biometric authentication is enabled for the current user
      */
     fun isBiometricEnabled(): Boolean {
         return sharedPreferences.getBoolean(BIOMETRIC_ENABLED_KEY, false)
     }
-    
+
     /**
      * Enable biometric authentication for the current user
      */
@@ -59,13 +59,13 @@ class BiometricManager(private val context: Context) {
             .putString(USER_EMAIL_KEY, email)
             .putString("${email}${PASSWORD_SUFFIX}", password)
             .apply()
-        
+
         // Generate a key for biometric authentication if it doesn't exist
         if (!keyStore.containsAlias(keyName)) {
             generateSecretKey()
         }
     }
-    
+
     /**
      * Disable biometric authentication for the current user
      */
@@ -75,21 +75,21 @@ class BiometricManager(private val context: Context) {
             .remove(USER_EMAIL_KEY)
             .apply()
     }
-    
+
     /**
      * Get the email of the user who enabled biometric authentication
      */
     fun getBiometricEmail(): String? {
         return sharedPreferences.getString(USER_EMAIL_KEY, null)
     }
-    
+
     /**
      * Get the stored password for the given email
      */
     fun getStoredPassword(email: String): String? {
         return sharedPreferences.getString("${email}${PASSWORD_SUFFIX}", null)
     }
-    
+
     /**
      * Show biometric prompt for authentication
      */
@@ -109,7 +109,7 @@ class BiometricManager(private val context: Context) {
             .setNegativeButtonText(negativeButtonText)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             .build()
-            
+
         val biometricPrompt = BiometricPrompt(
             fragment,
             executor,
@@ -118,21 +118,21 @@ class BiometricManager(private val context: Context) {
                     super.onAuthenticationSucceeded(result)
                     onSuccess()
                 }
-                
+
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
                     onError(errorCode, errString)
                 }
             }
         )
-        
+
         try {
             biometricPrompt.authenticate(promptInfo)
         } catch (e: Exception) {
             Toast.makeText(context, "Biometric authentication error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     /**
      * Show biometric prompt for enrollment
      */
@@ -150,7 +150,7 @@ class BiometricManager(private val context: Context) {
             .setNegativeButtonText("Cancel")
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             .build()
-            
+
         val biometricPrompt = BiometricPrompt(
             fragment,
             executor,
@@ -160,10 +160,10 @@ class BiometricManager(private val context: Context) {
                     enableBiometric(email, password)
                     onSuccess()
                 }
-                
+
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON || 
+                    if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
                         errorCode == BiometricPrompt.ERROR_USER_CANCELED) {
                         onCancel()
                     } else {
@@ -173,7 +173,7 @@ class BiometricManager(private val context: Context) {
                 }
             }
         )
-        
+
         try {
             biometricPrompt.authenticate(promptInfo)
         } catch (e: Exception) {
@@ -181,7 +181,7 @@ class BiometricManager(private val context: Context) {
             onCancel()
         }
     }
-    
+
     /**
      * Generate a secret key for biometric authentication
      */
@@ -189,7 +189,7 @@ class BiometricManager(private val context: Context) {
         val keyGenerator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore"
         )
-        
+
         val keyGenParameterSpec = KeyGenParameterSpec.Builder(
             keyName,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
@@ -203,11 +203,11 @@ class BiometricManager(private val context: Context) {
                 }
             }
             .build()
-            
+
         keyGenerator.init(keyGenParameterSpec)
         keyGenerator.generateKey()
     }
-    
+
     /**
      * Get the cipher for biometric authentication
      */

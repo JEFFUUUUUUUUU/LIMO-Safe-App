@@ -152,7 +152,7 @@ class DialogManager(private val context: Context) {
             .setTitle("Maximum Tries Reached")
             .setMessage("You have reached the maximum number of tries.")
             .setPositiveButton("OK") { dialog, _ ->
-    
+
                 dialog.dismiss()
             }
             .create()
@@ -165,25 +165,25 @@ class DialogManager(private val context: Context) {
             .setTitle("Exit Confirmation")
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { dialog, _ ->
-    
+
                 dialog.dismiss()
                 onConfirm()
             }
             .setNegativeButton("No") { dialog, _ ->
-    
+
                 dialog.dismiss()
             }
             .create()
         setupDialogTouchListener(dialog)
         dialog.show()
     }
-    
+
     fun showLogoutConfirmationDialog(onConfirm: () -> Unit) {
         try {
             // Inflate custom layout
             val inflater = LayoutInflater.from(context)
             val view = inflater.inflate(R.layout.fragment_logout, null)
-            
+
             // Create dialog with custom view
             val dialog = android.app.Dialog(context)
             dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -194,31 +194,31 @@ class DialogManager(private val context: Context) {
             val width = (displayMetrics.widthPixels * 0.8).toInt()
             dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
             dialog.setCancelable(false) // Prevent dismissing by tapping outside
-            
+
             // Set up button click listeners
             val cancelButton = view.findViewById<Button>(R.id.cancelButton)
             val logoutButton = view.findViewById<Button>(R.id.logoutButton)
-            
+
             cancelButton.setOnClickListener {
                 dialog.dismiss()
             }
-            
+
             logoutButton.setOnClickListener {
                 dialog.dismiss()
-                
+
                 try {
                     // Sign out from Firebase first
                     com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
-                    
+
                     // Get the activity context
                     val activity = context as? com.example.limo_safe.MainActivity
                     if (activity != null && !activity.isFinishing) {
                         // Simply create and show the login fragment
                         val loginFragment = com.example.limo_safe.LoginFragment()
-                        
+
                         // Make sure fragment container is visible
                         activity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
-                        
+
                         // Replace current fragment with login fragment
                         activity.supportFragmentManager.beginTransaction()
                             .replace(R.id.fragmentContainer, loginFragment)
@@ -228,33 +228,33 @@ class DialogManager(private val context: Context) {
                     android.util.Log.e("DialogManager", "Error during logout: ${e.message}")
                 }
             }
-            
+
             // Show the dialog
             dialog.show()
         } catch (e: Exception) {
             android.util.Log.e("DialogManager", "Error showing logout dialog: ${e.message}")
             e.printStackTrace()
-            
+
             // Fallback to standard dialog if custom one fails
             val fallbackDialog = androidx.appcompat.app.AlertDialog.Builder(context)
                 .setTitle("Logout Confirmation")
                 .setMessage("Are you sure you want to log out of your account?")
                 .setPositiveButton("Yes, Log Out") { dialog, _ ->
                     dialog.dismiss()
-                    
+
                     try {
                         // Sign out from Firebase first
                         com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
-                        
+
                         // Get the activity context
                         val activity = context as? com.example.limo_safe.MainActivity
                         if (activity != null && !activity.isFinishing) {
                             // Simply create and show the login fragment
                             val loginFragment = com.example.limo_safe.LoginFragment()
-                            
+
                             // Make sure fragment container is visible
                             activity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
-                            
+
                             // Replace current fragment with login fragment
                             activity.supportFragmentManager.beginTransaction()
                                 .replace(R.id.fragmentContainer, loginFragment)
@@ -278,7 +278,7 @@ class DialogManager(private val context: Context) {
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton("OK") { dialog, _ ->
-    
+
                 dialog.dismiss()
             }
             .create()
@@ -338,25 +338,25 @@ class DialogManager(private val context: Context) {
     ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_biometric_prompt, null)
         setupTouchListener(dialogView)
-        
+
         val enableButton = dialogView.findViewById<Button>(R.id.biometricEnableButton)
         val cancelButton = dialogView.findViewById<Button>(R.id.biometricCancelButton)
-        
+
         val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(dialogView)
             .setCancelable(false)
             .create()
-            
+
         enableButton.setOnClickListener {
             dialog.dismiss()
             onEnable()
         }
-        
+
         cancelButton.setOnClickListener {
             dialog.dismiss()
             onCancel()
         }
-        
+
         setupDialogTouchListener(dialog)
         activeDialog = dialog
         return dialog

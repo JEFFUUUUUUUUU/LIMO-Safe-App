@@ -28,7 +28,9 @@ import androidx.fragment.app.FragmentTransaction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
+import com.example.limo_safe.utils.BiometricManager
 import com.example.limo_safe.utils.DialogManager
+import com.example.limo_safe.utils.PasswordConfirmationDialog
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.tasks.Task
 import com.google.android.material.button.MaterialButton
@@ -52,6 +54,8 @@ class MonitoringFragment : Fragment() {
     private lateinit var menuIcon: ImageView
     private lateinit var accountTextView: TextView
     private lateinit var logoutButton: Button
+    private lateinit var biometricSetupButton: Button
+    private lateinit var biometricManager: BiometricManager
 
     private lateinit var database: DatabaseReference
     private var deviceListListener: ValueEventListener? = null
@@ -85,6 +89,7 @@ class MonitoringFragment : Fragment() {
 
         // Initialize managers first to ensure they're available for all UI operations
         dialogManager = DialogManager(requireContext())
+        biometricManager = BiometricManager(requireContext())
 
         // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
@@ -92,31 +97,77 @@ class MonitoringFragment : Fragment() {
         tabLayout = view.findViewById(R.id.tabLayout)
         drawerLayout = view.findViewById(R.id.drawerLayout)
         menuIcon = view.findViewById(R.id.menuIcon)
-        
+
         // Set up account info and logout button in the navigation drawer
-        val navHeader = view.findViewById<View>(R.id.nav_header_root)
+        val navView = view.findViewById<com.google.android.material.navigation.NavigationView>(R.id.nav_view)
+        val navHeader = navView.findViewById<View>(R.id.nav_header_layout)
         if (navHeader != null) {
-            accountTextView = navHeader.findViewById(R.id.accountTextView)
+            accountTextView = navHeader.findViewById(R.id.navHeaderSubtitle)
             logoutButton = navHeader.findViewById(R.id.logoutButton)
-            
+            biometricSetupButton = navHeader.findViewById(R.id.biometricSetupButton)
+
             // Set up user account info
             val currentUser = FirebaseAuth.getInstance().currentUser
             accountTextView.text = currentUser?.email ?: "account."
-            
+
+            // Update biometric button text based on current state
+            updateBiometricButtonText()
+
+            // Set up biometric login button
+            biometricSetupButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+
+                // Check if biometric is available
+                if (!biometricManager.isBiometricAvailable()) {
+                    Toast.makeText(requireContext(),
+                        "Biometric authentication is not available on this device",
+                        Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                // Get current user email
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                val email = currentUser?.email
+
+                if (email == null) {
+                    Toast.makeText(requireContext(), "Unable to get user email", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                // Check if biometric is already enabled
+                if (biometricManager.isBiometricEnabled()) {
+                    // Show dialog to disable biometric
+                    showDisableBiometricDialog()
+                } else {
+                    // Show password confirmation dialog before enabling biometric
+                    val passwordConfirmationDialog = PasswordConfirmationDialog(requireContext(), dialogManager)
+                    passwordConfirmationDialog.showPasswordConfirmationDialog(
+                        email = email,
+                        biometricManager = biometricManager,
+                        fragment = this,
+                        onSuccess = {
+                            updateBiometricButtonText()
+                        },
+                        onCancel = {}
+                    )
+                }
+            }
+
             // Set up logout button
             logoutButton.setOnClickListener {
                 // Close drawer
                 drawerLayout.closeDrawer(GravityCompat.START)
-                
+
                 // Show confirmation dialog using DialogManager for consistency
                 dialogManager.showLogoutConfirmationDialog {
                     try {
                         // First remove all listeners to prevent memory leaks
                         removeAllListeners()
-                        
+
                         // Sign out from Firebase
                         FirebaseAuth.getInstance().signOut()
-                        
+
                         // Use the MainActivity's method to handle navigation
                         val mainActivity = activity as? MainActivity
                         if (mainActivity != null && !mainActivity.isFinishing) {
@@ -125,7 +176,7 @@ class MonitoringFragment : Fragment() {
                                 try {
                                     // First show the main screen to reset the UI state
                                     mainActivity.showMainScreen()
-                                    
+
                                     // Then navigate to login after a short delay
                                     Handler(Looper.getMainLooper()).postDelayed({
                                         try {
@@ -151,7 +202,7 @@ class MonitoringFragment : Fragment() {
 
         // Initialize Firebase
         database = FirebaseDatabase.getInstance().reference
-        
+
         // Set up hamburger menu click listener directly
         menuIcon.setOnClickListener {
             Log.d("MonitoringFragment", "Menu icon clicked")
@@ -161,7 +212,7 @@ class MonitoringFragment : Fragment() {
                 drawerLayout.openDrawer(GravityCompat.START)
             }
         }
-        
+
         // Add drawer listener to dim background when drawer is opened
         val mainContent = view.findViewById<LinearLayout>(R.id.mainContent)
         drawerLayout.addDrawerListener(object : androidx.drawerlayout.widget.DrawerLayout.DrawerListener {
@@ -191,7 +242,7 @@ class MonitoringFragment : Fragment() {
             try {
                 // Remove all listeners first
                 removeAllListeners()
-                
+
                 // Get main activity and update session safely
                 if (isAdded && activity != null && !requireActivity().isFinishing) {
                     // Use proper fragment transaction with animations
@@ -212,16 +263,19 @@ class MonitoringFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+
         try {
+            // Initialize Firebase Database
+            database = FirebaseDatabase.getInstance().getReference()
+
             // Create logs fragment instance
             logsFragment = LogsFragment()
             // Setup recycler view
             setupRecyclerView()
-            
             // Setup tabs
             setupTabs()
-            
+            // Setup navigation drawer
+            setupNavigationDrawer()
             // Fetch user devices
             fetchUserDevices()
         } catch (e: Exception) {
@@ -234,31 +288,74 @@ class MonitoringFragment : Fragment() {
         try {
             // Set up hamburger menu click listener
             menuIcon.setOnClickListener {
-                if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    drawerLayout.closeDrawer(GravityCompat.START)
+                if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+                    drawerLayout.closeDrawer(android.view.Gravity.START)
                 } else {
-                    drawerLayout.openDrawer(GravityCompat.START)
+                    drawerLayout.openDrawer(android.view.Gravity.START)
                 }
             }
-            
+
             // Set up user account info
             val currentUser = FirebaseAuth.getInstance().currentUser
             accountTextView.text = currentUser?.email ?: "account."
-            
+
+            // Update button text based on whether biometric is already enabled
+            updateBiometricButtonText()
+
+            biometricSetupButton.setOnClickListener {
+                // Close drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+
+                // Check if biometric is available
+                if (!biometricManager.isBiometricAvailable()) {
+                    Toast.makeText(requireContext(),
+                        "Biometric authentication is not available on this device",
+                        Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                // Get current user email
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                val email = currentUser?.email
+
+                if (email == null) {
+                    Toast.makeText(requireContext(), "Unable to get user email", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                // Check if biometric is already enabled
+                if (biometricManager.isBiometricEnabled()) {
+                    // Show dialog to disable biometric
+                    showDisableBiometricDialog()
+                } else {
+                    // Show password confirmation dialog before enabling biometric
+                    val passwordConfirmationDialog = PasswordConfirmationDialog(requireContext(), dialogManager)
+                    passwordConfirmationDialog.showPasswordConfirmationDialog(
+                        email = email,
+                        biometricManager = biometricManager,
+                        fragment = this,
+                        onSuccess = {
+                            updateBiometricButtonText()
+                        },
+                        onCancel = {}
+                    )
+                }
+            }
+
             // Set up logout button
             logoutButton.setOnClickListener {
                 // Close drawer
                 drawerLayout.closeDrawer(GravityCompat.START)
-                
+
                 // Show confirmation dialog using DialogManager for consistency
                 dialogManager.showLogoutConfirmationDialog {
                     try {
                         // First remove all listeners to prevent memory leaks
                         removeAllListeners()
-                        
+
                         // Sign out from Firebase
                         FirebaseAuth.getInstance().signOut()
-                        
+
                         // Navigate to login fragment directly
                         val mainActivity = activity as? MainActivity
                         if (mainActivity != null && !mainActivity.isFinishing) {
@@ -272,7 +369,7 @@ class MonitoringFragment : Fragment() {
                                     )
                                     .replace(R.id.fragmentContainer, loginFragment)
                                     .commit()
-                                
+
                                 // Update UI visibility
                                 mainActivity.findViewById<View>(R.id.mainContent)?.visibility = View.GONE
                                 mainActivity.findViewById<View>(R.id.fragmentContainer)?.visibility = View.VISIBLE
@@ -372,7 +469,7 @@ class MonitoringFragment : Fragment() {
             onWifiClicked = { deviceId -> showWifiDialog(deviceId) },
             context = requireContext(),
 
-        )
+            )
         deviceListRecyclerView.apply {
             layoutManager = LinearLayoutManager(context)
             adapter = deviceAdapter
@@ -503,7 +600,7 @@ class MonitoringFragment : Fragment() {
         // Add listener to database
         database.child("devices").child(deviceId).child("isOnline")
             .addValueEventListener(deviceStatusListener)
-        
+
         // Store listener reference
         deviceStatusListeners[deviceId] = deviceStatusListener
     }
@@ -847,7 +944,7 @@ class MonitoringFragment : Fragment() {
 
 
         connectButton?.setOnClickListener {
-    
+
             val ssid = ssidInput?.text.toString().trim()
             val password = passwordInput?.text.toString().trim()
 
@@ -875,9 +972,55 @@ class MonitoringFragment : Fragment() {
         }
 
         cancelButton?.setOnClickListener {
-    
+
             dialog.dismiss()
         }
+
+        dialog.show()
+    }
+
+    private fun updateBiometricButtonText() {
+        if (biometricManager.isBiometricEnabled()) {
+            biometricSetupButton.text = "Disable Biometric Login"
+        } else {
+            biometricSetupButton.text = "Set Up Biometric Login"
+        }
+    }
+
+    private fun showEnableBiometricDialog() {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        val email = currentUser?.email
+
+        if (email == null) {
+            Toast.makeText(requireContext(), "Unable to get user email", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Directly show biometric prompt for enrollment
+        biometricManager.showBiometricEnrollmentPrompt(
+            fragment = this,
+            email = email,
+            onSuccess = {
+                Toast.makeText(requireContext(), "Biometric login enabled successfully!", Toast.LENGTH_SHORT).show()
+                updateBiometricButtonText()
+            },
+            onCancel = {
+                Toast.makeText(requireContext(), "Biometric enrollment canceled", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    private fun showDisableBiometricDialog() {
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Disable Biometric Login")
+            .setMessage("Are you sure you want to disable biometric login?")
+            .setPositiveButton("Yes") { _, _ ->
+                biometricManager.disableBiometric()
+                Toast.makeText(requireContext(), "Biometric login disabled", Toast.LENGTH_SHORT).show()
+                updateBiometricButtonText()
+            }
+            .setNegativeButton("No", null)
+            .create()
 
         dialog.show()
     }
@@ -913,7 +1056,7 @@ class DeviceAdapter(
     private val onWifiClicked: (String) -> Unit,
     private val context: Context,
 
-) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
+    ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
 
     inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
@@ -992,7 +1135,7 @@ class DeviceAdapter(
         val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
 
         addButton?.setOnClickListener {
-    
+
             val email = emailInput?.text.toString().trim()
             if (email.isNotEmpty()) {
                 onUserAdded(deviceId, email)
@@ -1003,7 +1146,7 @@ class DeviceAdapter(
         }
 
         cancelButton?.setOnClickListener {
-    
+
             dialog.dismiss()
         }
 
@@ -1026,7 +1169,7 @@ class DeviceAdapter(
             if (position >= 0 && position < devices.size) {
                 val device = devices[position]
                 holder.deviceNameText.text = device.name ?: "Unknown Device"
-                
+
                 // Set status texts with null safety
                 holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
                 try {
@@ -1112,7 +1255,7 @@ class DeviceAdapter(
     private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
         try {
             val context = view.context ?: return
-            
+
             val popupMenu = PopupMenu(context, view).apply {
                 try {
                     inflate(R.menu.user_options_menu)

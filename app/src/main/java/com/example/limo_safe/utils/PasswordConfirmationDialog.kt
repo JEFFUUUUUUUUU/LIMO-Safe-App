@@ -16,7 +16,7 @@ class PasswordConfirmationDialog(
     private val context: Context,
     private val dialogManager: DialogManager
 ) {
-    
+
     /**
      * Show a dialog to confirm the user's password for biometric setup
      */
@@ -30,26 +30,26 @@ class PasswordConfirmationDialog(
         // Create a dialog with password input
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_password_confirm, null)
         val passwordEditText = dialogView.findViewById<EditText>(R.id.passwordEditText)
-        
+
         // Create an AlertDialog builder
         val builder = AlertDialog.Builder(context)
         builder.setTitle("Confirm Password")
         builder.setView(dialogView)
         builder.setCancelable(false)
-        
+
         // Set up positive and negative buttons
         builder.setPositiveButton("Enable Biometric") { _, _ ->
             // This will be overridden below to prevent automatic dismissal
         }
-        
+
         builder.setNegativeButton("Cancel") { _, _ ->
             // This will be overridden below
         }
-        
+
         // Create and show the dialog
         val alertDialog = builder.create()
         alertDialog.show()
-        
+
         // Override the positive button click listener to prevent automatic dismissal
         alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val password = passwordEditText.text.toString()
@@ -57,11 +57,11 @@ class PasswordConfirmationDialog(
                 // Verify password with Firebase before enabling biometric
                 val loadingDialog = dialogManager.createLoadingDialog("Verifying password...")
                 loadingDialog.show()
-                
+
                 FirebaseAuth.getInstance().signInWithEmailAndPassword(email, password)
                     .addOnCompleteListener { task ->
                         dialogManager.dismissActiveDialog() // Dismiss loading dialog
-                        
+
                         if (task.isSuccessful) {
                             // Password verified, now show biometric enrollment
                             alertDialog.dismiss()
@@ -87,7 +87,7 @@ class PasswordConfirmationDialog(
                 Toast.makeText(context, "Password cannot be empty", Toast.LENGTH_SHORT).show()
             }
         }
-        
+
         // Override the negative button click listener
         alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
             alertDialog.dismiss()

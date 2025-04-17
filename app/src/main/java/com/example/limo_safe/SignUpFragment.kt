@@ -104,7 +104,7 @@ class SignUpFragment : Fragment() {
                             if (verificationTask.isSuccessful) {
                                 saveUserToDatabase(user.uid, email)
                                 showToast("Registration successful! Please check your email for verification.", true)
-                                
+
                                 // Check if biometric authentication is available
                                 if (biometricManager.isBiometricAvailable()) {
                                     promptBiometricEnrollment(email)
