@@ -73,6 +73,7 @@ class DialogManager(private val context: Context) {
         val triesText = dialogView.findViewById<TextView>(R.id.triesText)
         val cooldownText = dialogView.findViewById<TextView>(R.id.cooldownText)
         val playButton = dialogView.findViewById<Button>(R.id.playButton)
+        val closeButton = dialogView.findViewById<Button>(R.id.closeButton)
 
         codeDisplayText.text = code
         triesText.text = "Remaining tries: $remainingTries"
@@ -89,7 +90,10 @@ class DialogManager(private val context: Context) {
 
         playButton.setOnClickListener {
             onPlayClick(playButton, cooldownText)
+        }
 
+        closeButton.setOnClickListener {
+            dismissActiveDialog()
         }
 
         val builder = androidx.appcompat.app.AlertDialog.Builder(context)

@@ -50,6 +50,15 @@
         android:layout_height="wrap_content"
         android:text="PLAY MORSE CODE"
         android:backgroundTint="#800000"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/closeButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CLOSE"
+        android:backgroundTint="#FFA500"
         android:textColor="#FFFFFF"/>
 
 </LinearLayout>
