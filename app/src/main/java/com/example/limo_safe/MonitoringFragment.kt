@@ -29,7 +29,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 import com.example.limo_safe.utils.BiometricManager
+import com.example.limo_safe.utils.DeviceNotificationManager
 import com.example.limo_safe.utils.DialogManager
+import com.example.limo_safe.utils.NotificationHelper
 import com.example.limo_safe.utils.PasswordConfirmationDialog
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.tasks.Task
@@ -56,6 +58,8 @@ class MonitoringFragment : Fragment() {
     private lateinit var logoutButton: Button
     private lateinit var biometricSetupButton: Button
     private lateinit var biometricManager: BiometricManager
+    private lateinit var notificationHelper: NotificationHelper
+    private lateinit var notificationManager: DeviceNotificationManager
 
     private lateinit var database: DatabaseReference
     private var deviceListListener: ValueEventListener? = null
@@ -90,6 +94,24 @@ class MonitoringFragment : Fragment() {
         // Initialize managers first to ensure they're available for all UI operations
         dialogManager = DialogManager(requireContext())
         biometricManager = BiometricManager(requireContext())
+        notificationHelper = NotificationHelper(requireContext())
+        notificationManager = DeviceNotificationManager(requireContext())
+
+        // Setup notification permission launcher
+        notificationHelper.setupPermissionLauncher(this) { isGranted ->
+            if (isGranted) {
+                Toast.makeText(requireContext(), "Notifications enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(requireContext(), "Notifications disabled - you may miss important alerts", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Request notification permission
+        notificationHelper.requestNotificationPermissionIfNeeded { granted ->
+            if (!granted) {
+                Toast.makeText(requireContext(), "Please enable notifications for security alerts", Toast.LENGTH_LONG).show()
+            }
+        }
 
         // Initialize views with correct IDs
         deviceListRecyclerView = view.findViewById(R.id.deviceListRecyclerView)
@@ -577,11 +599,43 @@ class MonitoringFragment : Fragment() {
                 val deviceIndex = devices.indexOfFirst { it.id == deviceId }
                 if (deviceIndex < 0) return
 
-                val actualOnlineStatus = snapshot.getValue(Boolean::class.java) ?: false
+                val device = devices[deviceIndex]
+                val isOnline = snapshot.child("isOnline").getValue(Boolean::class.java) ?: false
+                val isSecure = snapshot.child("isSecure").getValue(Boolean::class.java) ?: true
+
+                // Check if this is device 83AF2B89FD4 and it's tampered
+                if (deviceId == "83AF2B89FD4" && !isSecure) {
+                    // Only send notification if notification permission is granted
+                    if (notificationHelper.hasNotificationPermission()) {
+                        // Send tamper notification with high priority
+                        notificationManager.sendStatusNotification(
+                            deviceId = deviceId,
+                            deviceName = device.name,
+                            statusType = DeviceNotificationManager.STATUS_SECURE,
+                            statusValue = false,
+                            showOnlyAlerts = true
+                        )
+                    } else {
+                        // Request notification permission
+                        notificationHelper.requestNotificationPermissionIfNeeded { granted ->
+                            if (granted) {
+                                // Send notification after permission is granted
+                                notificationManager.sendStatusNotification(
+                                    deviceId = deviceId,
+                                    deviceName = device.name,
+                                    statusType = DeviceNotificationManager.STATUS_SECURE,
+                                    statusValue = false,
+                                    showOnlyAlerts = true
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Update device status in list
                 val updatedDevice = devices[deviceIndex].copy(
-                    isOnline = actualOnlineStatus
+                    isOnline = isOnline,
+                    isSecure = isSecure
                 )
                 devices[deviceIndex] = updatedDevice
 
@@ -589,7 +643,7 @@ class MonitoringFragment : Fragment() {
                 deviceAdapter.notifyItemChanged(deviceIndex)
 
                 // Update device connection status
-                updateDeviceConnectionStatus(deviceId, actualOnlineStatus)
+                updateDeviceConnectionStatus(deviceId, isOnline)
             }
 
             override fun onCancelled(error: DatabaseError) {
