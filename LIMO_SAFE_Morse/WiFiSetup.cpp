@@ -67,7 +67,7 @@ void WiFiEventHandler(WiFiEvent_t event) {
     }
 }
 
-bool setupWiFi() {
+bool setupWiFi(bool fromCredentialUpdate) {
     WiFi.onEvent(WiFiEventHandler);
     Serial.println("📡 Setting up WiFi...");
     WiFi.mode(WIFI_STA);
@@ -151,7 +151,7 @@ bool setupWiFi() {
             return true;
           }
           // Only clear credentials and restart as last resort
-          clearFlashStorage();
+          clearFlashStorage(fromCredentialUpdate);
         }
         
         return false;
@@ -163,34 +163,38 @@ int reconnectInterval = 1000; // Start with 1 second
 const int maxReconnectInterval = 60000; // Max 1 minute between attempts
 
 // In your checkWiFiConnection function
+// Update WiFi check function to be less aggressive with reconnects
 bool checkWiFiConnection() {
-  if (WiFi.status() != WL_CONNECTED) {
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastReconnectAttempt > reconnectInterval) {
-      lastReconnectAttempt = currentMillis;
-
-      Serial.print("Attempting reconnection (");
-      Serial.print(reconnectInterval / 1000);
-      Serial.println("s interval)");
-
-      // If too many failed attempts, reset WiFi
-      if (reconnectInterval >= maxReconnectInterval) {
-        Serial.println("🚨 Too many failures, resetting WiFi...");
-        WiFi.disconnect(true);
-        delay(1000);
-        WiFi.begin(); // Start fresh connection
-      } else {
-        WiFi.reconnect();
-      }
-
-      reconnectInterval = min(reconnectInterval * 2, maxReconnectInterval);
-      return false;
+    if (WiFi.status() != WL_CONNECTED) {
+        unsigned long currentMillis = millis();
+        if (currentMillis - lastReconnectAttempt > reconnectInterval) {
+            lastReconnectAttempt = currentMillis;
+            
+            Serial.print("Attempting reconnection (");
+            Serial.print(reconnectInterval / 1000);
+            Serial.println("s interval)");
+            
+            // If too many failed attempts, try reconnecting but don't reset
+            if (reconnectInterval >= maxReconnectInterval) {
+                Serial.println("🚨 Too many failures, attempting reconnection...");
+                WiFi.disconnect(false); // Don't erase settings
+                delay(500);
+                WiFi.reconnect();
+            } else {
+                WiFi.reconnect();
+            }
+            
+            reconnectInterval = min(reconnectInterval * 2, maxReconnectInterval);
+            setLEDStatus(STATUS_OFFLINE);
+            return false;
+        }
+    } else {
+        reconnectInterval = 1000; // Reset interval
+        return true;
     }
-  } else {
-    setLEDStatus(STATUS_ONLINE);
-    reconnectInterval = 1000;
-    return true;
-  }
+    
+    // If we're disconnected but still in waiting period, return false
+    return false;
 }
 
 bool updateWiFiCredentials(const char* ssid, const char* password) {
@@ -223,10 +227,10 @@ bool updateWiFiCredentials(const char* ssid, const char* password) {
     Serial.println("📡 Reconnecting with new credentials...");
     WiFi.disconnect(true);
     delay(500);
-    return setupWiFi();
+    return setupWiFi(true);
 }
 
-void clearFlashStorage() {
+void clearFlashStorage(bool skipRestart) {
     Serial.println("🧹 Clearing WiFi flash storage...");
     
     if (wifiPrefs.begin(WIFI_CREDENTIALS_NAMESPACE, false)) {
@@ -238,7 +242,12 @@ void clearFlashStorage() {
         Serial.println("🧹 Flash storage cleared! Restarting in 3 seconds...");
         setLEDStatus(STATUS_ERROR);  // Indicate that a reset is happening
         delay(3000);  // Allow some time before restarting
-        ESP.restart();
+        if (!skipRestart) {
+            Serial.println("🔁 Restarting in 3 seconds...");
+            setLEDStatus(STATUS_ERROR);
+            delay(3000);
+            ESP.restart();
+        }
     } else {
         Serial.println("❌ Failed to access preferences for clearing");
     }

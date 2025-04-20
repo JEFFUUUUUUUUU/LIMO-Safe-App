@@ -23,7 +23,8 @@ enum Status {
     STATUS_IDLE,         
     STATUS_LOCKED,       
     STATUS_UNLOCKED,     
-    STATUS_OTP_VERIFIED, 
+    STATUS_OTP_VERIFIED,
+    STATUS_REGISTERED,
     STATUS_ERROR,
     STATUS_OTP_ERROR,    
     STATUS_ONLINE,
@@ -32,7 +33,8 @@ enum Status {
     STATUS_SECURE,       
     STATUS_TAMPERED,     
     STATUS_SCANNING,     
-    STATUS_FINGERPRINT_OK
+    STATUS_FINGERPRINT_OK,
+    STATUS_OPEN
 };
 
 // Function declarations
@@ -41,5 +43,7 @@ void setLEDStatus(Status status);
 void setColorRGB(uint8_t color);
 void pulseColor(uint8_t color, uint8_t times, unsigned int delayTime);
 void blinkColor(uint8_t color, uint8_t times, unsigned int onTime, unsigned int offTime);
+
+extern bool fingerprintEnrollmentInProgress;
 
 #endif

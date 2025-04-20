@@ -23,11 +23,12 @@ void setup() {
     setLEDStatus(STATUS_OFFLINE);
     Serial.begin(115200);
     Serial.println("\n🚀 Starting LIMO SAFE Morse System...");
-
+    
+    setupNanoCommunication();
     initRGB();
     setupLightSensor();
     initializeFingerprint();
-    //deleteAllFingerprint();
+    //deleteAllFingerprints();
 
     // ✅ Ensure WiFi is available
     int wifiAttempts = 5;
@@ -75,16 +76,13 @@ void setup() {
             Serial.println(fbdo.errorReason().c_str());
         }
     }
-
-    // Initialize Nano communication
-    setupNanoCommunication();
     updateDeviceStatus(true, false, false);
 
     Serial.println("✅ System initialization complete!");
 }
 
 unsigned long lastFirebaseCheck = 0;
-const unsigned long FIREBASE_CHECK_INTERVAL = 30000; // Every 30 seconds
+const unsigned long FIREBASE_CHECK_INTERVAL = 2000; // Every 2 seconds
 
 // ✅ Watchdog timer to restart ESP if WiFi or Firebase fail
 unsigned long lastSuccess = millis();
@@ -97,9 +95,9 @@ void loop() {
         Serial.println(F("🔓 Auth success! Unlocking..."));
         sendCommandToNano("UNLOCK");
         unlockSent = true;
-        setLEDStatus(STATUS_FINGERPRINT_OK);
+        setLEDStatus(STATUS_UNLOCKED);
         // Add a small delay to prevent immediate recheck
-        delay(1000); // This brief delay is acceptable since the event is rare
+        delay(2000); // This brief delay is acceptable since the event is rare
     }
     
     // Reset the flag periodically to allow new unlock attempts
@@ -109,52 +107,33 @@ void loop() {
         lastResetTime = millis();
     }
 
+    // ✅ Handle Nano communication (process safe status)
+    handleNanoData();
+
+    // ✅ Process light sensor input (Morse code)
+    processLightInput();
+
+    processEnrollment();
+
     // ✅ Ensure WiFi is connected
     if (!checkWiFiConnection()) {
-        Serial.println("❌ WiFi lost! Restarting...");
-        delay(3000);
-        //ESP.restart();
-    }
-
-    // ✅ Ensure Firebase is connected
-    if (millis() - lastFirebaseCheck >= FIREBASE_CHECK_INTERVAL) {
-        checkFirebaseConnection();
-        lastFirebaseCheck = millis();
-
-        if (!Firebase.ready()) {
-            Serial.println("❌ Firebase lost! Restarting...");
-            delay(3000);
-            //ESP.restart();
-        }
-    }
-    
-    // ✅ Check for new WiFi credentials
-    static unsigned long lastWiFiCheck = 0;
-    if (millis() - lastWiFiCheck >= 30000) { // Every 30 seconds
-        lastWiFiCheck = millis();
-        String newSSID, newPassword;
-        if (checkForNewWiFiCredentials(newSSID, newPassword)) {
-            Preferences wifiPrefs;
-            wifiPrefs.begin("wifi", false);
-            String currentSSID = wifiPrefs.getString("ssid", "");
-            String currentPass = wifiPrefs.getString("pass", "");
-            wifiPrefs.end();
-
-            if (currentSSID != newSSID || currentPass != newPassword) {
-                Serial.println("📡 New WiFi credentials received!");
-                if (updateWiFiCredentials(newSSID.c_str(), newPassword.c_str())) {
-                    Serial.println("📡 Reconnecting with new credentials...");
-                    WiFi.disconnect();
-                    delay(1000);
-                    WiFi.reconnect();
-                }
+        Serial.println("⚠️ WiFi disconnected, continuing with local operations");
+        // Skip Firebase operations while WiFi is down
+    } else {
+        // ✅ Only check Firebase if WiFi is connected
+        if (millis() - lastFirebaseCheck >= FIREBASE_CHECK_INTERVAL) {
+            checkFirebaseConnection();
+            lastFirebaseCheck = millis();
+            
+            // Continue even if Firebase isn't ready
+            if (!Firebase.ready()) {
+                Serial.println("⚠️ Firebase unavailable, continuing with local operations");
+            } else {
+                // Only do these operations if Firebase is available
+                checkPeriodicWiFiCredentials();
+                processFirebaseQueue();
+                checkForEnrollmentRequests();
             }
         }
     }
-    
-    // ✅ Handle Nano communication (process safe status)
-    handleNanoData();
-    processFirebaseQueue(); 
-    // ✅ Process light sensor input (Morse code)
-    processLightInput();
 }

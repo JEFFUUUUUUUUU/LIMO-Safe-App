@@ -3,6 +3,7 @@
 #include "WiFiSetup.h"
 #include "RGBLed.h"
 
+//#define NanoSerial Serial
 HardwareSerial NanoSerial(1); // UART2 for Nano communication
 
 // Define global variables to track previous states
@@ -11,14 +12,19 @@ bool prevMotionDetected = false;
 unsigned long lastStatusUpdateTime = 0;
 
 // Constants defined using F() macro to store in flash
-const unsigned long STATUS_UPDATE_INTERVAL = 30000;
+const unsigned long STATUS_UPDATE_INTERVAL = 2000;
+
+// Define event types
+#define EVENT_LOCKED      1
+#define EVENT_UNLOCKED    2
+#define EVENT_SECURED     3
+#define EVENT_COMPROMISED 4
 
 // Queue for pending log entries to prevent blocking
-#define MAX_LOG_QUEUE 5
+#define MAX_LOG_QUEUE 10  // Increased size to handle separate events
 struct LogEntry {
     bool isValid;
-    bool isClosed;
-    bool isSecure;
+    uint8_t eventType;     // Use event type constants
     unsigned long timestamp;
 };
 LogEntry logQueue[MAX_LOG_QUEUE];
@@ -30,6 +36,7 @@ bool pendingStatusUpdate = false;
 bool pendingStatusValues[3]; // online, locked, secure
 
 void setupNanoCommunication() {
+    //NanoSerial.begin(115200);
     NanoSerial.begin(SERIAL2_BAUD, SERIAL_8N1, SERIAL2_RX, SERIAL2_TX);
     Serial.println(F("✅ Nano UART Initialized"));
     
@@ -49,17 +56,18 @@ bool isLogQueueEmpty() {
     return logQueueHead == logQueueTail;
 }
 
-// Add an entry to the log queue
-bool queueLogEntry(bool isClosed, bool isSecure) {
+// Add an event to the log queue
+bool queueLogEvent(uint8_t eventType) {
+    // If full, overwrite oldest entry
     if (isLogQueueFull()) {
-        Serial.println(F("⚠️ Log queue full! Entry discarded."));
-        return false;
+        // Move head forward, effectively discarding oldest entry
+        logQueueHead = (logQueueHead + 1) % MAX_LOG_QUEUE;
+        Serial.println(F("⚠️ Log queue full! Overwriting oldest entry."));
     }
     
     logQueue[logQueueTail].isValid = true;
-    logQueue[logQueueTail].isClosed = isClosed;
-    logQueue[logQueueTail].isSecure = isSecure;
-    logQueue[logQueueTail].timestamp = millis();
+    logQueue[logQueueTail].eventType = eventType;
+    logQueue[logQueueTail].timestamp = isTimeSynchronized();
     
     logQueueTail = (logQueueTail + 1) % MAX_LOG_QUEUE;
     return true;
@@ -115,23 +123,44 @@ void handleNanoData() {
     bool isSafeClosed = (strcmp(safeStatus, "CLOSED") == 0);
     bool motionDetected = (strcmp(tamperStatus, "UNSAFE") == 0);
     
-    // Update LED status immediately for security indication
-    if (!isSafeClosed || motionDetected) {
-        setLEDStatus(STATUS_TAMPERED);
+    // Update LED status based on specific conditions
+    if (!fingerprintEnrollmentInProgress) {
+        if (motionDetected) {
+            setLEDStatus(STATUS_TAMPERED);
+        } else if (!isSafeClosed) {
+            setLEDStatus(STATUS_OPEN);
+        } else {
+            setLEDStatus(STATUS_NORMAL);
+        }
     }
     
-    // Track changes
-    bool lockedChanged = (isSafeClosed != prevSafeClosed);
-    bool secureChanged = (motionDetected != prevMotionDetected);
+    // Log state transitions separately
+    // Lock state transitions
+    if (isSafeClosed && !prevSafeClosed) {
+        queueLogEvent(EVENT_LOCKED);
+        Serial.println(F("Event logged: LOCKED"));
+    } else if (!isSafeClosed && prevSafeClosed) {
+        queueLogEvent(EVENT_UNLOCKED);
+        Serial.println(F("Event logged: UNLOCKED"));
+    }
+    
+    // Security state transitions
+    if (!motionDetected && prevMotionDetected) {
+        queueLogEvent(EVENT_SECURED);
+        Serial.println(F("Event logged: SECURED"));
+    } else if (motionDetected && !prevMotionDetected) {
+        queueLogEvent(EVENT_COMPROMISED);
+        Serial.println(F("Event logged: COMPROMISED"));
+    }
     
     // Define current device status
     bool online = true;  // Device is active when receiving Nano messages
     bool locked = isSafeClosed;
     bool secure = !motionDetected;
     
-    // Queue status updates instead of blocking immediately
+    // Handle periodic status updates separately from event logging
     unsigned long currentTime = millis();
-    if (lockedChanged || secureChanged || (currentTime - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL)) {
+    if (currentTime - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL) {
         lastStatusUpdateTime = currentTime;
         
         // Queue status update instead of immediately updating
@@ -139,16 +168,8 @@ void handleNanoData() {
         pendingStatusValues[0] = online;
         pendingStatusValues[1] = locked;
         pendingStatusValues[2] = secure;
-        
-        // Queue log entry if states changed (doesn't block)
-        static unsigned long lastLogEntryTime = 0;
-        if (millis() - lastLogEntryTime > 1000) {
-            if (lockedChanged || secureChanged) {
-                queueLogEntry(isSafeClosed, !motionDetected);
-                lastLogEntryTime = millis();
-            }
-        }
     }
+    
     // Update previous states immediately so we don't queue duplicates
     prevSafeClosed = isSafeClosed;
     prevMotionDetected = motionDetected;
@@ -183,7 +204,7 @@ void processFirebaseQueue() {
         LogEntry &entry = logQueue[logQueueHead];
         
         if (entry.isValid) {
-            // Construct Firebase path
+            // Construct Firebase path - use existing logs node
             char logsPath[64];
             snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
             
@@ -191,8 +212,26 @@ void processFirebaseQueue() {
             static FirebaseJson logJson;
             logJson.clear();
             logJson.set("timestamp", isTimeSynchronized());
-            logJson.set("locked", entry.isClosed);
-            logJson.set("secure", entry.isSecure);
+            
+            // Set appropriate fields based on event type
+            switch(entry.eventType) {
+                case EVENT_LOCKED:
+                    logJson.set("locked", true);
+                    logJson.set("event", "lock");
+                    break;
+                case EVENT_UNLOCKED:
+                    logJson.set("locked", false);
+                    logJson.set("event", "lock");
+                    break;
+                case EVENT_SECURED:
+                    logJson.set("secure", true);
+                    logJson.set("event", "security");
+                    break;
+                case EVENT_COMPROMISED:
+                    logJson.set("secure", false);
+                    logJson.set("event", "security");
+                    break;
+            }
             
             if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
                 Serial.println(F("✅ Log entry added to Firebase"));

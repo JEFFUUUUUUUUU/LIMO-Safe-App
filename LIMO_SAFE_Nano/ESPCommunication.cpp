@@ -67,7 +67,7 @@ void processESPCommand(const char* command) {
         Serial.println(F("🔓 Received 'UNLOCK' command! Unlocking safe..."));
         unlockSafe();  // Call function from LockControl
 
-        delay(3000);  // Keep it unlocked for 3 seconds (adjustable)
+        delay(500);
 
         Serial.println(F("🔒 Relocking safe..."));
         lockSafe();  // Lock back after delay

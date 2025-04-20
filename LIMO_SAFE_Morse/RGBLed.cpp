@@ -1,6 +1,8 @@
 #include "RGBLed.h"
 #include <Arduino.h>
 
+bool fingerprintEnrollmentInProgress = false;
+
 // Initialize RGB LED pins
 void initRGB() {
     pinMode(RED_PIN, OUTPUT);
@@ -22,8 +24,9 @@ void setLEDStatus(Status status) {
             break;
         case STATUS_UNLOCKED:
         case STATUS_OTP_VERIFIED:
+        case STATUS_REGISTERED:
         case STATUS_SECURE:
-            setColorRGB(COLOR_GREEN);  // Solid Green
+            setColorRGB(COLOR_GREEN); // Solid Green
             break;
         case STATUS_ERROR:
         case STATUS_OTP_ERROR:
@@ -40,10 +43,10 @@ void setLEDStatus(Status status) {
             pulseColor(COLOR_YELLOW, 5, 800);  // Solid Yellow (Red + Green)
             break;
         case STATUS_SCANNING:
-            pulseColor(COLOR_YELLOW, 5, 400); // Pulsing Yellow
+            setColorRGB(COLOR_PURPLE);
             break;
-        case STATUS_FINGERPRINT_OK:
-            setColorRGB(COLOR_PURPLE);  // Solid Purple
+         case STATUS_OPEN:
+            setColorRGB(COLOR_YELLOW);  // Solid Purple
             break;
     }
 }

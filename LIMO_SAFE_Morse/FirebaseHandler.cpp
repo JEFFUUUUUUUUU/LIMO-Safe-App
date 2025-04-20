@@ -148,27 +148,38 @@ bool setupFirebase() {
 
     // Initialize device data in Firebase
     String path = String(DEVICE_PATH) + deviceId;
-    if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
-        FirebaseJson json;
-        json.set("id", deviceId);
-        json.set("status", "online");
+    FirebaseJson json;
 
-        // Initialize WiFi node with connected = false as default
+    // First try to get existing data
+    bool existingData = Firebase.RTDB.getJSON(&fbdo, path.c_str());
+    if (existingData) {
+        // If we got existing data, parse it
+        json = fbdo.jsonObject();
+        Serial.println("✅ Retrieved existing device data");
+    }
+
+    // Always ensure these basic fields exist
+    json.set("id", deviceId);
+    json.set("status/online", true);
+
+    // Initialize WiFi node if it doesn't exist
+    FirebaseJsonData result;
+    if (!json.get(result, "wifi")) {
         FirebaseJson wifiJson;
         wifiJson.set("connected", false);
         json.set("wifi", wifiJson);
+    }
 
-        if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
-            Serial.println("✅ Device data initialized in Firebase");
-        } else {
-            Serial.println("❌ Failed to initialize device data");
-            return false;
-        }
+    // Use updateNode instead of setJSON to preserve existing data
+    if (Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
+        Serial.println("✅ Device data initialized in Firebase");
+    } else {
+        Serial.println("❌ Failed to initialize device data");
+        return false;
     }
 
     // Update device status
     if (updateDeviceStatus(true, false, false)) {
-    Serial.println("✅ Device status updated in Firebase");
 
     // Now that we're connected, update WiFi status to "true"
     String wifiPath = path + WIFI_NODE + "/connected";
@@ -200,6 +211,7 @@ bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
     json.set("status/online", isOnline);  // ✅ Update 'online' status
     json.set("status/locked", isLocked);  // ✅ Update 'locked' status
     json.set("status/secure", isSecure);  // ✅ Update 'secure' status
+    json.set("status/timestamp", isTimeSynchronized());
 
     if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
         Serial.print("❌ Failed to update device status: ");
@@ -240,6 +252,141 @@ bool updateWiFiCredentials(const String& ssid, const String& password) {
     return true;
 }
 
+unsigned long lastWiFiCheckTime = 0;
+const unsigned long WIFI_CHECK_INTERVAL = 30000; // Check every 30 seconds
+
+// Enum for WiFi check state machine
+enum WiFiCheckState {
+    CHECK_IDLE,
+    CHECK_FETCH_CREDENTIALS,
+    CHECK_COMPARE_CREDENTIALS,
+    CHECK_UPDATE_CREDENTIALS,
+    CHECK_RECONNECT
+};
+
+WiFiCheckState wifiCheckState = CHECK_IDLE;
+String newSSID, newPassword;
+unsigned long stateEntryTime = 0;
+
+bool checkPeriodicWiFiCredentials() {
+    // Time-based check to start the state machine
+    if (wifiCheckState == CHECK_IDLE) {
+        if (millis() - lastWiFiCheckTime >= WIFI_CHECK_INTERVAL) {
+            lastWiFiCheckTime = millis();
+            wifiCheckState = CHECK_FETCH_CREDENTIALS;
+            stateEntryTime = millis();
+            return false; // No action yet, just started the state machine
+        }
+        return false; // Nothing to do
+    }
+    
+    // Timeout protection - reset state machine if stuck in any state too long
+    if (millis() - stateEntryTime > 5000) { // 5 second timeout
+        Serial.println("⚠️ WiFi check timeout, resetting state");
+        wifiCheckState = CHECK_IDLE;
+        return false;
+    }
+    
+    // State machine implementation
+    if (wifiCheckState == CHECK_FETCH_CREDENTIALS) {
+        // Non-blocking Firebase check
+        if (!isFirebaseReady()) {
+            wifiCheckState = CHECK_IDLE; // Reset on error
+            return false;
+        }
+        
+        String path = String(DEVICE_PATH) + deviceId + WIFI_NODE;
+        
+        // This is potentially blocking but hard to make non-blocking with Firebase API
+        if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
+            wifiCheckState = CHECK_IDLE; // Reset on error
+            return false;
+        }
+        
+        // Process Firebase response
+        FirebaseJson* json = fbdo.jsonObjectPtr();
+        if (json == nullptr) {
+            wifiCheckState = CHECK_IDLE;
+            return false;
+        }
+        
+        // Extract credentials
+        FirebaseJsonData ssidData, passwordData;
+        json->get(ssidData, "ssid");
+        json->get(passwordData, "password");
+        
+        if (ssidData.success && passwordData.success && 
+            ssidData.type == "string" && passwordData.type == "string") {
+            newSSID = ssidData.stringValue;
+            newPassword = passwordData.stringValue;
+            
+            if (newSSID.length() > 0 && newPassword.length() > 0) {
+                wifiCheckState = CHECK_COMPARE_CREDENTIALS;
+                stateEntryTime = millis();
+            } else {
+                wifiCheckState = CHECK_IDLE; // No credentials available
+            }
+        } else {
+            wifiCheckState = CHECK_IDLE; // Reset on error
+        }
+        return false;
+    }
+    
+    else if (wifiCheckState == CHECK_COMPARE_CREDENTIALS) {
+        // Compare with stored credentials - minimal blocking operation
+        Preferences wifiPrefs;
+        wifiPrefs.begin("wifi", false);
+        String currentSSID = wifiPrefs.getString("ssid", "");
+        String currentPass = wifiPrefs.getString("pass", "");
+        wifiPrefs.end();
+        
+        if (currentSSID != newSSID || currentPass != newPassword) {
+            // Different credentials, proceed with update
+            Serial.println("📡 New WiFi credentials detected");
+            wifiCheckState = CHECK_UPDATE_CREDENTIALS;
+            stateEntryTime = millis();
+        } else {
+            // Same credentials, nothing to do
+            wifiCheckState = CHECK_IDLE;
+        }
+        return false;
+    }
+    
+    else if (wifiCheckState == CHECK_UPDATE_CREDENTIALS) {
+        // Update Firebase with new credentials
+        if (updateWiFiCredentials(newSSID, newPassword)) {
+            // Update local storage
+            Preferences wifiPrefs;
+            wifiPrefs.begin("wifi", false);
+            wifiPrefs.putString("ssid", newSSID);
+            wifiPrefs.putString("pass", newPassword);
+            wifiPrefs.end();
+            
+            Serial.println("📡 WiFi credentials updated");
+            wifiCheckState = CHECK_RECONNECT;
+            stateEntryTime = millis();
+        } else {
+            Serial.println("❌ Failed to update WiFi credentials");
+            wifiCheckState = CHECK_IDLE;
+        }
+        return false;
+    }
+    
+    else if (wifiCheckState == CHECK_RECONNECT) {
+        // Perform WiFi reconnection - potentially blocking but necessary
+        Serial.println("📡 Reconnecting WiFi with new credentials...");
+        WiFi.disconnect();
+        delay(100); // Minimal delay to allow disconnect
+        WiFi.reconnect();
+        
+        // Reset state machine
+        wifiCheckState = CHECK_IDLE;
+        return true; // Signal successful credential update
+    }
+    
+    return false;
+}
+
 bool checkForNewWiFiCredentials(String& newSSID, String& newPassword) {
     if (!isFirebaseReady()) {
         Serial.println("❌ Firebase not ready to check WiFi credentials");
@@ -248,33 +395,34 @@ bool checkForNewWiFiCredentials(String& newSSID, String& newPassword) {
 
     String path = String(DEVICE_PATH) + deviceId + WIFI_NODE;
 
-    // 🔥 Force Firebase to refresh data
+    // Force Firebase to refresh data
     Firebase.RTDB.setwriteSizeLimit(&fbdo, "tiny"); 
-    Firebase.RTDB.getJSON(&fbdo, path.c_str()); // Force full refresh
-
-    // 🔍 Debugging: Check Firebase response
-    if (Firebase.RTDB.getString(&fbdo, path + "/ssid")) {
-        newSSID = fbdo.stringData();
-        Serial.print("📡 Received SSID from Firebase: ");
-        Serial.println(newSSID);
-    } else {
-        Serial.println("❌ Failed to get SSID from Firebase.");
+    
+    if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
+        Serial.print("❌ Failed to check WiFi credentials: ");
+        Serial.println(fbdo.errorReason());
+        return false;
     }
-
-    if (Firebase.RTDB.getString(&fbdo, path + "/password")) {
-        newPassword = fbdo.stringData();
-        Serial.print("🔑 Received Password from Firebase: ");
-        Serial.println(newPassword);
-    } else {
-        Serial.println("❌ Failed to get Password from Firebase.");
+    
+    // Extract SSID and password from response
+    FirebaseJson* json = fbdo.jsonObjectPtr();
+    if (json == nullptr) {
+        return false;
     }
-
-    if (newSSID.length() > 0 && newPassword.length() > 0) {
-        Serial.println("✅ Found WiFi credentials in Firebase");
-        return true;
+    
+    FirebaseJsonData ssidData;
+    FirebaseJsonData passwordData;
+    
+    json->get(ssidData, "ssid");
+    json->get(passwordData, "password");
+    
+    if (ssidData.success && passwordData.success && 
+        ssidData.type == "string" && passwordData.type == "string") {
+        newSSID = ssidData.stringValue;
+        newPassword = passwordData.stringValue;
+        return (newSSID.length() > 0 && newPassword.length() > 0);
     }
-
-    Serial.println("❌ No new WiFi credentials found in Firebase");
+    
     return false;
 }
 
@@ -386,8 +534,6 @@ bool verifyOTP(String receivedOTP) {
     // Unlock sequence
     sendCommandToNano("UNLOCK");
     setLEDStatus(STATUS_UNLOCKED);
-    
-    // Visual feedback
     delay(3000);
     setColorRGB(COLOR_OFF);
     
@@ -441,65 +587,4 @@ bool isFirebaseReady() {
         return false;
     }
     return true;
-}
-
-void registerDeviceToFirestore() {
-    if (!isFirebaseReady()) {
-        Serial.println("❌ Firebase Not Ready! Skipping device registration.");
-        return;
-    }
-
-    String path = String(DEVICE_PATH) + deviceId;
-
-    FirebaseJson json;
-    FirebaseJsonData result;  // Used for checking existing data
-
-    // Read existing data first
-    if (Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
-        Serial.println("✅ Existing data found. Merging updates...");
-        json.setJsonData(fbdo.to<FirebaseJson>().raw());
-    } else {
-        Serial.println("⚠️ No existing data. Creating new entry...");
-    }
-
-    // Ensure ID is set
-    json.set("id", deviceId);
-
-    // Update lastSeen & lastUpdated timestamp
-    json.set("lastSeen", millis());
-    json.set("lastUpdated", millis());
-
-    // Ensure status object exists and only update missing values
-    FirebaseJson statusJson;
-    if (json.get(result, "status") && result.typeNum == FirebaseJson::JSON_OBJECT) {
-        statusJson.setJsonData(result.to<String>());
-    }
-    if (!statusJson.get(result, "online")) statusJson.set("online", true);
-    if (!statusJson.get(result, "locked")) statusJson.set("locked", false);
-    if (!statusJson.get(result, "secure")) statusJson.set("secure", false);
-    json.set("status", statusJson);
-
-    // Ensure registeredUsers exists
-    FirebaseJson usersJson;
-    if (!json.get(result, "registeredUsers")) {
-        json.set("registeredUsers", usersJson);
-    }
-
-    // Ensure WiFi details exist
-    FirebaseJson wifiJson;
-    if (json.get(result, "wifi") && result.typeNum == FirebaseJson::JSON_OBJECT) {
-        wifiJson.setJsonData(result.to<String>());
-    }
-    wifiJson.set("connected", WiFi.status() == WL_CONNECTED);
-    json.set("wifi", wifiJson);
-
-    // ✅ Use updateNode to prevent overwriting everything
-    if (Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
-        Serial.println("✅ Device registered/updated successfully!");
-        Serial.print("✅ Device ID: ");
-        Serial.println(deviceId);
-    } else {
-        Serial.print("❌ Failed to update device: ");
-        Serial.println(fbdo.errorReason());
-    }
 }

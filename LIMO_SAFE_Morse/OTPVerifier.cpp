@@ -4,104 +4,81 @@
 #include "RGBLed.h"
 
 bool OTPVerifier::validateFormat(const String& receivedOTP, String& userTag, String& actualOTP) {
-    Serial.print("📡 DEBUG - Raw Received OTP: ");
-    Serial.println(receivedOTP);
-
+    // Early return for invalid length
     if (receivedOTP.length() < 2) {
-        Serial.println("❌ Invalid OTP format");
+        Serial.println(F("❌ Invalid OTP format"));
         return false;
     }
-
-    userTag = receivedOTP.substring(0, 1);  // 🔍 Extract first character
-    actualOTP = receivedOTP.substring(1);   // 🔍 Extract remaining OTP
-
-    Serial.print("✅ DEBUG - Extracted User Tag: ");
-    Serial.println(userTag);
-    Serial.print("✅ DEBUG - Extracted OTP: ");
-    Serial.println(actualOTP);
-
+    
+    // Extract user tag and OTP more efficiently
+    userTag = receivedOTP.charAt(0);  // More efficient than substring(0,1)
+    actualOTP = receivedOTP.substring(1);
     return true;
 }
 
-
 bool OTPVerifier::verifyOTPCode(FirebaseData& fbdo, const String& userTag, const String& inputOTP, String& userId, String& storedOTP) {
+    // Pre-check connectivity to fail fast
+    if (WiFi.status() != WL_CONNECTED || !Firebase.ready()) {
+        Serial.println(F("❌ Network not ready for OTP verification"));
+        return false;
+    }
     
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("❌ WiFi not connected for OTP verification!");
-        return false;
-    }
-
-    // Check if Firebase is ready
-    if (!Firebase.ready()) {
-        Serial.println("❌ Firebase not ready for OTP verification!");
-        delay(500); // Small delay
-        return false;
-    }
-
-    Serial.print("📡 Querying Firebase for tag: ");
-    Serial.print("📡 DEBUG - Querying Firebase with Tag: ");
-    Serial.println(userTag);
-
+    // Build query once
     QueryFilter query;
-    query.orderBy("tag");  
-    query.equalTo(userTag);   // ✅ Force string format
-    query.limitToFirst(1);
-
-    if (!Firebase.RTDB.getJSON(&fbdo, "users", &query)) {  
-        Serial.print("❌ Firebase Query Failed: ");
+    query.orderBy("tag");
+    query.equalTo(userTag);
+    query.limitToFirst(1);  // Only need one result
+    
+    // Fetch user with optimized error handling
+    if (!Firebase.RTDB.getJSON(&fbdo, "users", &query)) {
+        Serial.print(F("❌ Firebase Query Failed: "));
         Serial.println(fbdo.errorReason());
-        
-        Serial.println("🔥 Raw Firebase Response:");
-        Serial.println(fbdo.jsonString()); // ✅ Print full JSON response for debugging
         return false;
     }
-
-    FirebaseJson json = fbdo.jsonObject();
-    FirebaseJsonData jsonData;
+    
+    // Process JSON response more efficiently
+    FirebaseJson& json = fbdo.jsonObject();
     size_t len = json.iteratorBegin();
-
+    
     if (len == 0) {
-        Serial.println("❌ No user found for this tag.");
-        Serial.println("🔥 Raw Firebase Response:");
-        Serial.println(fbdo.jsonString()); // ✅ Debugging
+        Serial.println(F("❌ No user found for this tag"));
+        json.iteratorEnd(); // Clean up iterator
         return false;
     }
-
-    // 🔹 Extract user ID
-    String key, value;
+    
+    // Extract user ID in one step
+    String key;
+    String value;
     int type = 0;
     json.iteratorGet(0, type, key, value);
-    json.iteratorEnd();
-
+    json.iteratorEnd(); // Clean up iterator immediately
+    
     userId = key;
-    Serial.print("✅ Found User ID: ");
-    Serial.println(userId);
-
-    // 🔹 Fetch OTP using user ID
-    String otpPath = "users/" + userId + "/otp/code";  
-
-    if (!Firebase.RTDB.getString(&fbdo, otpPath.c_str())) {
-        Serial.print("❌ Error fetching OTP: ");
+    
+    // Use static buffer for path to avoid String concatenation
+    char otpPath[64];
+    snprintf(otpPath, sizeof(otpPath), "users/%s/otp/code", userId.c_str());
+    
+    if (!Firebase.RTDB.getString(&fbdo, otpPath)) {
+        Serial.print(F("❌ Error fetching OTP: "));
         Serial.println(fbdo.errorReason());
         return false;
     }
-
+    
     storedOTP = fbdo.stringData();
-    Serial.print("✅ OTP Retrieved: ");
-    Serial.println(storedOTP);
-
-    // 🔹 Compare OTP
-    if (inputOTP == storedOTP) {
-        Serial.println("✅ OTP Verified Successfully!");
-        if (Firebase.RTDB.deleteNode(&fbdo, otpPath.c_str())) {
-            Serial.println("🗑️ OTP Deleted Successfully!");
-        } else {
-            Serial.print("❌ Failed to delete OTP: ");
-            Serial.println(fbdo.errorReason());
+    
+    // Compare OTP efficiently
+    if (inputOTP.equals(storedOTP)) {
+        Serial.println(F("✅ OTP Verified Successfully!"));
+        
+        // Delete the used OTP
+        if (Firebase.RTDB.deleteNode(&fbdo, otpPath)) {
+            Serial.println(F("🗑️ OTP Deleted"));
         }
+        
         return true;
-    } else {
-        Serial.println("❌ OTP Mismatch!");
-        return false;
     }
+    
+    Serial.println(F("❌ OTP Mismatch!"));
+    return false;
 }

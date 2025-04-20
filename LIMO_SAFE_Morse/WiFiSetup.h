@@ -11,10 +11,10 @@ extern Preferences wifiPrefs;
 
 // WiFi Functions
 void WiFiEventHandler(WiFiEvent_t event);
-bool setupWiFi();
+bool setupWiFi(bool fromCredentialUpdate = false);
 bool checkWiFiConnection();
 bool updateWiFiCredentials(const char* ssid, const char* password);
-void clearFlashStorage();
+void clearFlashStorage(bool skipRestart = false);
 
 // NTP Time Sync Functions
 void performTimeSync();
