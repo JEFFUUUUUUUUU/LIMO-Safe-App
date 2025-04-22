@@ -47,12 +47,19 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             }
             editor.putString(KEY_LAST_FRAGMENT, fragmentTag)
 
-            // Save dialog state if needed (handled by fragments/dialog manager)
-            // Optionally, you can trigger the fragment to save its dialog state here if needed
-            // For now, just clear dialog state (dialog state is handled in fragment SharedPreferences)
-            editor.remove(KEY_DIALOG_STATE)
+            // Save dialog state - we don't need to do anything special here
+            // because each fragment already saves its dialog state in SharedPreferences
+            // The MCFragment saves dialog state in its own SharedPreferences
+            // The MonitoringFragment does the same
+            // We just need to make sure we don't clear those preferences
+            
+            // Save that we have dialog state
+            if (currentFragment is MCFragment || currentFragment is MonitoringFragment) {
+                editor.putBoolean(KEY_DIALOG_STATE, true)
+            }
 
             editor.apply()
+            Log.d(TAG, "Saved navigation state: fragment=$fragmentTag")
         } catch (e: Exception) {
             Log.e(TAG, "Error saving navigation state: ${e.message}")
         }
@@ -61,58 +68,82 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     private fun restoreNavigationState() {
         try {
             val prefs = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
-            val lastFragment = prefs.getString(KEY_LAST_FRAGMENT, "") ?: ""
-
-            // Check if user is logged in
-            val currentUser = auth.currentUser
-
-            if (lastFragment.isNotEmpty()) {
-                when (lastFragment) {
-                    // For protected screens, only restore if user is logged in
-                    "MCFragment", "MonitoringFragment" -> {
-                        if (currentUser != null) {
-                            // User is logged in, restore the fragment
-                            val fragment = if (lastFragment == "MCFragment") MCFragment() else MonitoringFragment()
-                            if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is MCFragment &&
-                                supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is MonitoringFragment) {
-                                supportFragmentManager.beginTransaction()
-                                    .replace(R.id.fragmentContainer, fragment)
-                                    .commitAllowingStateLoss()
-                            }
-                        } else {
-                            // User is not logged in, navigate to login
-                            Log.d(TAG, "User not logged in, redirecting to login instead of $lastFragment")
-                            // Clear saved navigation state
-                            prefs.edit().remove(KEY_LAST_FRAGMENT).apply()
-                            navigateToLogin()
-                        }
-                    }
-                    // Login-related screens can be restored regardless of login state
-                    "LoginFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is LoginFragment) {
-                        supportFragmentManager.beginTransaction()
-                            .replace(R.id.fragmentContainer, LoginFragment())
-                            .commitAllowingStateLoss()
-                    }
-                    "SignUpFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is SignUpFragment) {
-                        supportFragmentManager.beginTransaction()
-                            .replace(R.id.fragmentContainer, SignUpFragment())
-                            .commitAllowingStateLoss()
-                    }
-                    "ForgotPasswordFragment" -> if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) !is ForgotPasswordFragment) {
-                        supportFragmentManager.beginTransaction()
-                            .replace(R.id.fragmentContainer, ForgotPasswordFragment())
-                            .commitAllowingStateLoss()
-                    }
-                }
-            } else if (currentUser == null) {
-                // No saved fragment and no logged in user, ensure we're at login
-                navigateToLogin()
+            val lastFragment = prefs.getString(KEY_LAST_FRAGMENT, "")
+            val hasDialogState = prefs.getBoolean(KEY_DIALOG_STATE, false)
+            
+            Log.d(TAG, "Restoring navigation state: fragment=$lastFragment, hasDialogState=$hasDialogState")
+            
+            if (lastFragment.isNullOrEmpty()) {
+                // No saved state, just return to main screen
+                showMainScreen()
+                return
             }
-            // Dialog state is handled by each fragment (see MCFragment, MonitoringFragment)
+            
+            // Make sure views are initialized
+            if (mainContent == null || fragmentContainer == null) {
+                initializeViews()
+            }
+            
+            // Update UI visibility
+            mainContent?.visibility = View.GONE
+            fragmentContainer?.visibility = View.VISIBLE
+            
+            // Clear any existing fragments first
+            supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+            
+            // Create and show the appropriate fragment
+            when (lastFragment) {
+                "MCFragment" -> {
+                    val mcFragment = MCFragment()
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.fragmentContainer, mcFragment)
+                        .commit()
+                    Log.d(TAG, "Restored MCFragment")
+                }
+                "MonitoringFragment" -> {
+                    val monitoringFragment = MonitoringFragment()
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.fragmentContainer, monitoringFragment)
+                        .commit()
+                    Log.d(TAG, "Restored MonitoringFragment")
+                }
+                "LoginFragment" -> {
+                    // If we were on login screen, just sign out and show login again
+                    auth.signOut()
+                    val loginFragment = LoginFragment()
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.fragmentContainer, loginFragment)
+                        .commit()
+                    Log.d(TAG, "Restored LoginFragment")
+                }
+                "SignUpFragment" -> {
+                    val signUpFragment = SignUpFragment()
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.fragmentContainer, signUpFragment)
+                        .commit()
+                    Log.d(TAG, "Restored SignUpFragment")
+                }
+                "ForgotPasswordFragment" -> {
+                    val forgotPasswordFragment = ForgotPasswordFragment()
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.fragmentContainer, forgotPasswordFragment)
+                        .commit()
+                    Log.d(TAG, "Restored ForgotPasswordFragment")
+                }
+                else -> {
+                    // Unknown fragment, show main screen
+                    showMainScreen()
+                    Log.d(TAG, "Unknown fragment type: $lastFragment, showing main screen")
+                }
+            }
+            
+            // Dialog state is handled by the fragments themselves in their onResume methods
+            // The fragments will check SharedPreferences and restore any open dialogs
+            
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring navigation state: ${e.message}")
-            // On error, default to login
-            navigateToLogin()
+            // Fallback to main screen in case of error
+            showMainScreen()
         }
     }
     // --- END: State Persistence for Fragment & Dialog ---
@@ -131,12 +162,21 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
         // Check if this is a fresh start (not a configuration change)
         if (savedInstanceState == null) {
-            // This is a fresh start, ensure user is logged out
-            auth.signOut()
-            clearAllPreferences()
-            // Clear navigation state
-            getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
-            Log.d(TAG, "Fresh app start: User logged out and navigation state cleared")
+            // This is a fresh start, but we don't want to log out the user or clear preferences
+            // when the app is just being restored from minimized state
+            val isRestoringFromMinimized = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+                .getBoolean("was_minimized", false)
+                
+            if (!isRestoringFromMinimized) {
+                // Only clear state on a true fresh start (not returning from minimized)
+                auth.signOut()
+                clearAllPreferences()
+                // Clear navigation state
+                getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+                Log.d(TAG, "Fresh app start: User logged out and navigation state cleared")
+            } else {
+                Log.d(TAG, "Restoring from minimized state, preserving user session")
+            }
         }
 
         // Ensure biometric authentication is disabled during splash
@@ -357,15 +397,42 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
 
     override fun onResume() {
         super.onResume()
-        // Only check initial state when first launching the app
-        if (supportFragmentManager.backStackEntryCount == 0) {
+        
+        // Check if we're restoring from minimized state
+        val wasMinimized = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            .getBoolean("was_minimized", false)
+            
+        if (wasMinimized) {
+            // We're returning from minimized state, restore navigation
+            Log.d(TAG, "App resumed from minimized state, restoring navigation")
+            
+            // Restore the navigation state (fragment and dialog)
+            restoreNavigationState()
+            
+            // Reset the minimized flag
+            getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("was_minimized", false)
+                .apply()
+        } else if (supportFragmentManager.backStackEntryCount == 0) {
+            // Only check initial state when first launching the app and not restoring
             checkInitialState()
         }
     }
 
     override fun onPause() {
         super.onPause()
-        // Save any necessary state
+        
+        // Save the current state when app is minimized
+        saveNavigationState()
+        
+        // Mark that the app was minimized so we can restore properly
+        getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("was_minimized", true)
+            .apply()
+            
+        Log.d(TAG, "App paused, state saved")
     }
 
     override fun onDestroy() {

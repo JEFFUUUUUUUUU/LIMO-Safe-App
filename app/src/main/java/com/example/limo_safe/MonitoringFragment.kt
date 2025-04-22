@@ -236,26 +236,10 @@ class MonitoringFragment : Fragment() {
             }
         })
 
-        // Setup back button with consistent behavior
-        backButton.setOnClickListener {
-            try {
-                // Remove all listeners first
-                removeAllListeners()
-
-                // Get main activity and update session safely
-                if (isAdded && activity != null && !requireActivity().isFinishing) {
-                    // Use proper fragment transaction with animations
-                    parentFragmentManager.popBackStack()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                try {
-                    Toast.makeText(context, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
-                } catch (e2: Exception) {
-                    e2.printStackTrace()
-                }
-            }
-        }
+        // Setup back button with consistent behavior that always navigates to MCFragment
+        setupBackButton()
+        
+        // No need to restore back button state here as setupBackButton handles it directly
 
         return view
     }
@@ -418,23 +402,228 @@ class MonitoringFragment : Fragment() {
         })
     }
 
+    // SharedPreferences keys for dialog state and navigation state
+    companion object {
+        private const val DIALOG_PREFS = "monitoring_dialog_prefs"
+        private const val ADD_USER_DIALOG_OPEN = "add_user_dialog_open"
+        private const val EDIT_PERMISSIONS_DIALOG_OPEN = "edit_permissions_dialog_open"
+        private const val CURRENT_DEVICE_ID = "current_device_id"
+        private const val CURRENT_USER_EMAIL = "current_user_email"
+        private const val CURRENT_USER_ROLE = "current_user_role"
+        private const val BACK_BUTTON_STATE = "back_button_state"
+        private const val BACK_BUTTON_ENABLED = "back_button_enabled"
+
+        // Factory method from the second companion object
+        fun newInstance(): MonitoringFragment {
+            return MonitoringFragment()
+        }
+    }
+
     override fun onPause() {
         super.onPause()
-        removeAllListeners()
+
+        try {
+            // Save dialog state before removing listeners
+            saveDialogState()
+            // Save back button state
+            saveBackButtonState()
+            Log.d("MonitoringFragment", "onPause: Saved dialog and back button state")
+
+            // Remove listeners to prevent memory leaks
+            removeAllListeners()
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error in onPause: ${e.message}")
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        // Reset session timeout and update activity
 
-        // Re-fetch data if needed
-        fetchUserDevices()
+        try {
+            // Re-fetch data first to ensure we have the latest data
+            fetchUserDevices()
+
+            // Restore dialog state if needed
+            restoreDialogState()
+            // Always setup the back button on resume to ensure it works
+            setupBackButton()
+            Log.d("MonitoringFragment", "onResume: Restored dialog state and setup back button")
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error in onResume: ${e.message}")
+        }
+    }
+
+    /**
+     * Save the current dialog state to SharedPreferences
+     * This ensures dialogs can be restored when returning from minimized state
+     */
+    private fun saveDialogState() {
+        val prefs = requireContext().getSharedPreferences(DIALOG_PREFS, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+
+        // Check if any dialogs are currently showing
+        val isAddUserDialogOpen = dialogManager.isDialogShowing("add_user_dialog")
+        val isEditPermissionsDialogOpen = dialogManager.isDialogShowing("edit_permissions_dialog")
+
+        // Save dialog states
+        editor.putBoolean(ADD_USER_DIALOG_OPEN, isAddUserDialogOpen)
+        editor.putBoolean(EDIT_PERMISSIONS_DIALOG_OPEN, isEditPermissionsDialogOpen)
+
+        // Save current device ID and user info if available
+        val currentDeviceId = dialogManager.getDialogTag()?.split(":")?.firstOrNull() ?: ""
+        editor.putString(CURRENT_DEVICE_ID, currentDeviceId)
+
+        // If we have user info in the dialog, save it
+        val userEmail = dialogManager.getDialogData("user_email") as? String ?: ""
+        val userRole = dialogManager.getDialogData("user_role") as? String ?: ""
+        editor.putString(CURRENT_USER_EMAIL, userEmail)
+        editor.putString(CURRENT_USER_ROLE, userRole)
+
+        editor.apply()
+    }
+
+    /**
+     * Restore dialog state from SharedPreferences
+     */
+    private fun restoreDialogState() {
+        val prefs = requireContext().getSharedPreferences(DIALOG_PREFS, Context.MODE_PRIVATE)
+
+        // Check which dialog was open
+        val wasAddUserDialogOpen = prefs.getBoolean(ADD_USER_DIALOG_OPEN, false)
+        val wasEditPermissionsDialogOpen = prefs.getBoolean(EDIT_PERMISSIONS_DIALOG_OPEN, false)
+        val deviceId = prefs.getString(CURRENT_DEVICE_ID, "") ?: ""
+
+        // Only restore if we have a valid device ID
+        if (deviceId.isNotEmpty()) {
+            if (wasAddUserDialogOpen) {
+                // Restore add user dialog
+                Handler(Looper.getMainLooper()).postDelayed({
+                    showAddUserDialog(deviceId)
+                }, 500) // Small delay to ensure UI is ready
+            } else if (wasEditPermissionsDialogOpen) {
+                // Restore edit permissions dialog
+                val userEmail = prefs.getString(CURRENT_USER_EMAIL, "") ?: ""
+                val userRole = prefs.getString(CURRENT_USER_ROLE, "") ?: ""
+
+                if (userEmail.isNotEmpty()) {
+                    // Create UserInfo object
+                    val userInfo = UserInfo(email = userEmail, role = userRole)
+
+                    // Restore dialog with small delay
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (userRole == "user") {
+                            promoteUser(deviceId, userInfo)
+                        } else {
+                            demoteUser(deviceId, userInfo)
+                        }
+                    }, 500) // Small delay to ensure UI is ready
+                }
+            }
+
+            // Don't clear dialog state here - we'll clear it after restoring back button state
+            // to avoid race conditions
+        }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         // Clean up all listeners
         removeAllListeners()
+    }
+    
+    /**
+     * Sets up the back button to always navigate to MCFragment
+     * This is a more direct approach that doesn't rely on fragment back stack
+     */
+    private fun setupBackButton() {
+        try {
+            // Ensure back button is visible and enabled
+            backButton.visibility = View.VISIBLE
+            backButton.isEnabled = true
+            
+            // Set up the click listener to directly navigate to MCFragment
+            backButton.setOnClickListener {
+                try {
+                    // Remove all listeners first to prevent memory leaks
+                    removeAllListeners()
+                    
+                    // Get main activity and navigate safely
+                    val mainActivity = activity as? MainActivity
+                    if (mainActivity != null && isAdded && !mainActivity.isFinishing) {
+                        // Create a new MCFragment
+                        val mcFragment = MCFragment.newInstance()
+                        
+                        // Replace current fragment with MCFragment
+                        mainActivity.supportFragmentManager.beginTransaction()
+                            .setCustomAnimations(
+                                android.R.anim.fade_in,
+                                android.R.anim.fade_out
+                            )
+                            .replace(R.id.fragmentContainer, mcFragment)
+                            .commit()
+                        
+                        Log.d("MonitoringFragment", "Navigated to MCFragment via back button")
+                    } else {
+                        Log.e("MonitoringFragment", "MainActivity is null or finishing")
+                        Toast.makeText(context, "Cannot navigate back at this time", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e("MonitoringFragment", "Error navigating to MCFragment: ${e.message}")
+                    e.printStackTrace()
+                    try {
+                        Toast.makeText(context, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    } catch (e2: Exception) {
+                        e2.printStackTrace()
+                    }
+                }
+            }
+            
+            Log.d("MonitoringFragment", "Back button setup completed")
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error setting up back button: ${e.message}")
+        }
+    }
+    
+    /**
+     * Save the back button state to SharedPreferences
+     * This ensures back button functionality is preserved when returning from minimized state
+     */
+    private fun saveBackButtonState() {
+        try {
+            val prefs = requireContext().getSharedPreferences(DIALOG_PREFS, Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            
+            // Save back button state - we want to ensure it's enabled when we restore
+            editor.putBoolean(BACK_BUTTON_ENABLED, true)
+            
+            editor.apply()
+            Log.d("MonitoringFragment", "Back button state saved")
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error saving back button state: ${e.message}")
+        }
+    }
+    
+    /**
+     * Restore back button state from SharedPreferences
+     */
+    private fun restoreBackButtonState() {
+        try {
+            val prefs = requireContext().getSharedPreferences(DIALOG_PREFS, Context.MODE_PRIVATE)
+            
+            // Check if back button was enabled
+            val backButtonEnabled = prefs.getBoolean(BACK_BUTTON_ENABLED, false)
+            
+            if (backButtonEnabled) {
+                // Setup the back button again to ensure it works
+                setupBackButton()
+                Log.d("MonitoringFragment", "Back button state restored")
+            }
+            
+            // Now clear all dialog and back button state
+            prefs.edit().clear().apply()
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error restoring back button state: ${e.message}")
+        }
     }
 
     private fun removeAllListeners() {
@@ -1059,288 +1248,324 @@ class MonitoringFragment : Fragment() {
         dialog.show()
     }
 
-    companion object {
-        fun newInstance(): MonitoringFragment {
-            return MonitoringFragment()
-        }
-    }
-}
-
-data class Device(
-    val id: String,
-    val name: String,
-    val isOnline: Boolean,
-    val isLocked: Boolean,
-    val isSecure: Boolean,
-    val users: List<UserInfo>
-)
-
-data class UserInfo(
-    val email: String,
-    val role: String
-)
-
-// DeviceAdapter also needs to be updated to handle the callbacks
-class DeviceAdapter(
-    private val devices: List<Device>,
-    private val onUserAdded: (String, String) -> Unit,
-    private val onUserDeleted: (String, UserInfo) -> Unit,
-    private val onUserPromoted: (String, UserInfo) -> Unit,
-    private val onUserDemoted: (String, UserInfo) -> Unit,
-    private val onWifiClicked: (String) -> Unit,
-    private val context: Context,
-
-    ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
-
-    inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
-        val deviceHeader: LinearLayout = itemView.findViewById(R.id.deviceHeader)
-        val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
-        val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
-        val expandableContent: LinearLayout = itemView.findViewById(R.id.expandableContent)
-        val onlineStatusText: TextView = itemView.findViewById(R.id.onlineStatusText)
-        val lockStatusText: TextView = itemView.findViewById(R.id.lockStatusText)
-        val secureStatusText: TextView = itemView.findViewById(R.id.secureStatusText)
-        val usersContainer: LinearLayout = itemView.findViewById(R.id.usersContainer)
-        val addUserButton: ImageButton = itemView.findViewById(R.id.addUserButton)
-        val wifiButton: ImageButton = itemView.findViewById(R.id.wifiButton)
-        val fingerprintButton: ImageButton = itemView.findViewById(R.id.fingerprintButton)
-
-        init {
-            deviceHeader.setOnClickListener {
-                expandableContent.visibility = if (expandableContent.visibility == View.VISIBLE) {
-                    expandIcon.rotation = 0f
-                    View.GONE
-                } else {
-                    expandIcon.rotation = 180f
-                    View.VISIBLE
-                }
-            }
-
-            addUserButton.setOnClickListener {
-                val position = adapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    showAddUserDialog(itemView, position)
-                }
-            }
-
-            wifiButton.setOnClickListener {
-                val position = adapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    onWifiClicked(devices[position].id)
-                }
-            }
-
-            // In the DeviceViewHolder inner class init block
-            fingerprintButton.setOnClickListener {
-                val position = adapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    val deviceId = devices[position].id
-
-                    // Get the current user's ID
-                    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return@setOnClickListener
-
-                    // Update Firebase with the current user ID for enrollment
-                    FirebaseDatabase.getInstance().reference
-                        .child("devices").child(deviceId).child("fingerprint")
-                        .child(currentUserId).setValue("enroll")
-                        .addOnSuccessListener {
-                            // Show toast notification
-                            Toast.makeText(context, "Enrolling Fingerprint", Toast.LENGTH_SHORT).show()
-                        }
-                        .addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to enroll fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                }
-            }
-        }
-    }
-
-    private fun showAddUserDialog(view: View, position: Int) {
-        val deviceId = devices[position].id
-        val context = view.context
-
-        val dialog = Dialog(context) // Ensures a non-null context
-        dialog.setContentView(R.layout.dialog_add_user)
-        dialog.setCancelable(true)
-
-        val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
-        val addButton = dialog.findViewById<Button>(R.id.addButton)
-        val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
-
-        addButton?.setOnClickListener {
-
-            val email = emailInput?.text.toString().trim()
-            if (email.isNotEmpty()) {
-                onUserAdded(deviceId, email)
-                dialog.dismiss()
-            } else {
-                Toast.makeText(context, "Please enter an email", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        cancelButton?.setOnClickListener {
-
-            dialog.dismiss()
-        }
-
-        // Simple touch listener (no session management)
-        dialog.window?.decorView?.setOnTouchListener { _, _ -> false }
-
-        dialog.show()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DeviceViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_device, parent, false)
-        return DeviceViewHolder(view)
-    }
-
-    override fun getItemCount() = devices.size
-
-    override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
+    /**
+     * Shows the add user dialog for a specific device
+     * @param deviceId The ID of the device to add a user to
+     */
+    private fun showAddUserDialog(deviceId: String) {
         try {
-            if (position >= 0 && position < devices.size) {
-                val device = devices[position]
-                holder.deviceNameText.text = device.name ?: "Unknown Device"
+            val dialog = Dialog(requireContext())
+            dialog.setContentView(R.layout.dialog_add_user)
+            dialog.setCancelable(true)
 
-                // Set status texts with null safety
-                holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
-                try {
-                    holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
-                } catch (e: Exception) {
-                    e.printStackTrace()
+            // Tag this dialog for state tracking
+            dialogManager.setDialogData("device_id", deviceId)
+
+            val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
+            val addButton = dialog.findViewById<Button>(R.id.addButton)
+            val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+            addButton?.setOnClickListener {
+                val email = emailInput?.text.toString().trim()
+                if (email.isNotEmpty()) {
+                    addUserToDevice(deviceId, email)
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(requireContext(), "Please enter an email", Toast.LENGTH_SHORT).show()
                 }
+            }
 
-                holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
-                try {
-                    holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            cancelButton?.setOnClickListener {
+                dialog.dismiss()
+            }
 
-                holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
-                try {
-                    holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            dialog.show()
 
-                // Update WiFi button color based on connection status - safely
-                var isConnected = false
-                try {
-                    val activity = holder.itemView.context as? FragmentActivity
-                    if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
-                        val fragment = activity.supportFragmentManager.fragments.firstOrNull { it is MonitoringFragment }
-                        if (fragment != null && fragment.isAdded) {
-                            isConnected = (fragment as MonitoringFragment).isDeviceConnected(device)
-                        }
+            // Store dialog in DialogManager for state tracking
+            dialogManager.setDialogData("add_user_dialog", true)
+
+        } catch (e: Exception) {
+            Log.e("MonitoringFragment", "Error showing add user dialog: ${e.message}")
+            Toast.makeText(requireContext(), "Error showing dialog", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    data class Device(
+        val id: String,
+        val name: String,
+        val isOnline: Boolean,
+        val isLocked: Boolean,
+        val isSecure: Boolean,
+        val users: List<UserInfo>
+    )
+
+    data class UserInfo(
+        val email: String,
+        val role: String
+    )
+
+    // DeviceAdapter also needs to be updated to handle the callbacks
+    class DeviceAdapter(
+        private val devices: List<Device>,
+        private val onUserAdded: (String, String) -> Unit,
+        private val onUserDeleted: (String, UserInfo) -> Unit,
+        private val onUserPromoted: (String, UserInfo) -> Unit,
+        private val onUserDemoted: (String, UserInfo) -> Unit,
+        private val onWifiClicked: (String) -> Unit,
+        private val context: Context,
+
+        ) : RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder>() {
+
+        inner class DeviceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val deviceContainer: LinearLayout = itemView.findViewById(R.id.deviceContainer)
+            val deviceHeader: LinearLayout = itemView.findViewById(R.id.deviceHeader)
+            val deviceNameText: TextView = itemView.findViewById(R.id.deviceNameText)
+            val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
+            val expandableContent: LinearLayout = itemView.findViewById(R.id.expandableContent)
+            val onlineStatusText: TextView = itemView.findViewById(R.id.onlineStatusText)
+            val lockStatusText: TextView = itemView.findViewById(R.id.lockStatusText)
+            val secureStatusText: TextView = itemView.findViewById(R.id.secureStatusText)
+            val usersContainer: LinearLayout = itemView.findViewById(R.id.usersContainer)
+            val addUserButton: ImageButton = itemView.findViewById(R.id.addUserButton)
+            val wifiButton: ImageButton = itemView.findViewById(R.id.wifiButton)
+            val fingerprintButton: ImageButton = itemView.findViewById(R.id.fingerprintButton)
+
+            init {
+                deviceHeader.setOnClickListener {
+                    expandableContent.visibility = if (expandableContent.visibility == View.VISIBLE) {
+                        expandIcon.rotation = 0f
+                        View.GONE
+                    } else {
+                        expandIcon.rotation = 180f
+                        View.VISIBLE
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
 
-                try {
-                    holder.wifiButton.setColorFilter(
-                        holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                addUserButton.setOnClickListener {
+                    val position = adapterPosition
+                    if (position != RecyclerView.NO_POSITION) {
+                        showAddUserDialog(itemView, position)
+                    }
                 }
 
-                // Clear previous users
-                try {
-                    holder.usersContainer.removeAllViews()
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                wifiButton.setOnClickListener {
+                    val position = adapterPosition
+                    if (position != RecyclerView.NO_POSITION) {
+                        onWifiClicked(devices[position].id)
+                    }
                 }
 
-                // Add user views safely
-                device.users.forEach { userInfo ->
-                    try {
-                        val userView = LayoutInflater.from(holder.itemView.context)
-                            .inflate(R.layout.item_user, holder.usersContainer, false)
+                // In the DeviceViewHolder inner class init block
+                fingerprintButton.setOnClickListener {
+                    val position = adapterPosition
+                    if (position != RecyclerView.NO_POSITION) {
+                        val deviceId = devices[position].id
 
-                        val userText = userView.findViewById<TextView>(R.id.userText)
-                        val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
+                        // Get the current user's ID
+                        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return@setOnClickListener
 
-                        userText.text = "• ${userInfo.email ?: "Unknown User"}"
-                        userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
-
-                        userOptionsButton.setOnClickListener {
-                            try {
-                                showUserOptionsMenu(it, device.id, userInfo)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                        // Update Firebase with the current user ID for enrollment
+                        FirebaseDatabase.getInstance().reference
+                            .child("devices").child(deviceId).child("fingerprint")
+                            .child(currentUserId).setValue("enroll")
+                            .addOnSuccessListener {
+                                // Show toast notification
+                                Toast.makeText(context, "Enrolling Fingerprint", Toast.LENGTH_SHORT).show()
                             }
-                        }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "Failed to enroll fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                }
+            }
+        }
 
-                        holder.usersContainer.addView(userView)
+        private fun showAddUserDialog(view: View, position: Int) {
+            val deviceId = devices[position].id
+            val context = view.context
+
+            val dialog = Dialog(context) // Ensures a non-null context
+            dialog.setContentView(R.layout.dialog_add_user)
+            dialog.setCancelable(true)
+
+            val emailInput = dialog.findViewById<EditText>(R.id.emailInput)
+            val addButton = dialog.findViewById<Button>(R.id.addButton)
+            val cancelButton = dialog.findViewById<Button>(R.id.cancelButton)
+
+            addButton?.setOnClickListener {
+
+                val email = emailInput?.text.toString().trim()
+                if (email.isNotEmpty()) {
+                    onUserAdded(deviceId, email)
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(context, "Please enter an email", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            cancelButton?.setOnClickListener {
+
+                dialog.dismiss()
+            }
+
+            // Simple touch listener (no session management)
+            dialog.window?.decorView?.setOnTouchListener { _, _ -> false }
+
+            dialog.show()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DeviceViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_device, parent, false)
+            return DeviceViewHolder(view)
+        }
+
+        override fun getItemCount() = devices.size
+
+        override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
+            try {
+                if (position >= 0 && position < devices.size) {
+                    val device = devices[position]
+                    holder.deviceNameText.text = device.name ?: "Unknown Device"
+
+                    // Set status texts with null safety
+                    holder.onlineStatusText.text = "• ${if (device.isOnline) "Online" else "Offline"}"
+                    try {
+                        holder.onlineStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isOnline) android.R.color.holo_green_dark else R.color.maroon))
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
 
-    private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
-        try {
-            val context = view.context ?: return
+                    holder.lockStatusText.text = "• ${if (device.isLocked) "Locked" else "Unlocked"}"
+                    try {
+                        holder.lockStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isLocked) android.R.color.holo_green_dark else R.color.maroon))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
 
-            val popupMenu = PopupMenu(context, view).apply {
-                try {
-                    inflate(R.menu.user_options_menu)
+                    holder.secureStatusText.text = "• ${if (device.isSecure) "Secure" else "Tamper Detected"}"
+                    try {
+                        holder.secureStatusText.setTextColor(holder.itemView.context.resources.getColor(if (device.isSecure) android.R.color.holo_green_dark else R.color.maroon))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
 
-                    // Set text color for all menu items
-                    for (i in 0 until menu.size()) {
+                    // Update WiFi button color based on connection status - safely
+                    var isConnected = false
+                    try {
+                        val activity = holder.itemView.context as? FragmentActivity
+                        if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                            val fragment = activity.supportFragmentManager.fragments.firstOrNull { it is MonitoringFragment }
+                            if (fragment != null && fragment.isAdded) {
+                                isConnected = (fragment as MonitoringFragment).isDeviceConnected(device)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    try {
+                        holder.wifiButton.setColorFilter(
+                            holder.itemView.context.resources.getColor(if (isConnected) android.R.color.holo_green_light else android.R.color.white)
+                        )
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    // Clear previous users
+                    try {
+                        holder.usersContainer.removeAllViews()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    // Add user views safely
+                    device.users.forEach { userInfo ->
                         try {
-                            val item = menu.getItem(i)
-                            val spanString = android.text.SpannableString(item.title.toString())
-                            spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
-                            item.title = spanString
+                            val userView = LayoutInflater.from(holder.itemView.context)
+                                .inflate(R.layout.item_user, holder.usersContainer, false)
+
+                            val userText = userView.findViewById<TextView>(R.id.userText)
+                            val userOptionsButton = userView.findViewById<ImageButton>(R.id.userOptionsButton)
+
+                            userText.text = "• ${userInfo.email ?: "Unknown User"}"
+                            userText.setTextColor(holder.itemView.context.resources.getColor(R.color.maroon))
+
+                            userOptionsButton.setOnClickListener {
+                                try {
+                                    showUserOptionsMenu(it, device.id, userInfo)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+
+                            holder.usersContainer.addView(userView)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
-            }
-
-            // Add touch listener for session activity
-            popupMenu.setOnMenuItemClickListener { item ->
-                try {
-                    when (item.itemId) {
-                        R.id.action_delete_user -> {
-                            onUserDeleted(deviceId, userInfo)
-                            true
-                        }
-                        R.id.action_promote_user -> {
-                            onUserPromoted(deviceId, userInfo)
-                            true
-                        }
-                        R.id.action_demote_user -> {
-                            onUserDemoted(deviceId, userInfo)
-                            true
-                        }
-                        else -> false
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    false
-                }
-            }
-
-            try {
-                popupMenu.show()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        }
+
+        private fun showUserOptionsMenu(view: View, deviceId: String, userInfo: UserInfo) {
+            try {
+                val context = view.context ?: return
+
+                val popupMenu = PopupMenu(context, view).apply {
+                    try {
+                        inflate(R.menu.user_options_menu)
+
+                        // Set text color for all menu items
+                        for (i in 0 until menu.size()) {
+                            try {
+                                val item = menu.getItem(i)
+                                val spanString = android.text.SpannableString(item.title.toString())
+                                spanString.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#800000")), 0, spanString.length, 0)
+                                item.title = spanString
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Add touch listener for session activity
+                popupMenu.setOnMenuItemClickListener { item ->
+                    try {
+                        when (item.itemId) {
+                            R.id.action_delete_user -> {
+                                onUserDeleted(deviceId, userInfo)
+                                true
+                            }
+                            R.id.action_promote_user -> {
+                                onUserPromoted(deviceId, userInfo)
+                                true
+                            }
+                            R.id.action_demote_user -> {
+                                onUserDemoted(deviceId, userInfo)
+                                true
+                            }
+                            else -> false
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        false
+                    }
+                }
+
+                try {
+                    popupMenu.show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }
