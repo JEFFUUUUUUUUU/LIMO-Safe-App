@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -31,6 +32,8 @@ class DialogManager(private val context: Context) {
             }
             activeDialog = null
             triesTextView = null  // Added from the removed duplicate method
+            // We don't cancel any timers here - MCFragment handles all timers
+            // This ensures the timer continues even if the dialog is closed and reopened
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -52,9 +55,11 @@ class DialogManager(private val context: Context) {
         code: String,
         remainingTries: Int,
         remainingCooldown: Long = 0,
-        onPlayClick: (Button, TextView) -> Unit
+        onPlayClick: (Button, TextView) -> Unit,
+        onExpire: () -> Unit = {},
+        remainingExpirationTime: Long = 50000 // Default 50 seconds if not specified
     ): androidx.appcompat.app.AlertDialog {
-        val dialog = createMorseCodeDialogInternal(code, remainingTries, remainingCooldown, onPlayClick)
+        val dialog = createMorseCodeDialogInternal(code, remainingTries, remainingCooldown, onPlayClick, onExpire, remainingExpirationTime)
         setupDialogTouchListener(dialog)
         activeDialog = dialog
         return dialog
@@ -64,7 +69,9 @@ class DialogManager(private val context: Context) {
         code: String,
         remainingTries: Int,
         remainingCooldown: Long = 0,
-        onPlayClick: (Button, TextView) -> Unit
+        onPlayClick: (Button, TextView) -> Unit,
+        onExpire: () -> Unit = {},
+        remainingExpirationTime: Long = 50000 // Default 50 seconds if not specified
     ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
         setupTouchListener(dialogView)
@@ -74,10 +81,14 @@ class DialogManager(private val context: Context) {
         val cooldownText = dialogView.findViewById<TextView>(R.id.cooldownText)
         val playButton = dialogView.findViewById<Button>(R.id.playButton)
         val closeButton = dialogView.findViewById<Button>(R.id.closeButton)
+        val titleText = dialogView.findViewById<TextView>(R.id.dialogTitle)
 
         codeDisplayText.text = code
         triesText.text = "Remaining tries: $remainingTries"
         this.triesTextView = triesText
+
+        // Set the initial title - the MCFragment will handle updating it
+        titleText.text = "Play Morse Code"
 
         if (remainingCooldown > 0) {
             // Calculate seconds remaining (round up to ensure we don't show 0 when there's still time)
@@ -98,6 +109,12 @@ class DialogManager(private val context: Context) {
         }
 
         closeButton.setOnClickListener {
+            // Cancel the expiration timer when dialog is closed manually
+            val tagArray = dialogView.tag as? Array<*>
+            tagArray?.let {
+                (it[0] as? CountDownTimer)?.cancel()
+                (it[1] as? Handler)?.removeCallbacks(it[2] as Runnable)
+            }
             dismissActiveDialog()
         }
 
@@ -356,6 +373,57 @@ class DialogManager(private val context: Context) {
         return dialog
     }
 
+    fun showCodeExpiredDialog(expiredCode: String, onConfirm: () -> Unit) {
+        try {
+            // Dismiss any active dialog first
+            dismissActiveDialog()
+            
+            val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_code_expired, null)
+            setupTouchListener(dialogView)
+            
+            // Set the expired code text
+            val expiredCodeText = dialogView.findViewById<TextView>(R.id.expiredCodeText)
+            expiredCodeText.text = expiredCode
+            
+            val okButton = dialogView.findViewById<Button>(R.id.okButton)
+            
+            okButton.setOnClickListener {
+                dismissActiveDialog()
+                onConfirm()
+            }
+            
+            val builder = androidx.appcompat.app.AlertDialog.Builder(context)
+                .setView(dialogView)
+                .setCancelable(false)
+                
+            val dialog = builder.create()
+            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setupDialogTouchListener(dialog)
+            activeDialog = dialog
+            dialog.show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback to standard dialog if custom one fails
+            val fallbackDialog = androidx.appcompat.app.AlertDialog.Builder(context)
+                .setTitle("Code Expired")
+                .setMessage("Your Morse code session has expired. Code: $expiredCode")
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                    onConfirm()
+                }
+                .setCancelable(false)
+                .create()
+            setupDialogTouchListener(fallbackDialog)
+            activeDialog = fallbackDialog
+            fallbackDialog.show()
+        }
+    }
+    
+    // Overload for backward compatibility
+    fun showCodeExpiredDialog(onConfirm: () -> Unit) {
+        showCodeExpiredDialog("", onConfirm)
+    }
+    
     companion object {
         fun createLoadingDialog(context: Context): androidx.appcompat.app.AlertDialog {
             return DialogManager(context).createLoadingDialog()
