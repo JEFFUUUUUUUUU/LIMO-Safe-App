@@ -418,10 +418,10 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             .setPositiveButton("Yes") { _, _ ->
                 // Log out user completely
                 auth.signOut()
-                
+
                 // Clear all preferences
                 clearAllPreferences()
-                
+
                 // Clear navigation state to prevent auto-redirect on app restart
                 getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
 

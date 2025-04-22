@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Are you sure you want to log out?"
+        android:text="Are you sure you want to exit the app?"
         android:textSize="18sp"
         android:textColor="@color/maroon"
         android:layout_marginBottom="32dp"

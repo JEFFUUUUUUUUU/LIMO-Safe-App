@@ -69,6 +69,7 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="2dp"
         android:text="account."
+        android:textStyle="bold"
         android:textColor="#000000"
         android:textSize="13sp" />
 
@@ -86,7 +87,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Set Up Biometric"
-        android:textColor="#800000"
+        android:textColor="@android:color/white"
         android:background="#800000"
         android:drawableStart="@android:drawable/ic_lock_lock"
         android:drawablePadding="8dp"
@@ -102,7 +103,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Log out"
-        android:textColor="#800000"
+        android:textColor="@android:color/white"
         android:background="#FFA500"
         android:elevation="2dp"
         android:layout_marginBottom="8dp"

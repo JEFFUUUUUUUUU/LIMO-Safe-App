@@ -325,13 +325,13 @@ class LoginFragment : Fragment() {
     private fun isFirstLoginAfterVerification(email: String): Boolean {
         // Check if we've recorded this user as having logged in before
         val hasLoggedInBefore = sharedPreferences.getBoolean("user_logged_in_$email", false)
-        
+
         // If they haven't logged in before, mark them as having logged in now
         if (!hasLoggedInBefore) {
             sharedPreferences.edit().putBoolean("user_logged_in_$email", true).apply()
             return true
         }
-        
+
         return false
     }
 

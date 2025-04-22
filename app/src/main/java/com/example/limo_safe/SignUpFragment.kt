@@ -111,7 +111,7 @@ class SignUpFragment : Fragment() {
                 }
                 return@verifyEmailExists
             }
-            
+
             // Continue with Firebase check if email exists
             activity?.runOnUiThread {
                 // Check if the email is already registered with Firebase
@@ -166,10 +166,10 @@ class SignUpFragment : Fragment() {
         try {
             // Extract domain from email
             val domain = email.substring(email.indexOf('@') + 1)
-            
+
             // Check if the domain is a common email provider
             val commonEmailDomains = listOf(
-                "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", 
+                "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
                 "icloud.com", "aol.com", "protonmail.com", "mail.com",
                 "zoho.com", "yandex.com", "gmx.com", "live.com",
                 "msn.com", "yahoo.co.uk", "yahoo.co.jp", "yahoo.co.in",
@@ -177,19 +177,19 @@ class SignUpFragment : Fragment() {
                 "daum.net", "mail.ru", "web.de", "t-online.de",
                 "comcast.net", "verizon.net", "att.net", "sbcglobal.net"
             )
-            
+
             if (commonEmailDomains.contains(domain.toLowerCase())) {
                 // If it's a common email domain, consider it valid
                 return true
             }
-            
+
             // For non-common domains, check if the domain has a valid format
             val domainPattern = Patterns.DOMAIN_NAME
             if (domainPattern.matcher(domain).matches()) {
                 // If the domain format is valid, consider it potentially valid
                 return true
             }
-            
+
             // If we get here, the domain doesn't match common patterns
             return false
         } catch (e: Exception) {
@@ -197,7 +197,7 @@ class SignUpFragment : Fragment() {
             return false
         }
     }
-    
+
     /**
      * Verify if an email actually exists using a third-party API
      * This makes a network request to check if the email exists on a mail server
@@ -213,17 +213,17 @@ class SignUpFragment : Fragment() {
                     }
                     return@thread
                 }
-                
+
                 val username = parts[0]
                 val domain = parts[1].toLowerCase()
-                
+
                 // Check for common non-existent email patterns
                 val commonFakeUsernames = listOf(
                     "test", "user", "example", "sample", "fake", "demo", "noreply", "no-reply",
                     "admin", "info", "support", "help", "mail", "email", "webmaster", "postmaster",
                     "hostmaster", "abuse", "security", "spam", "contact", "feedback", "sales", "marketing"
                 )
-                
+
                 // If it's a common test username with a common domain, reject it
                 if (domain == "gmail.com" || domain == "yahoo.com" || domain == "hotmail.com" || domain == "outlook.com") {
                     if (commonFakeUsernames.any { username.contains(it, ignoreCase = true) }) {
@@ -232,7 +232,7 @@ class SignUpFragment : Fragment() {
                         }
                         return@thread
                     }
-                    
+
                     // Gmail-specific validation
                     if (domain == "gmail.com") {
                         // Gmail usernames must be between 6-30 characters
@@ -242,7 +242,7 @@ class SignUpFragment : Fragment() {
                             }
                             return@thread
                         }
-                        
+
                         // Gmail doesn't allow consecutive dots
                         if (username.contains("..")) {
                             activity?.runOnUiThread {
@@ -250,7 +250,7 @@ class SignUpFragment : Fragment() {
                             }
                             return@thread
                         }
-                        
+
                         // Gmail only allows letters, numbers, dots, and some special characters
                         val validGmailPattern = "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+$"
                         if (!username.matches(Regex(validGmailPattern))) {
@@ -261,7 +261,7 @@ class SignUpFragment : Fragment() {
                         }
                     }
                 }
-                
+
                 // Perform DNS MX record lookup to verify domain has mail servers
                 val dnsResult = performDNSLookup(domain)
                 if (!dnsResult) {
@@ -270,7 +270,7 @@ class SignUpFragment : Fragment() {
                     }
                     return@thread
                 }
-                
+
                 // If we reach here, the email passed all our checks
                 activity?.runOnUiThread {
                     callback(true, null)
@@ -284,7 +284,7 @@ class SignUpFragment : Fragment() {
             }
         }
     }
-    
+
     /**
      * Perform a DNS lookup to check if the domain has MX records (mail servers)
      */
@@ -292,7 +292,7 @@ class SignUpFragment : Fragment() {
         return try {
             // For common email providers, we know they have mail servers
             val commonEmailDomains = listOf(
-                "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", 
+                "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
                 "icloud.com", "aol.com", "protonmail.com", "mail.com",
                 "zoho.com", "yandex.com", "gmx.com", "live.com",
                 "msn.com", "yahoo.co.uk", "yahoo.co.jp", "yahoo.co.in",
@@ -300,11 +300,11 @@ class SignUpFragment : Fragment() {
                 "daum.net", "mail.ru", "web.de", "t-online.de",
                 "comcast.net", "verizon.net", "att.net", "sbcglobal.net"
             )
-            
+
             if (commonEmailDomains.contains(domain.toLowerCase())) {
                 return true
             }
-            
+
             // For other domains, use Java's built-in DNS lookup
             val records = java.net.InetAddress.getAllByName(domain)
             records.isNotEmpty()
@@ -325,7 +325,7 @@ class SignUpFragment : Fragment() {
             }
             .setCancelable(false)
             .create()
-        
+
         dialog.show()
     }
 

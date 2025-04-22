@@ -82,7 +82,7 @@ class DialogManager(private val context: Context) {
         if (remainingCooldown > 0) {
             // Calculate seconds remaining (round up to ensure we don't show 0 when there's still time)
             val seconds = (remainingCooldown + 999) / 1000
-            
+
             // Only update button text with cooldown, hide the cooldown text
             cooldownText.visibility = View.GONE
             playButton.text = "PLAY MORSE CODE (${seconds})"

@@ -26,6 +26,14 @@
         <!-- Button style -->
         <item name="materialButtonStyle">@style/BlackButton</item>
     </style>
+    
+    <style name="Theme.LIMOSafe.NoActionBar" parent="Theme.LIMOSafe">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
 
     <style name="Theme.YourAppTheme" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
         <item name="android:buttonStyle">@style/BlackButton</item>
