@@ -15,6 +15,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.BiometricManager
 import com.example.limo_safe.utils.AppFlags
+import androidx.appcompat.app.AlertDialog
 
 class LoginFragment : Fragment() {
     private lateinit var emailEditText: EditText
@@ -26,6 +27,7 @@ class LoginFragment : Fragment() {
     private lateinit var dialogManager: DialogManager
     private lateinit var biometricManager: BiometricManager
     private lateinit var auth: FirebaseAuth
+    private val sharedPreferences by lazy { requireContext().getSharedPreferences("UserPrefs", Context.MODE_PRIVATE) }
 
     // Flag to control when biometric authentication can be triggered
     private var canShowBiometricPrompt = false
@@ -170,10 +172,6 @@ class LoginFragment : Fragment() {
             authenticateWithBiometric()
         }
 
-        biometricLoginButton.setOnClickListener {
-            authenticateWithBiometric()
-        }
-
         signUpText.setOnClickListener {
             Log.d("LoginFragment", "Sign Up text clicked")
             navigateToSignUp()
@@ -297,8 +295,6 @@ class LoginFragment : Fragment() {
                     // Continue even if dialog dismissal fails
                 }
 
-                // Default navigation - no timeout handling needed
-
                 // Default navigation through MainActivity
                 try {
                     val mainActivity = activity as? MainActivity
@@ -321,6 +317,22 @@ class LoginFragment : Fragment() {
                 e2.printStackTrace()
             }
         }
+    }
+
+    /**
+     * Check if this is the first login after email verification
+     */
+    private fun isFirstLoginAfterVerification(email: String): Boolean {
+        // Check if we've recorded this user as having logged in before
+        val hasLoggedInBefore = sharedPreferences.getBoolean("user_logged_in_$email", false)
+        
+        // If they haven't logged in before, mark them as having logged in now
+        if (!hasLoggedInBefore) {
+            sharedPreferences.edit().putBoolean("user_logged_in_$email", true).apply()
+            return true
+        }
+        
+        return false
     }
 
     private fun navigateToSignUp() {
@@ -360,7 +372,6 @@ class LoginFragment : Fragment() {
             Toast.makeText(requireContext(), "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
-
 
     override fun onDestroyView() {
         super.onDestroyView()

@@ -314,40 +314,6 @@ class DialogManager(private val context: Context) {
         return dialog
     }
 
-    /**
-     * Shows a dialog asking the user if they want to enable biometric authentication
-     */
-    fun showBiometricEnrollmentDialog(
-        email: String,
-        onEnable: () -> Unit,
-        onCancel: () -> Unit
-    ): androidx.appcompat.app.AlertDialog {
-        val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_biometric_prompt, null)
-        setupTouchListener(dialogView)
-
-        val enableButton = dialogView.findViewById<Button>(R.id.biometricEnableButton)
-        val cancelButton = dialogView.findViewById<Button>(R.id.biometricCancelButton)
-
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
-            .setView(dialogView)
-            .setCancelable(false)
-            .create()
-
-        enableButton.setOnClickListener {
-            dialog.dismiss()
-            onEnable()
-        }
-
-        cancelButton.setOnClickListener {
-            dialog.dismiss()
-            onCancel()
-        }
-
-        setupDialogTouchListener(dialog)
-        activeDialog = dialog
-        return dialog
-    }
-
     companion object {
         fun createLoadingDialog(context: Context): androidx.appcompat.app.AlertDialog {
             return DialogManager(context).createLoadingDialog()

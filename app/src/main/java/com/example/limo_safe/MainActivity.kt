@@ -416,13 +416,17 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             .setTitle("Exit Confirmation")
             .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Yes") { _, _ ->
-                // Log out user completely instead of just showing main screen
-                clearBackStackAndNavigateToLogin()
+                // Log out user completely
+                auth.signOut()
+                
+                // Clear all preferences
+                clearAllPreferences()
+                
                 // Clear navigation state to prevent auto-redirect on app restart
                 getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
 
-                // Show main screen after logout
-                showMainScreen()
+                // Actually exit the app
+                finishAndRemoveTask()
             }
             .setNegativeButton("No", null)
             .show()
