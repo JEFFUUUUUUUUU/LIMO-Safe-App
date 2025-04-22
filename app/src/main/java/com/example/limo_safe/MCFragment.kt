@@ -94,8 +94,8 @@ class MCFragment : Fragment() {
                     if (parentFragmentManager.backStackEntryCount > 0) {
                         parentFragmentManager.popBackStack()
                     } else {
-                        isEnabled = false
-                        requireActivity().onBackPressedDispatcher.onBackPressed()
+                        // Show the custom exit confirmation dialog when back button is pressed
+                        showExitConfirmationDialog()
                     }
                 } else {
                     Toast.makeText(requireContext(),
@@ -604,20 +604,15 @@ class MCFragment : Fragment() {
     }
 
     private fun showExitConfirmationDialog() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("Exit Confirmation")
-            .setMessage("Are you sure you want to exit?")
-            .setPositiveButton("Yes") { dialog, _ ->
-                dialog.dismiss()
-                // Exit the app completely
-                requireActivity().finishAffinity()
-                System.exit(0)
-            }
-            .setNegativeButton("No") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .create()
-            .show()
+        // Use the DialogManager's showExitConfirmationDialog method
+        // This ensures consistent behavior throughout the app
+        dialogManager.showExitConfirmationDialog {
+            // This code runs when the user clicks "Yes"
+            // Exit the app completely
+            requireActivity().finishAffinity()
+            System.exit(0)
+        }
+        // When the user clicks "No", the dialog will automatically be dismissed
     }
 
     private fun showMorseCodeDialog(code: String, cooldown: Long = 0) {

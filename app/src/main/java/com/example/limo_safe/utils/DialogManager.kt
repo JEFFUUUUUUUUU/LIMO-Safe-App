@@ -118,7 +118,7 @@ class DialogManager(private val context: Context) {
             .setView(dialogView)
             .create()
 
-        dialog.window?.setBackgroundDrawableResource(android.R.color.white)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
         setupDialogTouchListener(dialog)
         activeDialog = dialog
@@ -130,37 +130,79 @@ class DialogManager(private val context: Context) {
     }
 
     fun showMaxTriesDialog() {
-        activeDialog?.dismiss()
-        activeDialog = null
-        triesTextView = null
-
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
-            .setTitle("Maximum Tries Reached")
-            .setMessage("You have reached the maximum number of tries.")
-            .setPositiveButton("OK") { dialog, _ ->
-
-                dialog.dismiss()
-            }
-            .create()
-        setupDialogTouchListener(dialog)
+        // Dismiss any active dialog first
+        dismissActiveDialog()
+        
+        // Create a custom dialog using the dialog_max_tries.xml layout
+        val dialog = android.app.Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_max_tries)
+        dialog.setCancelable(false)
+        
+        // Make sure the dialog window has a transparent background
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        
+        // Set the dialog width to 90% of the screen width to ensure text isn't cut off
+        val displayMetrics = context.resources.displayMetrics
+        val width = (displayMetrics.widthPixels * 0.9).toInt()
+        dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+        
+        // Center the dialog on the screen
+        dialog.window?.setGravity(Gravity.CENTER)
+        
+        // Get reference to the OK button in the custom layout
+        val okButton = dialog.findViewById<Button>(R.id.okButton)
+        
+        // Set up button click listener
+        okButton?.setOnClickListener {
+            dialog.dismiss()
+        }
+        
+        // Show the dialog
         dialog.show()
     }
 
     fun showExitConfirmationDialog(onConfirm: () -> Unit) {
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
-            .setTitle("Exit Confirmation")
-            .setMessage("Are you sure you want to exit?")
-            .setPositiveButton("Yes") { dialog, _ ->
-
-                dialog.dismiss()
-                onConfirm()
-            }
-            .setNegativeButton("No") { dialog, _ ->
-
-                dialog.dismiss()
-            }
-            .create()
-        setupDialogTouchListener(dialog)
+        // Dismiss any active dialog first
+        dismissActiveDialog()
+        
+        // Create a custom dialog using a custom approach for proper styling
+        val dialog = android.app.Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_exit_confirmation)
+        dialog.setCancelable(false)
+        
+        // Make sure the dialog window has a transparent background
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        
+        // Set the dialog width to 90% of the screen width to ensure text isn't cut off
+        val displayMetrics = context.resources.displayMetrics
+        val width = (displayMetrics.widthPixels * 0.9).toInt()
+        dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+        
+        // Center the dialog on the screen
+        dialog.window?.setGravity(Gravity.CENTER)
+            
+        // Get references to the buttons in the custom layout
+        val yesButton = dialog.findViewById<Button>(R.id.yesButton)
+        val noButton = dialog.findViewById<Button>(R.id.noButton)
+        
+        // Set up button click listeners
+        yesButton?.setOnClickListener {
+            dialog.dismiss()
+            onConfirm()
+        }
+        
+        noButton?.setOnClickListener {
+            dialog.dismiss()
+        }
+        
+        // Store as active dialog and show
+        // We're using a different dialog type, so we need to update our tracking differently
+        if (activeDialog != null) {
+            activeDialog?.dismiss()
+        }
+        activeDialog = null // Don't track this dialog with activeDialog since it's a different type
         dialog.show()
     }
 

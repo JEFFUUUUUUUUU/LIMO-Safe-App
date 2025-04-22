@@ -1,36 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="320dp"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="24dp"
     android:background="@drawable/dialog_background">
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/maxTriesTitleTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/maroon"
+        android:gravity="center"
+        android:padding="12dp"
+        android:text="Max Tries Reached"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+        
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
 
     <TextView
         android:id="@+id/messageText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Maximum tries reached. Please try again later."
+        android:text="Maximum tries reached. Please wait for the generate Code button to finish its cooldown."
         android:textSize="16sp"
-        android:textColor="#800000"
+        android:textColor="@color/maroon"
         android:layout_marginBottom="24dp"
-        android:gravity="center"/>
+        android:gravity="center"
+        android:lineSpacingExtra="4dp"/>
 
     <TextView
         android:id="@+id/cooldownText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="#FFA500"
-        android:layout_marginBottom="24dp"
-        android:gravity="center"/>
+        android:textColor="@color/orange"
+        android:layout_marginBottom="16dp"
+        android:gravity="center"
+        android:visibility="gone"/>
 
     <Button
         android:id="@+id/okButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="OK"
-        android:backgroundTint="#800000"
-        android:textColor="#FFFFFF"/>
+        android:backgroundTint="@color/maroon"
+        android:textColor="@android:color/white"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"/>
+    </LinearLayout>
 
 </LinearLayout>
