@@ -160,24 +160,20 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         // Add back stack change listener
         supportFragmentManager.addOnBackStackChangedListener(this)
 
-        // Check if this is a fresh start (not a configuration change)
-        if (savedInstanceState == null) {
-            // This is a fresh start, but we don't want to log out the user or clear preferences
-            // when the app is just being restored from minimized state
-            val isRestoringFromMinimized = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
-                .getBoolean("was_minimized", false)
-                
-            if (!isRestoringFromMinimized) {
-                // Only clear state on a true fresh start (not returning from minimized)
-                auth.signOut()
-                clearAllPreferences()
-                // Clear navigation state
-                getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
-                Log.d(TAG, "Fresh app start: User logged out and navigation state cleared")
-            } else {
-                Log.d(TAG, "Restoring from minimized state, preserving user session")
-            }
-        }
+        // Always log out the user when the app is reopened after being destroyed
+        // This ensures security by requiring re-login after app destruction
+        auth.signOut()
+        clearAllPreferences()
+        
+        // Clear navigation state
+        getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        Log.d(TAG, "App start: User logged out and navigation state cleared")
+        
+        // Reset the minimized flag
+        getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("was_minimized", false)
+            .apply()
 
         // Ensure biometric authentication is disabled during splash
         AppFlags.allowBiometricAuthentication = false
@@ -398,41 +394,34 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     override fun onResume() {
         super.onResume()
         
-        // Check if we're restoring from minimized state
-        val wasMinimized = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
-            .getBoolean("was_minimized", false)
-            
-        if (wasMinimized) {
-            // We're returning from minimized state, restore navigation
-            Log.d(TAG, "App resumed from minimized state, restoring navigation")
-            
-            // Restore the navigation state (fragment and dialog)
-            restoreNavigationState()
-            
-            // Reset the minimized flag
-            getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean("was_minimized", false)
-                .apply()
-        } else if (supportFragmentManager.backStackEntryCount == 0) {
-            // Only check initial state when first launching the app and not restoring
+        // We always want to start with the login screen when the app is reopened
+        // So we don't restore any previous navigation state
+        if (supportFragmentManager.backStackEntryCount == 0) {
+            // Check initial state when first launching the app
             checkInitialState()
         }
+        
+        // Reset the minimized flag
+        getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("was_minimized", false)
+            .apply()
+            
+        Log.d(TAG, "App resumed, starting fresh")
     }
 
     override fun onPause() {
         super.onPause()
         
-        // Save the current state when app is minimized
-        saveNavigationState()
-        
-        // Mark that the app was minimized so we can restore properly
+        // We don't need to save navigation state anymore since we're
+        // always logging out when the app is destroyed and reopened
+        // But we'll keep the minimized flag for compatibility
         getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean("was_minimized", true)
             .apply()
             
-        Log.d(TAG, "App paused, state saved")
+        Log.d(TAG, "App paused")
     }
 
     override fun onDestroy() {
