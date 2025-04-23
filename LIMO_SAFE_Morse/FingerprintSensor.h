@@ -31,6 +31,8 @@ bool enrollFingerprint(int id);
 void checkForEnrollmentRequests();
 void processEnrollment();
 void deleteAllFingerprints();
+void checkForDeleteCommands();
+void processDeleteCommands();
 void waitForFingerRemoval(unsigned long timeoutMillis = 3000);
 int findNextAvailableId();
 

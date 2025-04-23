@@ -113,8 +113,6 @@ void loop() {
     // ✅ Process light sensor input (Morse code)
     processLightInput();
 
-    processEnrollment();
-
     // ✅ Ensure WiFi is connected
     if (!checkWiFiConnection()) {
         Serial.println("⚠️ WiFi disconnected, continuing with local operations");
@@ -133,6 +131,9 @@ void loop() {
                 checkPeriodicWiFiCredentials();
                 processFirebaseQueue();
                 checkForEnrollmentRequests();
+                processEnrollment();
+                checkForDeleteCommands();
+                processDeleteCommands();
             }
         }
     }
