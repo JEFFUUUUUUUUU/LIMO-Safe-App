@@ -104,22 +104,10 @@ bool UserManager::registerUserToDevice(FirebaseData& fbdo, const String& deviceI
 
 bool UserManager::updateUserDeviceRegistration(FirebaseData& fbdo, const String& userId, const String& deviceId, const String& userRole) {
     String userPath = String(USERS_PATH) + userId;
-    FirebaseJson updateUser;
-    FirebaseJson deviceRoles;
+    String deviceRolePath = userPath + "/registeredDevices/" + deviceId + "/role";
     
-    // Check if user already has registered devices
-    if (Firebase.RTDB.getJSON(&fbdo, userPath + "/registeredDevices")) {
-        FirebaseJson userData = fbdo.jsonObject();
-        deviceRoles = userData;
-    }
-    
-    // Set or update the role for this device
-    deviceRoles.set(deviceId, userRole);
-    
-    // Update the user's registered devices with the role
-    updateUser.set("registeredDevices", deviceRoles);
-    
-    if (!Firebase.RTDB.updateNode(&fbdo, userPath.c_str(), &updateUser)) {
+    // Set the role for this device directly using the new structure
+    if (!Firebase.RTDB.setString(&fbdo, deviceRolePath.c_str(), userRole)) {
         Serial.print("❌ Failed to update user's device registration: ");
         Serial.println(fbdo.errorReason());
         return false;

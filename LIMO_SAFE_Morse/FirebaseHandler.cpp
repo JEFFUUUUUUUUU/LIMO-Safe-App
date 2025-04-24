@@ -484,7 +484,7 @@ bool verifyOTP(String receivedOTP) {
     String userRole = "user"; // Default role
    
     // Path to the user's role for this device
-    String userRolePath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId;
+    String userRolePath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/role";
    
     // Try to get existing role
     if (Firebase.RTDB.getString(&fbdo, userRolePath.c_str())) {

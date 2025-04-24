@@ -12,7 +12,7 @@ FingerprintState fingerprintState = FP_IDLE;
 unsigned long lastFingerprintCheck = 0;
 const unsigned long FINGERPRINT_CHECK_INTERVAL = 10000; // 1 second between checks
 unsigned long lastFingerprintEnrollCheck = 0;
-const unsigned long FINGERPRINT_ENROLL_CHECK_INTERVAL = 10000;
+const unsigned long FINGERPRINT_ENROLL_CHECK_INTERVAL = 30000;
 
 EnrollmentState enrollmentState = ENROLL_IDLE;
 unsigned long enrollmentStateStartTime = 0;
@@ -359,6 +359,30 @@ void processEnrollment() {
                 String idMappingPath = String(DEVICE_PATH) + deviceId + "/fingerprint/ids/" + String(currentEnrollmentId);
                 Firebase.RTDB.setString(&fbdo, idMappingPath.c_str(), currentEnrollmentUserId);
                 
+                // Add fingerprint ID to user's registeredDevices structure
+                String userDevicesPath = String(USERS_PATH) + currentEnrollmentUserId + "/registeredDevices/" + deviceId + "/fingerprint";
+                
+                // First, check if the user already has fingerprints registered for this device
+                FirebaseJsonArray fingerprintArray;
+                bool hasExistingFingerprints = false;
+                
+                if (Firebase.RTDB.getArray(&fbdo, userDevicesPath.c_str())) {
+                    // User already has fingerprint array for this device
+                    fingerprintArray = fbdo.jsonArray();
+                    hasExistingFingerprints = true;
+                }
+                
+                // Add the new fingerprint ID to the array
+                fingerprintArray.add(currentEnrollmentId);
+                
+                // Save the updated array
+                Firebase.RTDB.setArray(&fbdo, userDevicesPath.c_str(), &fingerprintArray);
+                
+                Serial.print("✅ Added fingerprint ID ");
+                Serial.print(currentEnrollmentId);
+                Serial.print(" to user's registered device ");
+                Serial.println(deviceId);
+                
                 // Log successful enrollment
                 FirebaseJson logEntry;
                 logEntry.set("timestamp", isTimeSynchronized());
@@ -415,7 +439,7 @@ void checkForDeleteCommands() {
         return;
     }
     
-    // Path to check for fingerprint mappings
+    // Path to check for fingerprint mappings (commands are here)
     String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
     
     if (Firebase.RTDB.getJSON(&fbdo, mappingsPath.c_str())) {
@@ -436,58 +460,47 @@ void checkForDeleteCommands() {
                     Serial.println(userId);
                     deleteFingerPrintCommandPending = true;
                     fingerprintToDelete = -1;
+                    currentEnrollmentUserId = userId; // Store the userId for processing
                     
-                    // Clear the command after reading by deleting the node
+                    // Clear the command after reading
                     String userPath = mappingsPath + "/" + userId;
                     Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
                     break; // Process one command at a time
                 }
                 else if (status == "\"delete_id\"") {
-                    // Get the fingerprint ID associated with this user
-                    String idMappingPath = String(DEVICE_PATH) + deviceId + "/fingerprint/ids";
-                    int idToDelete = -1;
+                    Serial.print("📱 Command received: Delete fingerprint ID for user: ");
+                    Serial.println(userId);
                     
-                    if (Firebase.RTDB.getJSON(&fbdo, idMappingPath.c_str())) {
-                        FirebaseJson* idJson = fbdo.jsonObjectPtr();
-                        if (idJson != nullptr) {
-                            size_t idIterCount = idJson->iteratorBegin();
-                            FirebaseJson::IteratorValue idValue;
+                    // We need to find the fingerprint ID for this user
+                    String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
+                    
+                    if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
+                        FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
+                        
+                        // For simplicity, let's delete the first fingerprint ID found
+                        // A more sophisticated approach could specify which ID to delete
+                        if (fingerprintArray.size() > 0) {
+                            FirebaseJsonData result;
+                            fingerprintArray.get(result, 0);
+                            int idToDelete = result.intValue;
                             
-                            for (size_t j = 0; j < idIterCount; j++) {
-                                idValue = idJson->valueAt(j);
-                                String fpId = idValue.key;
-                                String fpUserId = idValue.value;
-                                
-                                if (fpUserId == "\"" + userId + "\"") {
-                                    idToDelete = fpId.toInt();
-                                    break;
-                                }
-                            }
+                            deleteFingerPrintCommandPending = true;
+                            fingerprintToDelete = idToDelete;
+                            currentEnrollmentUserId = userId;
                             
-                            idJson->iteratorEnd();
+                            Serial.print("Found fingerprint ID to delete: ");
+                            Serial.println(idToDelete);
+                        } else {
+                            Serial.println("❌ No fingerprint IDs found for this user");
                         }
+                    } else {
+                        Serial.println("❌ Could not access user's fingerprint array");
                     }
                     
-                    if (idToDelete > 0) {
-                        Serial.print("📱 Command received: Delete fingerprint ID #");
-                        Serial.println(idToDelete);
-                        Serial.print("for user: ");
-                        Serial.println(userId);
-                        
-                        deleteFingerPrintCommandPending = true;
-                        fingerprintToDelete = idToDelete;
-                        
-                        // Clear the command after reading by deleting the node
-                        String userPath = mappingsPath + "/" + userId;
-                        Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
-                        break; // Process one command at a time
-                    } else {
-                        Serial.println("❌ Could not find fingerprint ID for user: " + userId);
-                        
-                        // Clear the command since we couldn't process it
-                        String userPath = mappingsPath + "/" + userId;
-                        Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
-                    }
+                    // Clear the command after reading
+                    String userPath = mappingsPath + "/" + userId;
+                    Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+                    break; // Process one command at a time
                 }
             }
             
@@ -508,36 +521,76 @@ void processDeleteCommands() {
     }
     
     if (fingerprintToDelete == -1) {
-        // Delete all fingerprints
-        Serial.println(F("⚠️ Executing command: Delete all fingerprints"));
+        // Delete all fingerprints for a specific user
+        String userId = currentEnrollmentUserId;
         
-        if (finger.emptyDatabase() == FINGERPRINT_OK) {
-            Serial.println(F("✅ All fingerprints deleted!"));
+        if (userId.isEmpty()) {
+            Serial.println(F("❌ No user ID specified for fingerprint deletion"));
+            deleteFingerPrintCommandPending = false;
+            return;
+        }
+        
+        Serial.print(F("⚠️ Executing command: Delete all fingerprints for user "));
+        Serial.println(userId);
+        
+        // Get the user's fingerprint array
+        String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
+        
+        if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
+            FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
+            size_t arraySize = fingerprintArray.size();
+            bool allSuccess = true;
+            
+            Serial.print(F("Found "));
+            Serial.print(arraySize);
+            Serial.println(F(" fingerprints to delete"));
+            
+            // Delete each fingerprint in the array
+            for (size_t i = 0; i < arraySize; i++) {
+                FirebaseJsonData result;
+                fingerprintArray.get(result, i);
+                int fpId = result.intValue;
+                
+                Serial.print(F("Deleting fingerprint ID #"));
+                Serial.println(fpId);
+                
+                uint8_t p = finger.deleteModel(fpId);
+                if (p != FINGERPRINT_OK) {
+                    Serial.print(F("❌ Failed to delete fingerprint ID #"));
+                    Serial.println(fpId);
+                    allSuccess = false;
+                } else {
+                    Serial.print(F("✅ Deleted fingerprint ID #"));
+                    Serial.println(fpId);
+                }
+            }
+            
+            // If all deletions were successful or we want to clear regardless
+            // Remove the fingerprint array from the user's registered devices
+            Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
             
             // Log the event
             if (isFirebaseReady()) {
                 FirebaseJson logEntry;
                 logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", "all_fingerprints_deleted");
+                logEntry.set("event", allSuccess ? "user_fingerprints_deleted" : "user_fingerprints_delete_partial");
+                logEntry.set("userId", userId);
+                logEntry.set("count", arraySize);
                 
                 String logPath = String("devices/") + deviceId + "/logs";
                 Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-                
-                // Also clear the fingerprint ID mappings in Firebase
-                String idMappingPath = String(DEVICE_PATH) + deviceId + "/fingerprint/ids";
-                Firebase.RTDB.deleteNode(&fbdo, idMappingPath.c_str());
             }
             
-            setLEDStatus(STATUS_ONLINE);
+            setLEDStatus(allSuccess ? STATUS_ONLINE : STATUS_ERROR);
         } else {
-            Serial.println(F("❌ Failed to delete all fingerprints"));
-            setLEDStatus(STATUS_ERROR);
+            Serial.println(F("⚠️ No fingerprints found for this user"));
             
-            // Log the failure
+            // Log that no fingerprints were found
             if (isFirebaseReady()) {
                 FirebaseJson logEntry;
                 logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", "fingerprint_delete_all_failed");
+                logEntry.set("event", "fingerprint_delete_no_fingerprints");
+                logEntry.set("userId", userId);
                 
                 String logPath = String("devices/") + deviceId + "/logs";
                 Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
@@ -545,49 +598,68 @@ void processDeleteCommands() {
         }
     } else {
         // Delete specific fingerprint ID
-        Serial.print(F("⚠️ Executing command: Delete fingerprint ID #"));
-        Serial.println(fingerprintToDelete);
+        int specificId = fingerprintToDelete;
+        String userId = currentEnrollmentUserId;
         
-        uint8_t p = finger.deleteModel(fingerprintToDelete);
+        Serial.print(F("⚠️ Executing command: Delete fingerprint ID #"));
+        Serial.println(specificId);
+        
+        uint8_t p = finger.deleteModel(specificId);
         if (p == FINGERPRINT_OK) {
             Serial.print(F("✅ Deleted fingerprint ID #"));
-            Serial.println(fingerprintToDelete);
+            Serial.println(specificId);
+            
+            // Update the user's fingerprint array
+            if (!userId.isEmpty()) {
+                String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
+                
+                if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
+                    FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
+                    FirebaseJsonArray newArray;
+                    size_t arraySize = fingerprintArray.size();
+                    
+                    // Create a new array excluding the deleted fingerprint ID
+                    for (size_t i = 0; i < arraySize; i++) {
+                        FirebaseJsonData result;
+                        fingerprintArray.get(result, i);
+                        int currentId = result.intValue;
+                        
+                        if (currentId != specificId) {
+                            newArray.add(currentId);
+                        }
+                    }
+                    
+                    // Update the array in Firebase
+                    if (newArray.size() > 0) {
+                        Firebase.RTDB.setArray(&fbdo, userFingerprintPath.c_str(), &newArray);
+                    } else {
+                        // If array is empty, remove it completely
+                        Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
+                    }
+                    
+                    Serial.println(F("✅ Updated user's fingerprint array"));
+                }
+            }
             
             // Log the event
             if (isFirebaseReady()) {
-                // Get the user ID associated with this fingerprint ID
-                String idMappingPath = String(DEVICE_PATH) + deviceId + "/fingerprint/ids/" + String(fingerprintToDelete);
-                String userId = "";
-                
-                if (Firebase.RTDB.getString(&fbdo, idMappingPath.c_str())) {
-                    userId = fbdo.stringData();
-                }
-                
                 FirebaseJson logEntry;
                 logEntry.set("timestamp", isTimeSynchronized());
                 logEntry.set("event", "fingerprint_deleted");
-                logEntry.set("fingerprintId", fingerprintToDelete);
-                if (userId.length() > 0) {
+                logEntry.set("fingerprintId", specificId);
+                
+                if (!userId.isEmpty()) {
                     logEntry.set("userId", userId);
                 }
                 
                 String logPath = String("devices/") + deviceId + "/logs";
                 Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-                
-                // Remove the fingerprint ID mapping
-                Firebase.RTDB.deleteNode(&fbdo, idMappingPath.c_str());
-                
-                // If we have the user ID, also remove their registered status
-                if (userId.length() > 0) {
-                    String userPath = String(DEVICE_PATH) + deviceId + "/fingerprint/" + userId;
-                    Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
-                }
             }
             
             setLEDStatus(STATUS_ONLINE);
         } else {
             Serial.print(F("❌ Failed to delete fingerprint ID #"));
-            Serial.println(fingerprintToDelete);
+            Serial.println(specificId);
             setLEDStatus(STATUS_ERROR);
             
             // Log the failure
@@ -595,7 +667,11 @@ void processDeleteCommands() {
                 FirebaseJson logEntry;
                 logEntry.set("timestamp", isTimeSynchronized());
                 logEntry.set("event", "fingerprint_delete_failed");
-                logEntry.set("fingerprintId", fingerprintToDelete);
+                logEntry.set("fingerprintId", specificId);
+                
+                if (!userId.isEmpty()) {
+                    logEntry.set("userId", userId);
+                }
                 
                 String logPath = String("devices/") + deviceId + "/logs";
                 Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
@@ -606,6 +682,7 @@ void processDeleteCommands() {
     // Reset command flags
     deleteFingerPrintCommandPending = false;
     fingerprintToDelete = -1;
+    currentEnrollmentUserId = "";
 }
 
 void waitForFingerRemoval(unsigned long timeoutMillis) {
