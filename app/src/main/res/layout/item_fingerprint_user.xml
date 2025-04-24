@@ -6,30 +6,28 @@
     android:gravity="center_vertical"
     android:padding="8dp">
 
+    <ImageView
+        android:id="@+id/fingerprintIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/ic_fingerprint"
+        android:tint="@color/maroon"
+        android:layout_marginEnd="8dp" />
+
     <TextView
-        android:id="@+id/userText"
+        android:id="@+id/fingerprintUserText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:textSize="14sp"
-        android:textColor="@color/maroon"
-        android:layout_marginEnd="8dp"/>
+        android:textColor="@color/maroon" />
 
     <ImageButton
-        android:id="@+id/userFingerprintButton"
+        android:id="@+id/deleteButton"
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:src="@drawable/ic_fingerprint"
+        android:src="@drawable/ic_delete"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:tint="@color/maroon"
-        android:layout_marginEnd="8dp"/>
-
-    <ImageButton
-        android:id="@+id/userOptionsButton"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:src="@drawable/ic_more_vert"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:tint="@color/maroon"/>
+        android:tint="@color/maroon" />
 
 </LinearLayout>
