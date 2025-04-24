@@ -201,7 +201,8 @@ class LogsFragment : Fragment() {
                     val deviceId = deviceSnapshot.key ?: continue
 
                     // Check if device is admin by checking its value
-                    val isAdminDevice = deviceSnapshot.getValue(String::class.java) == "admin"
+                    val deviceData = deviceSnapshot.getValue(object : GenericTypeIndicator<Map<String, String>>() {})
+                    val isAdminDevice = deviceData?.get("role") == "admin"
 
                     // In fetchLogs() method, where it creates the device log listener:
                     if (isAdminDevice) {

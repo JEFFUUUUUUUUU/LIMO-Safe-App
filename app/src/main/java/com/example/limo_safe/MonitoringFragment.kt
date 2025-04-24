@@ -698,7 +698,10 @@ class MonitoringFragment : Fragment() {
                 // Process all devices user has access to
                 for (deviceSnapshot in snapshot.children) {
                     val deviceId = deviceSnapshot.key ?: continue
-                    val role = deviceSnapshot.getValue(String::class.java) ?: "user"
+
+                    // Get role from nested structure
+                    val role = deviceSnapshot.child("role").getValue(String::class.java) ?: "user"
+
                     currentDeviceIds.add(deviceId)
 
                     // Only process devices where the user is an admin
@@ -856,9 +859,9 @@ class MonitoringFragment : Fragment() {
                             val email = emailSnapshot.getValue(String::class.java)
 
                             if (email != null) {
-                                // Get user's role from the user's registeredDevices node
+                                // Get user's role from the user's registeredDevices node with updated structure
                                 database.child("users").child(userId).child("registeredDevices")
-                                    .child(deviceId)
+                                    .child(deviceId).child("role")
                                     .get()
                                     .addOnSuccessListener { roleSnapshot ->
                                         val role = roleSnapshot.getValue(String::class.java) ?: "user"
@@ -953,9 +956,9 @@ class MonitoringFragment : Fragment() {
                                         .child(existingTag)
                                         .setValue(addedUserId)
 
-                                    // Add device to added user's registeredDevices with the role
+                                    // Add device to added user's registeredDevices with the role using new structure
                                     val addToUser = database.child("users").child(addedUserId).child("registeredDevices")
-                                        .child(deviceId)
+                                        .child(deviceId).child("role")
                                         .setValue(role)
 
                                     // Add log entry under current user's logs
@@ -981,6 +984,75 @@ class MonitoringFragment : Fragment() {
                     }
                 } else {
                     Toast.makeText(context, "User with email $email not found", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun updateUserRole(deviceId: String, userInfo: UserInfo, newRole: String) {
+        // Get the current user's ID who is performing the action
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+            ?: run {
+                Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+        database.child("users")
+            .orderByChild("email")
+            .equalTo(userInfo.email)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val userId = snapshot.children.first().key
+                    if (userId != null) {
+                        // Update with new structure - access the role child
+                        val userRef = database.child("users").child(userId).child("registeredDevices")
+                            .child(deviceId).child("role")
+
+                        // Fetch current role before updating
+                        userRef.get().addOnSuccessListener { roleSnapshot ->
+                            val currentRole = roleSnapshot.getValue(String::class.java)
+
+                            if (currentRole == newRole) {
+                                Toast.makeText(context, "User is already $newRole", Toast.LENGTH_SHORT).show()
+                                return@addOnSuccessListener
+                            }
+
+                            // Prepare log entry
+                            val logEntry = mapOf(
+                                "timestamp" to ServerValue.TIMESTAMP,
+                                "event" to "user_role_updated",
+                                "user" to mapOf(
+                                    "id" to userId,
+                                    "email" to userInfo.email
+                                ),
+                                "device" to deviceId,
+                                "oldRole" to currentRole,
+                                "newRole" to newRole
+                            )
+
+                            // Proceed with role update
+                            userRef.setValue(newRole)
+                                .addOnSuccessListener {
+                                    // Add log entry under current user's logs
+                                    database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
+
+                                    updateLocalUserRole(deviceId, userInfo.email, newRole)
+                                    Toast.makeText(context, "User role updated to $newRole", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener { e ->
+                                    Toast.makeText(context, "Failed to update role: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        }.addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to fetch current role: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "User with email ${userInfo.email} not found", Toast.LENGTH_SHORT).show()
                 }
             }
             .addOnFailureListener { e ->
@@ -1057,73 +1129,6 @@ class MonitoringFragment : Fragment() {
             }
             .addOnFailureListener { e ->
                 Toast.makeText(context, "Error checking user existence: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-    }
-
-    private fun updateUserRole(deviceId: String, userInfo: UserInfo, newRole: String) {
-        // Get the current user's ID who is performing the action
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
-            ?: run {
-                Toast.makeText(context, "No authenticated user", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-        database.child("users")
-            .orderByChild("email")
-            .equalTo(userInfo.email)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                if (snapshot.exists()) {
-                    val userId = snapshot.children.first().key
-                    if (userId != null) {
-                        val userRef = database.child("users").child(userId).child("registeredDevices").child(deviceId)
-
-                        // Fetch current role before updating
-                        userRef.get().addOnSuccessListener { roleSnapshot ->
-                            val currentRole = roleSnapshot.getValue(String::class.java)
-
-                            if (currentRole == newRole) {
-                                Toast.makeText(context, "User is already $newRole", Toast.LENGTH_SHORT).show()
-                                return@addOnSuccessListener
-                            }
-
-                            // Prepare log entry
-                            val logEntry = mapOf(
-                                "timestamp" to ServerValue.TIMESTAMP,
-                                "event" to "user_role_updated",
-                                "user" to mapOf(
-                                    "id" to userId,
-                                    "email" to userInfo.email
-                                ),
-                                "device" to deviceId,
-                                "oldRole" to currentRole,
-                                "newRole" to newRole
-                            )
-
-                            // Proceed with role update
-                            userRef.setValue(newRole)
-                                .addOnSuccessListener {
-                                    // Add log entry under current user's logs
-                                    database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
-
-                                    updateLocalUserRole(deviceId, userInfo.email, newRole)
-                                    Toast.makeText(context, "User role updated to $newRole", Toast.LENGTH_SHORT).show()
-                                }
-                                .addOnFailureListener { e ->
-                                    Toast.makeText(context, "Failed to update role: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                        }.addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to fetch current role: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        Toast.makeText(context, "User ID is null", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    Toast.makeText(context, "User with email ${userInfo.email} not found", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .addOnFailureListener { e ->
-                Toast.makeText(context, "Failed to check user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 
