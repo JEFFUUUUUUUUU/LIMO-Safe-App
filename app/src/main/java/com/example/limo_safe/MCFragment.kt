@@ -199,6 +199,40 @@ class MCFragment : Fragment() {
                 drawerLayout.openDrawer(GravityCompat.START)
             }
         }
+        
+        // Find and set up the Check Monitoring button in the navigation drawer
+        Handler(Looper.getMainLooper()).post {
+            try {
+                // Get the direct child of the DrawerLayout that's not the main content
+                for (i in 0 until drawerLayout.childCount) {
+                    val child = drawerLayout.getChildAt(i)
+                    if (child.id != R.id.mainContent) {
+                        // Find the navigation header root
+                        val navHeaderRoot = child.findViewById<View>(R.id.nav_header_root)
+                        if (navHeaderRoot != null) {
+                            // Find the Check Monitoring button
+                            val checkMonitoringBtn = navHeaderRoot.findViewById<Button>(R.id.checkMonitoringButton)
+                            if (checkMonitoringBtn != null) {
+                                Log.d("MCFragment", "Found Check Monitoring button, setting up click listener")
+                                checkMonitoringBtn.setOnClickListener {
+                                    Log.d("MCFragment", "Check Monitoring button clicked")
+                                    // Close drawer
+                                    drawerLayout.closeDrawer(GravityCompat.START)
+                                    // Navigate to monitoring
+                                    navigateToMonitoring()
+                                }
+                            } else {
+                                Log.e("MCFragment", "Check Monitoring button not found in nav header")
+                            }
+                        }
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MCFragment", "Error setting up Check Monitoring button: ${e.message}")
+                e.printStackTrace()
+            }
+        }
 
         // Add drawer listener to dim background when drawer is opened
         val mainContent = view.findViewById<androidx.constraintlayout.widget.ConstraintLayout>(R.id.mainContent)

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/nav_header_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -25,17 +26,18 @@
             android:layout_height="match_parent"
             android:background="@drawable/circle_background" />
 
-        <!-- Logo centered on top of the circle - Z-order changed by moving after the circle -->
-        <ImageView
+        <!-- Logo centered on top of the circle - Using ShapeableImageView for circular clipping -->
+        <com.google.android.material.imageview.ShapeableImageView
             android:id="@+id/navHeaderAvatar"
             android:layout_width="72dp"
             android:layout_height="72dp"
             android:layout_gravity="center"
             android:background="@android:color/transparent"
             android:contentDescription="App Icon"
-            android:scaleType="centerInside"
+            android:scaleType="centerCrop"
             android:src="@mipmap/ic_launcher_round"
-            android:elevation="8dp" /> <!-- Added higher elevation to appear above the circle -->
+            android:elevation="8dp"
+            app:shapeAppearanceOverlay="@style/CircularImageView" />
 
     </FrameLayout>
 
@@ -80,6 +82,24 @@
         android:alpha="0.2"
         android:layout_marginTop="16dp"
         android:layout_marginBottom="16dp" />
+        
+    <!-- Check Monitoring Button -->
+    <Button
+        android:id="@+id/checkMonitoringButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CHECK MONITORING"
+        android:textColor="@android:color/white"
+        android:background="@drawable/nav_button_bg"
+        android:drawableStart="@android:drawable/ic_menu_view"
+        android:drawablePadding="8dp"
+        android:gravity="center"
+        android:elevation="2dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginBottom="8dp"
+        android:padding="12dp"
+        android:clickable="true"
+        android:focusable="true" />
 
     <!-- Biometric Setup Button -->
     <Button
@@ -88,10 +108,10 @@
         android:layout_height="wrap_content"
         android:text="Set Up Biometric"
         android:textColor="@android:color/white"
-        android:background="#800000"
+        android:background="@drawable/nav_button_bg"
         android:drawableStart="@android:drawable/ic_lock_lock"
         android:drawablePadding="8dp"
-        android:gravity="center_vertical"
+        android:gravity="center"
         android:elevation="2dp"
         android:layout_marginTop="0dp"
         android:layout_marginBottom="8dp"
@@ -104,7 +124,7 @@
         android:layout_height="wrap_content"
         android:text="Log out"
         android:textColor="@android:color/white"
-        android:background="#FFA500"
+        android:background="@drawable/nav_button_orange_bg"
         android:elevation="2dp"
         android:layout_marginBottom="8dp"
         android:padding="12dp" />
