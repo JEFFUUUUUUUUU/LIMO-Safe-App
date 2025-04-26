@@ -110,9 +110,6 @@ void loop() {
     // ✅ Handle Nano communication (process safe status)
     handleNanoData();
 
-    // ✅ Process light sensor input (Morse code)
-    processLightInput();
-
     // ✅ Ensure WiFi is connected
     if (!checkWiFiConnection()) {
         Serial.println("⚠️ WiFi disconnected, continuing with local operations");
@@ -128,12 +125,11 @@ void loop() {
                 Serial.println("⚠️ Firebase unavailable, continuing with local operations");
             } else {
                 // Only do these operations if Firebase is available
+                // ✅ Process light sensor input (Morse code)
+                processLightInput();
                 checkPeriodicWiFiCredentials();
                 processFirebaseQueue();
-                checkForEnrollmentRequests();
-                processEnrollment();
-                checkForDeleteCommands();
-                processDeleteCommands();
+                manageFingerprintCommands();
             }
         }
     }

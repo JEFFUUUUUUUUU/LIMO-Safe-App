@@ -28,19 +28,16 @@ void initializeFingerprint();
 bool checkAndProcessFingerprint();
 bool authenticateUser();
 bool enrollFingerprint(int id);
-void checkForEnrollmentRequests();
-void processEnrollment();
+void manageFingerprintCommands();
+void setupEnrollment(String userId);
+void processOngoingEnrollment();
+void finalizeEnrollment(bool success);
+void setupDeleteCommand(String userId, String status);
 void deleteAllFingerprints();
-void checkForDeleteCommands();
 void processDeleteCommands();
 void waitForFingerRemoval(unsigned long timeoutMillis = 3000);
 int findNextAvailableId();
 
-
-extern unsigned long lastFingerprintCheck;
-extern const unsigned long FINGERPRINT_CHECK_INTERVAL;
-extern unsigned long lastFingerprintEnrollCheck;
-extern const unsigned long FINGERPRINT_ENROLL_CHECK_INTERVAL;
 extern unsigned long fpCommandSentTime;
 extern unsigned long fpStateTimeout;
 
