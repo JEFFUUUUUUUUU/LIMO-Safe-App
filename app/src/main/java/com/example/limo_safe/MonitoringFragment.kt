@@ -2,14 +2,19 @@ package com.example.limo_safe
 
 import android.app.Dialog
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -18,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.GravityCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -1485,16 +1491,47 @@ class MonitoringFragment : Fragment() {
                             
                             // Check if this user has a fingerprint enrolled and update icon color
                             FirebaseDatabase.getInstance().reference
-                                .child("devices").child(device.id).child("fingerprint")
-                                .child(userInfo.email.replace(".", ","))
+                                .child("users")
+                                .orderByChild("email")
+                                .equalTo(userInfo.email)
                                 .get()
-                                .addOnSuccessListener { snapshot ->
+                                .addOnSuccessListener { userSnapshot ->
                                     try {
-                                        if (snapshot.exists()) {
-                                            // Fingerprint enrolled - set green color
-                                            userFingerprintButton.setColorFilter(holder.itemView.context.resources.getColor(android.R.color.holo_green_dark))
+                                        if (userSnapshot.exists()) {
+                                            // Get the user ID from the query result
+                                            val userId = userSnapshot.children.first().key ?: return@addOnSuccessListener
+
+                                            // Now check if this user has fingerprints for this device
+                                            FirebaseDatabase.getInstance().reference
+                                                .child("users")
+                                                .child(userId)
+                                                .child("registeredDevices")
+                                                .child(device.id)
+                                                .child("fingerprint")
+                                                .get()
+                                                .addOnSuccessListener { fingerprintSnapshot ->
+                                                    try {
+                                                        if (fingerprintSnapshot.exists() && fingerprintSnapshot.childrenCount > 0) {
+                                                            // Fingerprint enrolled - set green color
+                                                            userFingerprintButton.setColorFilter(holder.itemView.context.resources.getColor(android.R.color.holo_green_dark))
+                                                        } else {
+                                                            // No fingerprint - set maroon color
+                                                            userFingerprintButton.setColorFilter(holder.itemView.context.resources.getColor(R.color.maroon))
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
+                                                }
+                                                .addOnFailureListener { e ->
+                                                    // Default to maroon on error
+                                                    try {
+                                                        userFingerprintButton.setColorFilter(holder.itemView.context.resources.getColor(R.color.maroon))
+                                                    } catch (e2: Exception) {
+                                                        e2.printStackTrace()
+                                                    }
+                                                }
                                         } else {
-                                            // No fingerprint - set maroon color
+                                            // User not found
                                             userFingerprintButton.setColorFilter(holder.itemView.context.resources.getColor(R.color.maroon))
                                         }
                                     } catch (e: Exception) {
@@ -1515,44 +1552,67 @@ class MonitoringFragment : Fragment() {
                                     // Get activity context safely
                                     val activity = context as? FragmentActivity ?: return@setOnClickListener
                                     if (activity.isFinishing || activity.isDestroyed) return@setOnClickListener
-                                    
-                                    // Get the current user's ID
-                                    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return@setOnClickListener
 
-                                    // Check if this user already has a fingerprint enrolled
+                                    // First, find the user ID from the email
                                     FirebaseDatabase.getInstance().reference
-                                        .child("devices").child(device.id).child("fingerprint")
-                                        .child(userInfo.email.replace(".", ","))
+                                        .child("users")
+                                        .orderByChild("email")
+                                        .equalTo(userInfo.email)
                                         .get()
-                                        .addOnSuccessListener { snapshot ->
+                                        .addOnSuccessListener { userSnapshot ->
                                             // Check if activity is still valid
                                             if (activity.isFinishing || activity.isDestroyed) return@addOnSuccessListener
-                                            
-                                            if (snapshot.exists()) {
-                                                // Fingerprint already enrolled, show a confirmation dialog to re-enroll
-                                                try {
-                                                    val alertDialog = androidx.appcompat.app.AlertDialog.Builder(activity)
-                                                        .setTitle("Fingerprint Already Enrolled")
-                                                        .setMessage("${userInfo.email} already has a fingerprint enrolled. Do you want to re-enroll?")
-                                                        .setPositiveButton("Yes") { _, _ ->
+
+                                            if (userSnapshot.exists()) {
+                                                // Get the user ID from the query result
+                                                val userId = userSnapshot.children.first().key ?: return@addOnSuccessListener
+
+                                                // Now check if this user has fingerprints for this device
+                                                FirebaseDatabase.getInstance().reference
+                                                    .child("users")
+                                                    .child(userId)
+                                                    .child("registeredDevices")
+                                                    .child(device.id)
+                                                    .child("fingerprint")
+                                                    .get()
+                                                    .addOnSuccessListener { fingerprintSnapshot ->
+                                                        // Check if activity is still valid
+                                                        if (activity.isFinishing || activity.isDestroyed) return@addOnSuccessListener
+
+                                                        if (fingerprintSnapshot.exists() && fingerprintSnapshot.childrenCount > 0) {
+                                                            // Fingerprint already enrolled, show a confirmation dialog to re-enroll
+                                                            try {
+                                                                val alertDialog = androidx.appcompat.app.AlertDialog.Builder(activity)
+                                                                    .setTitle("Fingerprint Already Enrolled")
+                                                                    .setMessage("${userInfo.email} already has a fingerprint enrolled. Do you want to re-enroll?")
+                                                                    .setPositiveButton("Yes") { _, _ ->
+                                                                        enrollFingerprint(device.id, userInfo.email)
+                                                                    }
+                                                                    .setNegativeButton("No", null)
+                                                                    .create()
+                                                                alertDialog.show()
+                                                            } catch (e: Exception) {
+                                                                e.printStackTrace()
+                                                                Toast.makeText(activity, "Error showing dialog: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        } else {
+                                                            // No fingerprint enrolled yet, enroll now
                                                             enrollFingerprint(device.id, userInfo.email)
                                                         }
-                                                        .setNegativeButton("No", null)
-                                                        .create()
-                                                    alertDialog.show()
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
-                                                    Toast.makeText(activity, "Error showing dialog: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                }
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        // Check if activity is still valid
+                                                        if (activity.isFinishing || activity.isDestroyed) return@addOnFailureListener
+                                                        Toast.makeText(activity, "Error checking fingerprint status: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
                                             } else {
-                                                // No fingerprint enrolled yet, enroll now
-                                                enrollFingerprint(device.id, userInfo.email)
+                                                Toast.makeText(activity, "User not found in database", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                         .addOnFailureListener { e ->
                                             // Check if activity is still valid
                                             if (activity.isFinishing || activity.isDestroyed) return@addOnFailureListener
-                                            Toast.makeText(activity, "Error checking fingerprint status: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(activity, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -1595,106 +1655,285 @@ class MonitoringFragment : Fragment() {
                 val dialog = Dialog(mainActivity)
                 dialog.setContentView(R.layout.dialog_fingerprint_users_simple)
                 dialog.setCancelable(true)
-                
+
                 // Find views
                 val loadingText = dialog.findViewById<TextView>(R.id.loadingText)
                 val container = dialog.findViewById<LinearLayout>(R.id.fingerprintUsersContainer)
                 val closeButton = dialog.findViewById<Button>(R.id.closeButton)
-                
+
+                // Add delete selected button programmatically to match design
+                val deleteSelectedButton = Button(mainActivity).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        setMargins(0, 8.dpToPx(context), 0, 8.dpToPx(context))
+                    }
+                    text = "Delete Selected Fingerprints"
+                    background = closeButton.background
+                    setTextColor(closeButton.textColors)
+                    isEnabled = false
+                    visibility = View.GONE
+                }
+
+                // Insert deleteSelectedButton before closeButton
+                val parentLayout = closeButton.parent as LinearLayout
+                val closeButtonIndex = parentLayout.indexOfChild(closeButton)
+                parentLayout.addView(deleteSelectedButton, closeButtonIndex)
+
+                // Track selected fingerprints for multiple deletion
+                val selectedFingerprints = mutableMapOf<String, MutableList<Int>>()
+                var hasAnyFingerprint = false
+
                 // Set up close button
                 closeButton.setOnClickListener {
                     dialog.dismiss()
                 }
-                
+
+                // Function to update delete button state
+                fun updateDeleteButtonState() {
+                    val hasSelections = selectedFingerprints.any { it.value.isNotEmpty() }
+                    deleteSelectedButton.isEnabled = hasSelections
+                }
+
+                // Set up delete selected button
+                deleteSelectedButton.setOnClickListener {
+                    if (selectedFingerprints.isEmpty()) return@setOnClickListener
+
+                    // Create confirmation dialog
+                    val builder = androidx.appcompat.app.AlertDialog.Builder(mainActivity)
+                    builder.setTitle("Delete Selected Fingerprints")
+
+                    // Count total fingerprints
+                    val totalCount = selectedFingerprints.values.sumOf { it.size }
+                    val message = "Are you sure you want to delete $totalCount selected fingerprint(s)?"
+
+                    builder.setMessage(message)
+                    builder.setPositiveButton("Yes") { _, _ ->
+                        // Process each user's selected fingerprints
+                        for ((userEmail, fingerprintIds) in selectedFingerprints) {
+                            if (fingerprintIds.isEmpty()) continue
+
+                            // Format the delete command based on number of fingerprints
+                            val deleteCommand = if (fingerprintIds.size == 1) {
+                                "delete_${fingerprintIds[0]}"
+                            } else {
+                                "delete_${fingerprintIds.joinToString(",")}"
+                            }
+
+                            // Send delete command to Firebase
+                            val sanitizedEmail = userEmail.replace(".", ",")
+                            FirebaseDatabase.getInstance().reference
+                                .child("devices").child(deviceId).child("fingerprint")
+                                .child(sanitizedEmail)
+                                .setValue(deleteCommand)
+                                .addOnSuccessListener {
+                                    Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
+                                }
+                        }
+
+                        // Close dialog after sending all commands
+                        dialog.dismiss()
+                    }
+                    builder.setNegativeButton("No", null)
+                    builder.create().show()
+                }
+
                 // Show dialog immediately
                 dialog.show()
-                
+
                 // Clear container
                 container.removeAllViews()
-                
-                // Load fingerprint data
+
+                // Load users with registered fingerprints for this device
                 FirebaseDatabase.getInstance().reference
-                    .child("devices").child(deviceId).child("fingerprint")
+                    .child("users")
                     .get()
-                    .addOnSuccessListener { snapshot ->
+                    .addOnSuccessListener { usersSnapshot ->
                         if (mainActivity.isFinishing) return@addOnSuccessListener
-                        
-                        if (snapshot.exists() && snapshot.childrenCount > 0) {
-                            // Hide loading text
-                            loadingText.visibility = View.GONE
-                            
-                            // Add each fingerprint user
-                            var hasItems = false
-                            for (fingerprintSnapshot in snapshot.children) {
-                                try {
-                                    val userEmail = fingerprintSnapshot.key?.replace(",", ".") ?: continue
-                                    
-                                    // Create user item view
-                                    val userView = LayoutInflater.from(mainActivity)
-                                        .inflate(R.layout.item_fingerprint_user_simple, container, false)
-                                    
-                                    // Set email text
-                                    val emailText = userView.findViewById<TextView>(R.id.userEmailText)
-                                    emailText.text = userEmail
-                                    
-                                    // Set up delete button
-                                    val deleteButton = userView.findViewById<ImageButton>(R.id.deleteButton)
-                                    deleteButton.setOnClickListener { 
-                                        // Show confirmation dialog
+
+                        var hasFingerprints = false
+
+                        for (userSnapshot in usersSnapshot.children) {
+                            val userId = userSnapshot.key ?: continue
+                            val userEmail = userId.replace(",", ".")
+
+                            // Check if user has registered fingerprints for this device
+                            val registeredDevicesSnapshot = userSnapshot.child("registeredDevices").child(deviceId)
+                            val fingerprintArraySnapshot = registeredDevicesSnapshot.child("fingerprint")
+
+                            if (fingerprintArraySnapshot.exists() && fingerprintArraySnapshot.childrenCount > 0) {
+                                hasFingerprints = true
+                                hasAnyFingerprint = true
+
+                                // Create user section view
+                                val userView = LinearLayout(mainActivity).apply {
+                                    orientation = LinearLayout.VERTICAL
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    ).apply {
+                                        setMargins(0, 8.dpToPx(context), 0, 8.dpToPx(context))
+                                    }
+                                    background = ResourcesCompat.getDrawable(
+                                        resources,
+                                        R.drawable.rounded_background_light,
+                                        null
+                                    )
+                                    setPadding(8.dpToPx(context), 8.dpToPx(context), 8.dpToPx(context), 8.dpToPx(context))
+                                }
+
+                                // Add user email header
+                                val emailHeader = TextView(mainActivity).apply {
+                                    text = userEmail
+                                    setTextColor(ResourcesCompat.getColor(resources, R.color.maroon, null))
+                                    setTypeface(null, Typeface.BOLD)
+                                    textSize = 16f
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    ).apply {
+                                        setMargins(0, 0, 0, 8.dpToPx(context))
+                                    }
+                                }
+                                userView.addView(emailHeader)
+
+                                // Initialize entry in selectedFingerprints map
+                                selectedFingerprints[userEmail] = mutableListOf()
+
+                                // Get fingerprint IDs as a list
+                                val fingerprintIds = mutableListOf<Int>()
+                                for (idSnapshot in fingerprintArraySnapshot.children) {
+                                    try {
+                                        val id = idSnapshot.getValue(Int::class.java)
+                                        if (id != null) {
+                                            fingerprintIds.add(id)
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+
+                                // Add fingerprint items container
+                                val fingerprintContainer = LinearLayout(mainActivity).apply {
+                                    orientation = LinearLayout.VERTICAL
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    ).apply {
+                                        setMargins(16.dpToPx(context), 0, 0, 0)
+                                    }
+                                }
+
+                                // Add fingerprint items
+                                for (fingerprintId in fingerprintIds) {
+                                    val fpRow = LinearLayout(mainActivity).apply {
+                                        orientation = LinearLayout.HORIZONTAL
+                                        layoutParams = LinearLayout.LayoutParams(
+                                            LinearLayout.LayoutParams.MATCH_PARENT,
+                                            LinearLayout.LayoutParams.WRAP_CONTENT
+                                        )
+                                        gravity = Gravity.CENTER_VERTICAL
+                                    }
+
+                                    val checkbox = CheckBox(mainActivity).apply {
+                                        layoutParams = LinearLayout.LayoutParams(
+                                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                                            LinearLayout.LayoutParams.WRAP_CONTENT
+                                        )
+                                        buttonTintList = ColorStateList.valueOf(
+                                            ResourcesCompat.getColor(resources, R.color.maroon, null)
+                                        )
+
+                                        // Set up checkbox listener
+                                        setOnCheckedChangeListener { _, isChecked ->
+                                            if (isChecked) {
+                                                selectedFingerprints[userEmail]?.add(fingerprintId)
+                                            } else {
+                                                selectedFingerprints[userEmail]?.remove(fingerprintId)
+                                            }
+                                            updateDeleteButtonState()
+                                        }
+                                    }
+                                    fpRow.addView(checkbox)
+
+                                    val idText = TextView(mainActivity).apply {
+                                        text = "Fingerprint ID: $fingerprintId"
+                                        layoutParams = LinearLayout.LayoutParams(
+                                            0,
+                                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                                            1f
+                                        )
+                                        setTextColor(Color.BLACK)
+                                        textSize = 14f
+                                    }
+                                    fpRow.addView(idText)
+
+                                    fingerprintContainer.addView(fpRow)
+                                }
+                                userView.addView(fingerprintContainer)
+
+                                // Add delete all button
+                                val deleteAllButton = Button(mainActivity).apply {
+                                    text = "Delete All"
+                                    background = closeButton.background
+                                    setTextColor(closeButton.textColors)
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    ).apply {
+                                        gravity = Gravity.END
+                                        setMargins(0, 8.dpToPx(context), 0, 0)
+                                    }
+                                    setPadding(16.dpToPx(context), 4.dpToPx(context), 16.dpToPx(context), 4.dpToPx(context))
+
+                                    setOnClickListener {
                                         val builder = androidx.appcompat.app.AlertDialog.Builder(mainActivity)
-                                        builder.setTitle("Delete Fingerprint")
-                                        builder.setMessage("Are you sure you want to delete the fingerprint for $userEmail?")
+                                        builder.setTitle("Delete All Fingerprints")
+                                        builder.setMessage("Are you sure you want to delete all fingerprints for $userEmail?")
                                         builder.setPositiveButton("Yes") { _, _ ->
-                                            // Delete fingerprint
+                                            // Send delete_all command
+                                            val sanitizedEmail = userEmail.replace(".", ",")
                                             FirebaseDatabase.getInstance().reference
                                                 .child("devices").child(deviceId).child("fingerprint")
-                                                .child(userEmail.replace(".", ","))
-                                                .removeValue()
+                                                .child(sanitizedEmail)
+                                                .setValue("delete_all")
                                                 .addOnSuccessListener {
-                                                    if (mainActivity.isFinishing) return@addOnSuccessListener
-                                                    
-                                                    // Remove view
+                                                    Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
                                                     container.removeView(userView)
-                                                    
-                                                    // Show toast
-                                                    Toast.makeText(mainActivity, "Fingerprint deleted", Toast.LENGTH_SHORT).show()
-                                                    
+
                                                     // Check if container is empty
                                                     if (container.childCount == 0) {
                                                         loadingText.text = "No registered fingerprints"
                                                         loadingText.visibility = View.VISIBLE
+                                                        deleteSelectedButton.visibility = View.GONE
                                                     }
                                                 }
                                         }
                                         builder.setNegativeButton("No", null)
-                                        
-                                        // Show dialog
-                                        val confirmDialog = builder.create()
-                                        confirmDialog.show()
+                                        builder.create().show()
                                     }
-                                    
-                                    // Add to container
-                                    container.addView(userView)
-                                    hasItems = true
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
                                 }
+                                userView.addView(deleteAllButton)
+
+                                // Add to container
+                                container.addView(userView)
                             }
-                            
-                            // If no items were added, show message
-                            if (!hasItems) {
-                                loadingText.text = "No registered fingerprints"
-                                loadingText.visibility = View.VISIBLE
-                            }
+                        }
+
+                        // Hide loading if we have fingerprints, otherwise show "No fingerprints" message
+                        if (hasFingerprints) {
+                            loadingText.visibility = View.GONE
+                            deleteSelectedButton.visibility = View.VISIBLE
                         } else {
-                            // No fingerprints
                             loadingText.text = "No registered fingerprints"
                             loadingText.visibility = View.VISIBLE
+                            deleteSelectedButton.visibility = View.GONE
                         }
                     }
                     .addOnFailureListener { e ->
                         if (mainActivity.isFinishing) return@addOnFailureListener
-                        
+
                         // Show error
                         loadingText.text = "Failed to load fingerprints"
                         loadingText.visibility = View.VISIBLE
@@ -1709,32 +1948,63 @@ class MonitoringFragment : Fragment() {
                 }
             }
         }
-        
+
+        // Extension function to convert dp to pixels
+        fun Int.dpToPx(context: Context): Int {
+            return (this * context.resources.displayMetrics.density).toInt()
+        }
+
         private fun enrollFingerprint(deviceId: String, userEmail: String) {
             try {
                 // Get activity context safely
                 val activity = context as? FragmentActivity ?: return
                 if (activity.isFinishing || activity.isDestroyed) return
-                
-                // Show a toast to indicate the process has started
-                Toast.makeText(activity, "Starting fingerprint enrollment for $userEmail...", Toast.LENGTH_SHORT).show()
-                
-                // Update Firebase with the user's email for fingerprint enrollment
+
+                // Show a toast to indicate lookup has started
+                Toast.makeText(activity, "Looking up user data...", Toast.LENGTH_SHORT).show()
+
+                // First, find the user ID from the email
                 FirebaseDatabase.getInstance().reference
-                    .child("devices").child(deviceId).child("fingerprint")
-                    .child(userEmail.replace(".", ",")).setValue("enroll")
-                    .addOnSuccessListener {
+                    .child("users")
+                    .orderByChild("email")
+                    .equalTo(userEmail)
+                    .get()
+                    .addOnSuccessListener { userSnapshot ->
                         // Check if activity is still valid
                         if (activity.isFinishing || activity.isDestroyed) return@addOnSuccessListener
-                        
-                        // Show toast notification
-                        Toast.makeText(activity, "Enrolling fingerprint for $userEmail", Toast.LENGTH_SHORT).show()
+
+                        if (userSnapshot.exists()) {
+                            // Get the user ID from the query result
+                            val userId = userSnapshot.children.first().key ?: return@addOnSuccessListener
+
+                            // Show a toast to indicate the process has started
+                            Toast.makeText(activity, "Starting fingerprint enrollment for $userEmail...", Toast.LENGTH_SHORT).show()
+
+                            // Update Firebase with the user ID for fingerprint enrollment
+                            FirebaseDatabase.getInstance().reference
+                                .child("devices").child(deviceId).child("fingerprint")
+                                .child(userId).setValue("enroll")
+                                .addOnSuccessListener {
+                                    // Check if activity is still valid
+                                    if (activity.isFinishing || activity.isDestroyed) return@addOnSuccessListener
+
+                                    // Show toast notification
+                                    Toast.makeText(activity, "Enrolling fingerprint for $userEmail", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener { e ->
+                                    // Check if activity is still valid
+                                    if (activity.isFinishing || activity.isDestroyed) return@addOnFailureListener
+
+                                    Toast.makeText(activity, "Failed to enroll fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        } else {
+                            Toast.makeText(activity, "User not found in database", Toast.LENGTH_SHORT).show()
+                        }
                     }
                     .addOnFailureListener { e ->
                         // Check if activity is still valid
                         if (activity.isFinishing || activity.isDestroyed) return@addOnFailureListener
-                        
-                        Toast.makeText(activity, "Failed to enroll fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(activity, "Error finding user: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1743,138 +2013,6 @@ class MonitoringFragment : Fragment() {
                     if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
                         Toast.makeText(activity, "Error enrolling fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                } catch (e2: Exception) {
-                    e2.printStackTrace()
-                }
-            }
-        }
-
-        private fun showFingerprintUsersDialog(deviceId: String) {
-            try {
-                // Use the activity context to create the dialog to avoid crashes
-                val activity = context as? FragmentActivity ?: return
-                if (activity.isFinishing || activity.isDestroyed) return
-                
-                val dialog = Dialog(activity)
-                dialog.setContentView(R.layout.dialog_fingerprint_users)
-                dialog.setCancelable(true)
-
-                // Find views safely with null checks
-                val fingerprintUsersContainer = dialog.findViewById<LinearLayout>(R.id.fingerprintUsersContainer) ?: return
-                val noFingerprintsText = dialog.findViewById<TextView>(R.id.noFingerprintsText) ?: return
-                val closeButton = dialog.findViewById<Button>(R.id.closeButton) ?: return
-
-                // Clear any existing views
-                fingerprintUsersContainer.removeAllViews()
-
-                // Show loading state
-                noFingerprintsText.text = "Loading..."
-                noFingerprintsText.visibility = View.VISIBLE
-                fingerprintUsersContainer.visibility = View.GONE
-
-                // Fetch registered fingerprints from Firebase
-                FirebaseDatabase.getInstance().reference
-                    .child("devices").child(deviceId).child("fingerprint")
-                    .get()
-                    .addOnSuccessListener { snapshot ->
-                        // Check if dialog is still showing and activity is valid
-                        if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@addOnSuccessListener
-                        
-                        if (snapshot.exists() && snapshot.childrenCount > 0) {
-                            noFingerprintsText.visibility = View.GONE
-                            fingerprintUsersContainer.visibility = View.VISIBLE
-                            fingerprintUsersContainer.removeAllViews() // Clear again just to be safe
-
-                            // For each registered fingerprint
-                            for (fingerprintSnapshot in snapshot.children) {
-                                val userEmail = fingerprintSnapshot.key?.replace(",", ".") ?: continue
-                                val status = fingerprintSnapshot.getValue(String::class.java) ?: continue
-
-                                try {
-                                    // Create a view for this fingerprint user
-                                    val userView = LayoutInflater.from(activity)
-                                        .inflate(R.layout.item_fingerprint_user, fingerprintUsersContainer, false)
-
-                                    val fingerprintUserText = userView.findViewById<TextView>(R.id.fingerprintUserText)
-                                    val deleteButton = userView.findViewById<ImageButton>(R.id.deleteButton)
-
-                                    fingerprintUserText.text = userEmail
-
-                                    // Set up delete button
-                                    deleteButton.setOnClickListener { deleteView ->
-                                        // Check if dialog is still showing and activity is valid
-                                        if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@setOnClickListener
-                                        
-                                        // Show confirmation dialog
-                                        val confirmDialog = androidx.appcompat.app.AlertDialog.Builder(activity)
-                                            .setTitle("Delete Fingerprint")
-                                            .setMessage("Are you sure you want to delete the fingerprint for $userEmail?")
-                                            .setPositiveButton("Yes") { _, _ ->
-                                                // Delete this fingerprint from Firebase
-                                                FirebaseDatabase.getInstance().reference
-                                                    .child("devices").child(deviceId).child("fingerprint")
-                                                    .child(userEmail.replace(".", ","))
-                                                    .removeValue()
-                                                    .addOnSuccessListener {
-                                                        // Check if dialog is still showing and activity is valid
-                                                        if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@addOnSuccessListener
-                                                        
-                                                        Toast.makeText(activity, "Fingerprint deleted for $userEmail", Toast.LENGTH_SHORT).show()
-                                                        // Remove this view from the container
-                                                        fingerprintUsersContainer.removeView(userView)
-                                                        
-                                                        // Check if there are any fingerprints left
-                                                        if (fingerprintUsersContainer.childCount == 0) {
-                                                            noFingerprintsText.text = "No registered fingerprints"
-                                                            noFingerprintsText.visibility = View.VISIBLE
-                                                            fingerprintUsersContainer.visibility = View.GONE
-                                                        }
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        // Check if dialog is still showing and activity is valid
-                                                        if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@addOnFailureListener
-                                                        
-                                                        Toast.makeText(activity, "Failed to delete fingerprint: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                    }
-                                            }
-                                            .setNegativeButton("No", null)
-                                            .create()
-                                        confirmDialog.show()
-                                    }
-
-                                    // Add the view to the container
-                                    fingerprintUsersContainer.addView(userView)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
-                        } else {
-                            // No fingerprints registered
-                            noFingerprintsText.text = "No registered fingerprints"
-                            noFingerprintsText.visibility = View.VISIBLE
-                            fingerprintUsersContainer.visibility = View.GONE
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        // Check if dialog is still showing and activity is valid
-                        if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@addOnFailureListener
-                        
-                        Toast.makeText(activity, "Failed to load fingerprints: ${e.message}", Toast.LENGTH_SHORT).show()
-                        noFingerprintsText.text = "Failed to load fingerprints"
-                        noFingerprintsText.visibility = View.VISIBLE
-                        fingerprintUsersContainer.visibility = View.GONE
-                    }
-
-                // Set up close button
-                closeButton.setOnClickListener {
-                    dialog.dismiss()
-                }
-
-                dialog.show()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                try {
-                    Toast.makeText(context, "Error showing dialog: ${e.message}", Toast.LENGTH_SHORT).show()
                 } catch (e2: Exception) {
                     e2.printStackTrace()
                 }
