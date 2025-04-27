@@ -4,7 +4,18 @@
 #include "ESPCommunication.h"
 #include "LockControl.h"
 
+// Global state variables
+bool safeClosed = true;
 bool tamperDetected = false;
+unsigned long lastStatusTime = 0;
+unsigned long lastLedBlinkTime = 0;
+bool ledState = false;
+
+// Timing constants
+#define STATUS_UPDATE_INTERVAL 1000    // Send status every 1 second
+#define COMMAND_CHECK_INTERVAL 50      // Check commands every 50ms
+#define LED_BLINK_INTERVAL_NORMAL 1000 // Normal blink interval in ms
+#define LED_BLINK_INTERVAL_ALERT 250   // Fast blink interval for alerts
 
 void setup() {
     Serial.begin(9600);
@@ -12,28 +23,75 @@ void setup() {
     
     // Initialize all components
     initializeReedSensor();
-    initializeAccelerometer();
+    resetReedSensorState(); // Ensure reed sensor has a clean state
+    
+    bool accelOk = initializeAccelerometer();
     initializeESPCommunication();
     initializeLock();
 
-    Serial.println("Nano-ESP Secure Safe System Started");
+    if (!accelOk) {
+        Serial.println("⚠️ WARNING: Accelerometer initialization failed!");
+        // Blink LED rapidly to indicate error
+        for (int i = 0; i < 10; i++) {
+            digitalWrite(LED_BUILTIN, HIGH);
+            delay(100);
+            digitalWrite(LED_BUILTIN, LOW);
+            delay(100);
+        }
+    }
+
+    // Read initial safe state
+    safeClosed = isSafeClosed();
+    
+    Serial.println("✅ Nano-ESP Secure Safe System Started");
 }
 
 void loop() {
-    // Always check for ESP commands first
-    checkESPResponse();
+    unsigned long currentMillis = millis();
     
-    // Read sensors (these should be non-blocking too)
-    bool safeClosed = isSafeClosed();
-    bool tamperDetected = checkForTamper();
-
-    // Send status every 2 seconds
-    static unsigned long lastStatusTime = 0;
-    if (millis() - lastStatusTime > 2000) {
-        // Update ESP
+    // Handle LED status indication
+    updateStatusLED(currentMillis);
+    
+    // Check for ESP commands with appropriate timing
+    static unsigned long lastCommandCheck = 0;
+    if (currentMillis - lastCommandCheck >= COMMAND_CHECK_INTERVAL) {
+        checkESPResponse();
+        lastCommandCheck = currentMillis;
+    }
+    
+    // Read sensors (non-blocking)
+    bool newSafeClosed = isSafeClosed();
+    bool newTamperDetected = checkForTamper();
+    
+    // Detect and handle state changes
+    if (newSafeClosed != safeClosed || newTamperDetected != tamperDetected) {
+        // State changed, update immediately
+        safeClosed = newSafeClosed;
+        tamperDetected = newTamperDetected;
         sendStatusToESP(safeClosed, tamperDetected);
-        lastStatusTime = millis();
-    } 
-    // Small delay to prevent CPU overload
-    delay(10);
+        lastStatusTime = currentMillis;
+    }
+    // Periodic status update
+    else if (currentMillis - lastStatusTime >= STATUS_UPDATE_INTERVAL) {
+        sendStatusToESP(safeClosed, tamperDetected);
+        lastStatusTime = currentMillis;
+    }
+    
+    // No delay needed - the timing is handled by millis() comparisons
+}
+
+// Update the built-in LED based on system status
+void updateStatusLED(unsigned long currentMillis) {
+    unsigned long blinkInterval = LED_BLINK_INTERVAL_NORMAL;
+    
+    // Use faster blink for alert conditions
+    if (tamperDetected || !safeClosed) {
+        blinkInterval = LED_BLINK_INTERVAL_ALERT;
+    }
+    
+    if (currentMillis - lastLedBlinkTime >= blinkInterval) {
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+        lastLedBlinkTime = currentMillis;
+    }
 }
