@@ -5,23 +5,67 @@
 
 // Define pins for fingerprint sensor (adjust if necessary)
 
-HardwareSerial FingerSerial(2);  // Use UART1
+HardwareSerial FingerSerial(2);  // Use UART2
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&FingerSerial);
 
-FingerprintState fingerprintState = FP_IDLE;
+// Firebase data cache to reduce redundant queries
+struct {
+    unsigned long lastRefreshTime = 0;
+    const unsigned long CACHE_TIMEOUT = 5000; // 5 seconds cache validity
+    FirebaseJson fingerprintMappings;
+    bool isValid = false;
+    
+    bool needsRefresh() {
+        return !isValid || (millis() - lastRefreshTime > CACHE_TIMEOUT);
+    }
+    
+    void refresh() {
+        // Only refresh if Firebase is ready
+        if (!isFirebaseReady()) {
+            return;
+        }
+        
+        String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
+        
+        if (Firebase.RTDB.getJSON(&fbdo, mappingsPath.c_str())) {
+            FirebaseJson* json = fbdo.jsonObjectPtr();
+            if (json != nullptr) {
+                fingerprintMappings = *json;
+                isValid = true;
+                lastRefreshTime = millis();
+            }
+        }
+    }
+    
+    FirebaseJson* getData() {
+        if (needsRefresh()) {
+            refresh();
+        }
+        return isValid ? &fingerprintMappings : nullptr;
+    }
+} firebaseCache;
 
+// State variables
+bool fingerprintEnrollmentInProgress = false;
+FingerprintState fingerprintState = FP_IDLE;
 EnrollmentState enrollmentState = ENROLL_IDLE;
+
+// Timer variables
+unsigned long lastFingerprintCheck = 0;
 unsigned long enrollmentStateStartTime = 0;
+unsigned long lastCommandCheck = 0;
+const unsigned long FINGERPRINT_CHECK_INTERVAL = 10000; // 10 seconds between checks
+const unsigned long ENROLLMENT_STATE_TIMEOUT = 30000;   // 30 seconds timeout
+const unsigned long COMMAND_CHECK_INTERVAL = 10000;     // 10 seconds between command checks
+
+// Enrollment variables
 int currentEnrollmentId = -1;
 String currentEnrollmentUserId = "";
-const unsigned long ENROLLMENT_STATE_TIMEOUT = 20000;
 
-bool deleteFingerPrintCommandPending = false;
-int fingerprintToDelete = -1;  // -1 means delete all, positive number is specific ID
+// Delete command variables
+bool deleteCommandPending = false;
+int fingerprintToDelete = -1;  // -1 means delete all, -2 means multiple, positive number is specific ID
 std::vector<int> fingerprints_to_delete;
-
-unsigned long lastCommandCheck = 0;
-const unsigned long COMMAND_CHECK_INTERVAL = 10000; 
 
 void initializeFingerprint() {
     FingerSerial.begin(57600, SERIAL_8N1, 32, 33);
@@ -36,7 +80,6 @@ void initializeFingerprint() {
     finger.setSecurityLevel(3);
 }
 
-// Modified to focus only on sending the command when needed
 bool authenticateUser() {
     static unsigned long stateStartTime = 0;
     const unsigned long STATE_TIMEOUT = 500; // 500ms timeout for each state
@@ -99,7 +142,6 @@ bool authenticateUser() {
     }
 }
 
-// Replace the current enrollFingerprint with this state machine version
 bool enrollFingerprint(int id) {
     // Only start enrollment if we're in IDLE state
     if (enrollmentState == ENROLL_IDLE) {
@@ -260,317 +302,318 @@ bool enrollFingerprint(int id) {
     }
 }
 
-// Unified command checking and processing function
-void manageFingerprintCommands() {
-    // Process any ongoing enrollment first
-    if (enrollmentState != ENROLL_IDLE) {
-        processOngoingEnrollment();
-        return; // Don't check for new commands until enrollment is complete
-    }
-    
-    // Process any pending delete commands
-    if (deleteFingerPrintCommandPending) {
-        processDeleteCommands();
-        return; // Don't check for new commands until deletion is complete
-    }
-    
-    // Only check for new commands periodically
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastCommandCheck < COMMAND_CHECK_INTERVAL) {
+// Unified function to check and process Firebase commands
+void checkForCommands() {
+    // Don't check if enrollment is in progress or if it's too soon
+    if (enrollmentState != ENROLL_IDLE || millis() - lastCommandCheck < COMMAND_CHECK_INTERVAL) {
         return;
     }
     
-    lastCommandCheck = currentMillis;
+    lastCommandCheck = millis();
     
     // Make sure Firebase is ready
     if (!isFirebaseReady()) {
         return;
     }
+
+    // Get the fingerprint mappings data (using cache if available)
+    FirebaseJson* json = firebaseCache.getData();
+    if (json == nullptr) {
+        return;
+    }
+
+    // Iterate through all users in the mappings
+    size_t iterCount = json->iteratorBegin();
+    FirebaseJson::IteratorValue value;
+    bool commandFound = false;
     
-    // Path to check for fingerprint mappings
-    String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
-    
-    if (Firebase.RTDB.getJSON(&fbdo, mappingsPath.c_str())) {
-        FirebaseJson* json = fbdo.jsonObjectPtr();
-        if (json != nullptr) {
-            // Iterate through all users in the mappings
-            size_t iterCount = json->iteratorBegin();
-            FirebaseJson::IteratorValue value;
-            bool commandFound = false;
+    for (size_t i = 0; i < iterCount && !commandFound; i++) {
+        value = json->valueAt(i);
+        String userId = value.key;
+        String status = value.value;
+        status.replace("\"", ""); // Remove quotes
+        
+        String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
+        String userPath = mappingsPath + "/" + userId;
+        
+        // Process enrollment requests
+        if (status == "enroll") {
+            Serial.print("📱 Fingerprint enrollment requested for user: ");
+            Serial.println(userId);
             
-            for (size_t i = 0; i < iterCount && !commandFound; i++) {
-                value = json->valueAt(i);
-                String userId = value.key;
-                String status = value.value;
-                status.replace("\"", ""); // Remove quotes
+            // Find the next available fingerprint ID
+            int availableId = findNextAvailableId();
+            
+            if (availableId <= 0) {
+                Serial.println("❌ No available fingerprint slots!");
                 
-                // Priority 1: Check for delete commands first
-                if (status == "delete_all" || status.startsWith("delete_")) {
-                    commandFound = true;
-                    setupDeleteCommand(userId, status);
-                    
-                    // Clear the command after reading
-                    String userPath = mappingsPath + "/" + userId;
-                    Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
-                }
-                // Priority 2: Check for enrollment requests
-                else if (status == "enroll") {
-                    commandFound = true;
-                    setupEnrollment(userId);
-                }
+                // Log failure
+                FirebaseJson logEntry;
+                logEntry.set("timestamp", isTimeSynchronized());
+                logEntry.set("event", "fingerprint_enrollment_failed");
+                logEntry.set("userId", userId);
+                logEntry.set("reason", "no_available_slots");
+
+                String logPath = String("devices/") + deviceId + "/logs";
+                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+
+                Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+                continue;
             }
             
-            json->iteratorEnd();
+            // Start enrollment process
+            currentEnrollmentId = availableId;
+            currentEnrollmentUserId = userId;
+            enrollFingerprint(currentEnrollmentId);
+            commandFound = true;
         }
+        // Process delete_all command
+        else if (status == "delete_all") {
+            Serial.print("📱 Command received: Delete all fingerprints for user: ");
+            Serial.println(userId);
+            deleteCommandPending = true;
+            fingerprintToDelete = -1;
+            currentEnrollmentUserId = userId;
+            fingerprints_to_delete.clear();
+            
+            // Clear the command after reading
+            Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+            commandFound = true;
+        }
+        // Process delete_ID or delete_ID1,ID2,ID3 format
+        else if (status.startsWith("delete_")) {
+            Serial.print("📱 Command received for user: ");
+            Serial.print(userId);
+            Serial.print(" - ");
+            Serial.println(status);
+            
+            // Extract IDs from the command
+            String idsToDelete = status.substring(7); // Remove "delete_" prefix
+            
+            // Parse comma-separated IDs
+            fingerprints_to_delete.clear();
+            int commaIndex = -1;
+            int startPos = 0;
+            
+            do {
+                commaIndex = idsToDelete.indexOf(',', startPos);
+                String idStr;
+                
+                if (commaIndex != -1) {
+                    idStr = idsToDelete.substring(startPos, commaIndex);
+                    startPos = commaIndex + 1;
+                } else {
+                    idStr = idsToDelete.substring(startPos);
+                }
+                
+                // Convert to integer and add to our vector
+                if (idStr.length() > 0) {
+                    int id = idStr.toInt();
+                    fingerprints_to_delete.push_back(id);
+                    Serial.print("Added ID to delete list: ");
+                    Serial.println(id);
+                }
+            } while (commaIndex != -1);
+            
+            if (fingerprints_to_delete.size() > 0) {
+                deleteCommandPending = true;
+                currentEnrollmentUserId = userId;
+                
+                // For backward compatibility with original code
+                fingerprintToDelete = (fingerprints_to_delete.size() == 1) ? 
+                                      fingerprints_to_delete[0] : -2; // -2 indicates multiple IDs
+                
+                Serial.print("Found ");
+                Serial.print(fingerprints_to_delete.size());
+                Serial.println(" fingerprint ID(s) to delete");
+            } else {
+                Serial.println("❌ No valid fingerprint IDs found in delete command");
+            }
+            
+            // Clear the command after reading
+            Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+            commandFound = true;
+        }
+    }
+    
+    json->iteratorEnd();
+    
+    // If a command was found and processed, invalidate the cache
+    if (commandFound) {
+        firebaseCache.isValid = false;
     }
 }
 
-// Setup enrollment process (doesn't actually process it yet)
-void setupEnrollment(String userId) {
-    Serial.print("📱 Fingerprint enrollment requested for user: ");
-    Serial.println(userId);
+// Function to update Firebase after enrollment completes
+void updateFingerprintStatus(bool success) {
+    if (currentEnrollmentUserId.isEmpty()) {
+        return;
+    }
+
+    // Paths for Firebase updates
+    String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
+    String userPath = mappingsPath + "/" + currentEnrollmentUserId;
+    String logPath = String("devices/") + deviceId + "/logs";
     
-    // Find the next available fingerprint ID
-    int availableId = findNextAvailableId();
-    
-    if (availableId <= 0) {
-        Serial.println("❌ No available fingerprint slots!");
+    if (success) {
+        // Update the user's status to "registered"
+        Firebase.RTDB.setString(&fbdo, userPath.c_str(), "registered");
         
+        // Store the fingerprint ID to user mapping for later reference
+        String idMappingPath = mappingsPath + "/ids/" + String(currentEnrollmentId);
+        Firebase.RTDB.setString(&fbdo, idMappingPath.c_str(), currentEnrollmentUserId);
+        
+        // Add fingerprint ID to user's registeredDevices structure
+        String userDevicesPath = String(USERS_PATH) + currentEnrollmentUserId + "/registeredDevices/" + deviceId + "/fingerprint";
+        
+        // Check if the user already has fingerprints registered and update
+        FirebaseJsonArray fingerprintArray;
+        if (Firebase.RTDB.getArray(&fbdo, userDevicesPath.c_str())) {
+            fingerprintArray = fbdo.jsonArray();
+        }
+        
+        // Add the new fingerprint ID to the array
+        fingerprintArray.add(currentEnrollmentId);
+        Firebase.RTDB.setArray(&fbdo, userDevicesPath.c_str(), &fingerprintArray);
+        
+        Serial.print("✅ Added fingerprint ID ");
+        Serial.print(currentEnrollmentId);
+        Serial.print(" to user's registered device ");
+        Serial.println(deviceId);
+        
+        // Log successful enrollment
+        FirebaseJson logEntry;
+        logEntry.set("timestamp", isTimeSynchronized());
+        logEntry.set("event", "fingerprint_enrolled");
+        logEntry.set("userId", currentEnrollmentUserId);
+        logEntry.set("fingerprintId", currentEnrollmentId);
+        Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+    } else {
         // Log failure
         FirebaseJson logEntry;
         logEntry.set("timestamp", isTimeSynchronized());
         logEntry.set("event", "fingerprint_enrollment_failed");
-        logEntry.set("userId", userId);
-        logEntry.set("reason", "no_available_slots");
-
-        String logPath = String("devices/") + deviceId + "/logs";
+        logEntry.set("userId", currentEnrollmentUserId);
+        logEntry.set("reason", "enrollment_error");
         Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-
-        // Clear the command
-        String userPath = String(DEVICE_PATH) + deviceId + "/fingerprint/" + userId;
+        
+        // Remove the pending enrollment request
         Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+    }
+    
+    // Invalidate the cache since we made changes
+    firebaseCache.isValid = false;
+}
+
+// Process the enrollment state machine
+void processEnrollment() {
+    // If enrollment is in progress
+    if (enrollmentState != ENROLL_IDLE) {
+        // Process the enrollment state machine
+        bool enrollmentResult = enrollFingerprint(currentEnrollmentId);
+        fingerprintEnrollmentInProgress = (enrollmentState != ENROLL_IDLE);
+        
+        // If enrollment completed (success or failure)
+        if (enrollmentState == ENROLL_IDLE && !currentEnrollmentUserId.isEmpty()) {
+            fingerprintEnrollmentInProgress = false;
+            
+            // Update Firebase with the enrollment result
+            updateFingerprintStatus(enrollmentResult);
+            
+            // Reset enrollment state variables
+            currentEnrollmentUserId = "";
+            currentEnrollmentId = -1;
+            setLEDStatus(STATUS_ONLINE);
+        }
+    }
+}
+
+// Helper function to update user's fingerprint array in Firebase
+void updateUserFingerprintArray(const String& userId, const std::vector<int>& deletedIds) {
+    if (userId.isEmpty()) {
         return;
     }
     
-    // Start enrollment process
-    currentEnrollmentId = availableId;
-    currentEnrollmentUserId = userId;
-    enrollmentState = ENROLL_WAITING_FIRST;
-    enrollmentStateStartTime = millis();
-    fingerprintEnrollmentInProgress = true;
-    setLEDStatus(STATUS_SCANNING);
+    String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
     
-    Serial.println(F("Ready to enroll a fingerprint!"));
-    Serial.print(F("Please place finger on sensor for ID #")); 
-    Serial.println(currentEnrollmentId);
-}
-
-// Process ongoing enrollment
-void processOngoingEnrollment() {
-    // State machine implementation of the enrollment process
-    switch (enrollmentState) {
-        case ENROLL_WAITING_FIRST:
-            // Waiting for finger placement
-            {
-                uint8_t p = finger.getImage();
-                if (p == FINGERPRINT_OK) {
-                    Serial.println(F("First image captured"));
-                    enrollmentState = ENROLL_CAPTURING_FIRST;
-                    enrollmentStateStartTime = millis();
-                } else if (p == FINGERPRINT_NOFINGER) {
-                    // Still waiting, blink LED to indicate
-                    if ((millis() / 500) % 2 == 0) {
-                        setLEDStatus(STATUS_SCANNING);
-                    } else {
-                        setLEDStatus(STATUS_ONLINE);
-                    }
+    if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
+        FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
+        FirebaseJsonArray newArray;
+        size_t arraySize = fingerprintArray.size();
+        
+        // Create a new array excluding all deleted fingerprint IDs
+        for (size_t i = 0; i < arraySize; i++) {
+            FirebaseJsonData result;
+            fingerprintArray.get(result, i);
+            int currentId = result.intValue;
+            
+            // Check if this ID was in our deletion list
+            bool shouldKeep = true;
+            for (int deleteId : deletedIds) {
+                if (currentId == deleteId) {
+                    shouldKeep = false;
+                    break;
                 }
             }
-            break;
             
-        // [All other enrollment states from your existing code]
-        // ... (state machine continues with all the enrollment states)
-            
-        case ENROLL_COMPLETE:
-            // Enrollment successful, complete the process
-            finalizeEnrollment(true);
-            break;
-            
-        case ENROLL_FAILED:
-            // Enrollment failed, clean up
-            finalizeEnrollment(false);
-            break;
-            
-        default:
-            // Reset to idle if we're in an unknown state
-            enrollmentState = ENROLL_IDLE;
-            fingerprintEnrollmentInProgress = false;
-            setLEDStatus(STATUS_ONLINE);
-            break;
-    }
-    
-    // Check for timeout in any active state
-    if (enrollmentState != ENROLL_IDLE && 
-        enrollmentState != ENROLL_COMPLETE &&
-        enrollmentState != ENROLL_FAILED) {
-        
-        if (millis() - enrollmentStateStartTime > ENROLLMENT_STATE_TIMEOUT) {
-            Serial.println(F("❌ Enrollment timeout"));
-            enrollmentState = ENROLL_FAILED;
-            setLEDStatus(STATUS_ERROR);
-        }
-    }
-}
-
-// Finalize the enrollment process (success or failure)
-void finalizeEnrollment(bool success) {
-    // Path to check for fingerprint mappings
-    fingerprintEnrollmentInProgress = false;
-    setLEDStatus(success ? STATUS_REGISTERED : STATUS_ERROR);
-    
-    if (!currentEnrollmentUserId.isEmpty()) {
-        String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
-        
-        if (success) {
-            // Update the user's status to "registered"
-            String userPath = mappingsPath + "/" + currentEnrollmentUserId;
-            Firebase.RTDB.setString(&fbdo, userPath.c_str(), "registered");
-            
-            // Store the fingerprint ID to user mapping for later reference
-            String idMappingPath = mappingsPath + "/ids/" + String(currentEnrollmentId);
-            Firebase.RTDB.setString(&fbdo, idMappingPath.c_str(), currentEnrollmentUserId);
-            
-            // Add fingerprint ID to user's registeredDevices structure
-            String userDevicesPath = String(USERS_PATH) + currentEnrollmentUserId + "/registeredDevices/" + deviceId + "/fingerprint";
-            
-            // First, check if the user already has fingerprints registered for this device
-            FirebaseJsonArray fingerprintArray;
-            
-            if (Firebase.RTDB.getArray(&fbdo, userDevicesPath.c_str())) {
-                // User already has fingerprint array for this device
-                fingerprintArray = fbdo.jsonArray();
+            if (shouldKeep) {
+                newArray.add(currentId);
             }
-            
-            // Add the new fingerprint ID to the array
-            fingerprintArray.add(currentEnrollmentId);
-            
-            // Save the updated array
-            Firebase.RTDB.setArray(&fbdo, userDevicesPath.c_str(), &fingerprintArray);
-            
-            Serial.print("✅ Added fingerprint ID ");
-            Serial.print(currentEnrollmentId);
-            Serial.print(" to user's registered device ");
-            Serial.println(deviceId);
-            
-            // Log successful enrollment
-            FirebaseJson logEntry;
-            logEntry.set("timestamp", isTimeSynchronized());
-            logEntry.set("event", "fingerprint_enrolled");
-            logEntry.set("userId", currentEnrollmentUserId);
-            logEntry.set("fingerprintId", currentEnrollmentId);
-            
-            String logPath = String("devices/") + deviceId + "/logs";
-            Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            
-            delay(2000); // Brief pause to show success LED
+        }
+        
+        // Update the array in Firebase
+        if (newArray.size() > 0) {
+            Firebase.RTDB.setArray(&fbdo, userFingerprintPath.c_str(), &newArray);
         } else {
-            // Log failure
-            FirebaseJson logEntry;
-            logEntry.set("timestamp", isTimeSynchronized());
-            logEntry.set("event", "fingerprint_enrollment_failed");
-            logEntry.set("userId", currentEnrollmentUserId);
-            logEntry.set("reason", "enrollment_error");
-            
-            String logPath = String("devices/") + deviceId + "/logs";
-            Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            
-            String userPath = mappingsPath + "/" + currentEnrollmentUserId;
-            Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
-            
-            delay(2000); // Brief pause to show error LED
-        }
-    }
-    
-    // Reset enrollment state variables
-    currentEnrollmentUserId = "";
-    currentEnrollmentId = -1;
-    enrollmentState = ENROLL_IDLE;
-    setLEDStatus(STATUS_ONLINE);
-}
-
-// Setup delete command parameters
-void setupDeleteCommand(String userId, String status) {
-    Serial.print("📱 Delete command received for user: ");
-    Serial.println(userId);
-    
-    deleteFingerPrintCommandPending = true;
-    currentEnrollmentUserId = userId;
-    
-    if (status == "delete_all") {
-        Serial.println("Command: Delete all fingerprints");
-        fingerprintToDelete = -1;
-        fingerprints_to_delete.clear(); // Clear any previously stored ID array
-    }
-    else if (status.startsWith("delete_")) {
-        // Extract IDs from the command (format: "delete_1" or "delete_1,2,3")
-        String idsToDelete = status.substring(7); 
-        
-        // Parse comma-separated IDs
-        fingerprints_to_delete.clear();
-        int commaIndex = -1;
-        int startPos = 0;
-        
-        do {
-            commaIndex = idsToDelete.indexOf(',', startPos);
-            String idStr;
-            
-            if (commaIndex != -1) {
-                idStr = idsToDelete.substring(startPos, commaIndex);
-                startPos = commaIndex + 1;
-            } else {
-                idStr = idsToDelete.substring(startPos);
-            }
-            
-            // Convert to integer and add to our vector
-            if (idStr.length() > 0) {
-                int id = idStr.toInt();
-                fingerprints_to_delete.push_back(id);
-                Serial.print("Added ID to delete list: ");
-                Serial.println(id);
-            }
-        } while (commaIndex != -1);
-        
-        // For backward compatibility with original code
-        if (fingerprints_to_delete.size() == 1) {
-            fingerprintToDelete = fingerprints_to_delete[0];
-        } else if (fingerprints_to_delete.size() > 1) {
-            fingerprintToDelete = -2; // Indicates multiple IDs
-        } else {
-            // No valid IDs found
-            Serial.println("❌ No valid fingerprint IDs found in delete command");
-            deleteFingerPrintCommandPending = false;
+            // If array is empty, remove it completely
+            Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
         }
     }
 }
 
-// Function to execute pending delete commands
+// Log fingerprint deletion events to Firebase
+void logDeletionEvent(const String& eventType, const String& userId, int count, int successCount, int specificId){
+    if (!isFirebaseReady()) {
+        return;
+    }
+    
+    FirebaseJson logEntry;
+    logEntry.set("timestamp", isTimeSynchronized());
+    logEntry.set("event", eventType);
+    
+    if (!userId.isEmpty()) {
+        logEntry.set("userId", userId);
+    }
+    
+    if (count > 0) {
+        logEntry.set("total", count);
+    }
+    
+    if (successCount > 0) {
+        logEntry.set("success", successCount);
+    }
+    
+    if (specificId >= 0) {
+        logEntry.set("fingerprintId", specificId);
+    }
+    
+    String logPath = String("devices/") + deviceId + "/logs";
+    Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+}
+
+// Process pending delete commands
 void processDeleteCommands() {
-    if (!deleteFingerPrintCommandPending) {
+    if (!deleteCommandPending || enrollmentState != ENROLL_IDLE) {
         return;
     }
     
-    // Do not process delete commands if enrollment is in progress
-    if (enrollmentState != ENROLL_IDLE) {
-        return;
-    }
+    String userId = currentEnrollmentUserId;
     
+    // Delete all fingerprints for a specific user
     if (fingerprintToDelete == -1) {
-        // Delete all fingerprints for a specific user
-        String userId = currentEnrollmentUserId;
-        
         if (userId.isEmpty()) {
             Serial.println(F("❌ No user ID specified for fingerprint deletion"));
-            deleteFingerPrintCommandPending = false;
+            deleteCommandPending = false;
             return;
         }
         
@@ -584,6 +627,8 @@ void processDeleteCommands() {
             FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
             size_t arraySize = fingerprintArray.size();
             bool allSuccess = true;
+            int successCount = 0;
+            std::vector<int> deletedIds;
             
             Serial.print(F("Found "));
             Serial.print(arraySize);
@@ -599,53 +644,40 @@ void processDeleteCommands() {
                 Serial.println(fpId);
                 
                 uint8_t p = finger.deleteModel(fpId);
-                if (p != FINGERPRINT_OK) {
+                if (p == FINGERPRINT_OK) {
+                    Serial.print(F("✅ Deleted fingerprint ID #"));
+                    Serial.println(fpId);
+                    successCount++;
+                    deletedIds.push_back(fpId);
+                } else {
                     Serial.print(F("❌ Failed to delete fingerprint ID #"));
                     Serial.println(fpId);
                     allSuccess = false;
-                } else {
-                    Serial.print(F("✅ Deleted fingerprint ID #"));
-                    Serial.println(fpId);
                 }
             }
             
-            // If all deletions were successful or we want to clear regardless
             // Remove the fingerprint array from the user's registered devices
             Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
             
             // Log the event
-            if (isFirebaseReady()) {
-                FirebaseJson logEntry;
-                logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", allSuccess ? "user_fingerprints_deleted" : "user_fingerprints_delete_partial");
-                logEntry.set("userId", userId);
-                logEntry.set("count", arraySize);
-                
-                String logPath = String("devices/") + deviceId + "/logs";
-                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            }
+            logDeletionEvent(
+                allSuccess ? "user_fingerprints_deleted" : "user_fingerprints_delete_partial", 
+                userId, 
+                arraySize, 
+                successCount
+            );
             
             setLEDStatus(allSuccess ? STATUS_ONLINE : STATUS_ERROR);
         } else {
             Serial.println(F("⚠️ No fingerprints found for this user"));
-            
-            // Log that no fingerprints were found
-            if (isFirebaseReady()) {
-                FirebaseJson logEntry;
-                logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", "fingerprint_delete_no_fingerprints");
-                logEntry.set("userId", userId);
-                
-                String logPath = String("devices/") + deviceId + "/logs";
-                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            }
+            logDeletionEvent("fingerprint_delete_no_fingerprints", userId);
         }
     } 
+    // Delete specific fingerprint IDs (multiple)
     else if (fingerprintToDelete == -2 || !fingerprints_to_delete.empty()) {
-        // Delete specific fingerprint IDs (multiple)
-        String userId = currentEnrollmentUserId;
         int deleteCount = fingerprints_to_delete.size();
         int successCount = 0;
+        std::vector<int> deletedIds;
         
         Serial.print(F("⚠️ Executing command: Delete multiple fingerprint IDs ("));
         Serial.print(deleteCount);
@@ -661,6 +693,7 @@ void processDeleteCommands() {
                 Serial.print(F("✅ Deleted fingerprint ID #"));
                 Serial.println(id);
                 successCount++;
+                deletedIds.push_back(id);
             } else {
                 Serial.print(F("❌ Failed to delete fingerprint ID #"));
                 Serial.println(id);
@@ -669,67 +702,18 @@ void processDeleteCommands() {
         
         // Update the user's fingerprint array if we have a userId
         if (!userId.isEmpty()) {
-            String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
-            
-            if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
-                FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
-                FirebaseJsonArray newArray;
-                size_t arraySize = fingerprintArray.size();
-                
-                // Create a new array excluding all deleted fingerprint IDs
-                for (size_t i = 0; i < arraySize; i++) {
-                    FirebaseJsonData result;
-                    fingerprintArray.get(result, i);
-                    int currentId = result.intValue;
-                    
-                    // Check if this ID was in our deletion list
-                    bool shouldKeep = true;
-                    for (int deleteId : fingerprints_to_delete) {
-                        if (currentId == deleteId) {
-                            shouldKeep = false;
-                            break;
-                        }
-                    }
-                    
-                    if (shouldKeep) {
-                        newArray.add(currentId);
-                    }
-                }
-                
-                // Update the array in Firebase
-                if (newArray.size() > 0) {
-                    Firebase.RTDB.setArray(&fbdo, userFingerprintPath.c_str(), &newArray);
-                } else {
-                    // If array is empty, remove it completely
-                    Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
-                }
-                
-                Serial.println(F("✅ Updated user's fingerprint array"));
-            }
+            updateUserFingerprintArray(userId, deletedIds);
+            Serial.println(F("✅ Updated user's fingerprint array"));
         }
         
         // Log the event
-        if (isFirebaseReady()) {
-            FirebaseJson logEntry;
-            logEntry.set("timestamp", isTimeSynchronized());
-            logEntry.set("event", "multiple_fingerprints_deleted");
-            logEntry.set("total", deleteCount);
-            logEntry.set("success", successCount);
-            
-            if (!userId.isEmpty()) {
-                logEntry.set("userId", userId);
-            }
-            
-            String logPath = String("devices/") + deviceId + "/logs";
-            Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-        }
+        logDeletionEvent("multiple_fingerprints_deleted", userId, deleteCount, successCount);
         
         setLEDStatus(successCount == deleteCount ? STATUS_ONLINE : STATUS_ERROR);
     } 
+    // Delete specific fingerprint ID (legacy single ID method)
     else {
-        // Delete specific fingerprint ID (legacy single ID method)
         int specificId = fingerprintToDelete;
-        String userId = currentEnrollmentUserId;
         
         Serial.print(F("⚠️ Executing command: Delete fingerprint ID #"));
         Serial.println(specificId);
@@ -741,50 +725,13 @@ void processDeleteCommands() {
             
             // Update the user's fingerprint array
             if (!userId.isEmpty()) {
-                String userFingerprintPath = String(USERS_PATH) + userId + "/registeredDevices/" + deviceId + "/fingerprint";
-                
-                if (Firebase.RTDB.getArray(&fbdo, userFingerprintPath.c_str())) {
-                    FirebaseJsonArray fingerprintArray = fbdo.jsonArray();
-                    FirebaseJsonArray newArray;
-                    size_t arraySize = fingerprintArray.size();
-                    
-                    // Create a new array excluding the deleted fingerprint ID
-                    for (size_t i = 0; i < arraySize; i++) {
-                        FirebaseJsonData result;
-                        fingerprintArray.get(result, i);
-                        int currentId = result.intValue;
-                        
-                        if (currentId != specificId) {
-                            newArray.add(currentId);
-                        }
-                    }
-                    
-                    // Update the array in Firebase
-                    if (newArray.size() > 0) {
-                        Firebase.RTDB.setArray(&fbdo, userFingerprintPath.c_str(), &newArray);
-                    } else {
-                        // If array is empty, remove it completely
-                        Firebase.RTDB.deleteNode(&fbdo, userFingerprintPath.c_str());
-                    }
-                    
-                    Serial.println(F("✅ Updated user's fingerprint array"));
-                }
+                std::vector<int> deletedIds = {specificId};
+                updateUserFingerprintArray(userId, deletedIds);
+                Serial.println(F("✅ Updated user's fingerprint array"));
             }
             
             // Log the event
-            if (isFirebaseReady()) {
-                FirebaseJson logEntry;
-                logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", "fingerprint_deleted");
-                logEntry.set("fingerprintId", specificId);
-                
-                if (!userId.isEmpty()) {
-                    logEntry.set("userId", userId);
-                }
-                
-                String logPath = String("devices/") + deviceId + "/logs";
-                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            }
+            logDeletionEvent("fingerprint_deleted", userId, 0, 0, specificId);
             
             setLEDStatus(STATUS_ONLINE);
         } else {
@@ -793,37 +740,18 @@ void processDeleteCommands() {
             setLEDStatus(STATUS_ERROR);
             
             // Log the failure
-            if (isFirebaseReady()) {
-                FirebaseJson logEntry;
-                logEntry.set("timestamp", isTimeSynchronized());
-                logEntry.set("event", "fingerprint_delete_failed");
-                logEntry.set("fingerprintId", specificId);
-                
-                if (!userId.isEmpty()) {
-                    logEntry.set("userId", userId);
-                }
-                
-                String logPath = String("devices/") + deviceId + "/logs";
-                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
-            }
+            logDeletionEvent("fingerprint_delete_failed", userId, 0, 0, specificId);
         }
     }
     
     // Reset command flags
-    deleteFingerPrintCommandPending = false;
+    deleteCommandPending = false;
     fingerprintToDelete = -1;
     fingerprints_to_delete.clear();
     currentEnrollmentUserId = "";
-}
-
-void deleteAllFingerprints() {
-    Serial.println(F("⚠️ Deleting all fingerprints..."));
     
-    if (finger.emptyDatabase() == FINGERPRINT_OK) {
-        Serial.println(F("✅ All fingerprints deleted!"));
-    } else {
-        Serial.println(F("❌ Failed to delete fingerprints"));
-    }
+    // Invalidate the cache since we made changes
+    firebaseCache.isValid = false;
 }
 
 void waitForFingerRemoval(unsigned long timeoutMillis) {
@@ -841,7 +769,6 @@ void waitForFingerRemoval(unsigned long timeoutMillis) {
     }
 }
 
-// Add this function to FingerprintSensor.cpp
 int findNextAvailableId() {
     int availableId = -1;
     const int MAX_FINGERPRINT_COUNT = 127;  // adjust per your sensor
@@ -858,4 +785,29 @@ int findNextAvailableId() {
 
     Serial.println("❌ No available fingerprint IDs found!");
     return -1;
+}
+
+// Main function to handle all fingerprint operations - call this from the main loop
+void handleFingerprint() {
+    // Check for pending commands in Firebase
+    checkForCommands();
+    
+    // Process enrollment if in progress
+    processEnrollment();
+    
+    // Process delete commands if pending
+    processDeleteCommands();
+    
+    // Check for fingerprint authentication if not doing anything else
+    if (!fingerprintEnrollmentInProgress && enrollmentState == ENROLL_IDLE && !deleteCommandPending) {
+        if (authenticateUser()) {
+            // Authentication successful, handle the unlock process
+            // This could be a call to another function like handleSuccessfulAuth()
+            sendCommandToNano("UNLOCK");
+            // For now, just set the LED to success
+            setLEDStatus(STATUS_UNLOCKED);
+            delay(3000);
+            setLEDStatus(STATUS_ONLINE);
+        }
+    }
 }

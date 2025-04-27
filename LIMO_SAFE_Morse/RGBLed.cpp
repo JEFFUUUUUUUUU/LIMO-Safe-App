@@ -1,8 +1,6 @@
 #include "RGBLed.h"
 #include <Arduino.h>
 
-bool fingerprintEnrollmentInProgress = false;
-
 // Initialize RGB LED pins
 void initRGB() {
     pinMode(RED_PIN, OUTPUT);

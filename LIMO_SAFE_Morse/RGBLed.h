@@ -44,6 +44,4 @@ void setColorRGB(uint8_t color);
 void pulseColor(uint8_t color, uint8_t times, unsigned int delayTime);
 void blinkColor(uint8_t color, uint8_t times, unsigned int onTime, unsigned int offTime);
 
-extern bool fingerprintEnrollmentInProgress;
-
 #endif

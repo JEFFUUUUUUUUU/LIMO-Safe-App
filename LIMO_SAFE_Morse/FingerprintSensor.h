@@ -25,20 +25,26 @@ enum EnrollmentState {
 };
 
 void initializeFingerprint();
-bool checkAndProcessFingerprint();
 bool authenticateUser();
 bool enrollFingerprint(int id);
-void manageFingerprintCommands();
-void setupEnrollment(String userId);
-void processOngoingEnrollment();
-void finalizeEnrollment(bool success);
-void setupDeleteCommand(String userId, String status);
+void processEnrollment();
 void deleteAllFingerprints();
+void checkForCommands();
 void processDeleteCommands();
 void waitForFingerRemoval(unsigned long timeoutMillis = 3000);
 int findNextAvailableId();
+void handleFingerprint();
+void updateUserFingerprintArray(const String& userId, const std::vector<int>& deletedIds);
+void logDeletionEvent(const String& eventType, const String& userId, int count = 0, int successCount = 0, int specificId = -1);
+void updateFingerprintStatus(bool success);
 
+
+extern unsigned long lastFingerprintCheck;
+extern const unsigned long FINGERPRINT_CHECK_INTERVAL;
+extern unsigned long lastFingerprintEnrollCheck;
+extern const unsigned long FINGERPRINT_ENROLL_CHECK_INTERVAL;
 extern unsigned long fpCommandSentTime;
 extern unsigned long fpStateTimeout;
+extern bool fingerprintEnrollmentInProgress;
 
 #endif

@@ -3,256 +3,134 @@
 #include "FirebaseHandler.h"
 #include "RGBLed.h"
 
-// Signal processing variables
-float smoothedValue = 0;                      // Current smoothed sensor reading
-int highThreshold = 500;                      // Dynamic high threshold
-int lowThreshold = 400;                       // Dynamic low threshold
-bool isTransmissionActive = false;            // Flag for active transmission
-unsigned long lastActiveTime = 0;             // Last time activity was detected
-unsigned long lastCalibrationTime = 0;        // Last time calibration occurred
-
-// Signal history tracking
-unsigned long transitionTimes[SIGNAL_HISTORY_SIZE]; // Timestamps of recent transitions
-int transitionIndex = 0;                     // Current index in transition buffer
-int recentMax = 0;                           // Recent maximum light value
-int recentMin = 4095;                        // Recent minimum light value (ESP32 ADC max)
-
-// Morse processing state
-String receivedMorse = "";                   // Current morse sequence
-bool receivingMorse = false;                 // Flag to indicate active reception
-unsigned long lastChangeTime = 0;            // Time of last state change
-bool lastState = false;                      // Previous light state
-unsigned long lastProcessTime = 0;           // Last processing time for throttling
+// Define global variables (only once)
+String receivedMorse = "";
+String receivedOTP = "";
+unsigned long lastChangeTime = 0;
+bool lastState = false;
+int currentThreshold = THRESHOLD_BASE;
 
 void setupLightSensor() {
     pinMode(LIGHT_SENSOR_PIN, INPUT);
     lastChangeTime = millis();
-    
-    // Initialize transition times array
-    for (int i = 0; i < SIGNAL_HISTORY_SIZE; i++) {
-        transitionTimes[i] = 0;
-    }
-    
-    // Initial calibration
-    calibrateSensor();
+    calibrateLightSensor(); // Perform initial calibration
 }
 
-void calibrateSensor() {
-    Serial.println(F("Calibrating light sensor..."));
+// Gets a smoothed sensor reading by taking multiple samples
+int getSmoothReading() {
+    int total = 0;
+    for (int i = 0; i < 3; i++) {
+        total += analogRead(LIGHT_SENSOR_PIN);
+        delay(2);  // Short delay between readings
+    }
+    return total / 3;
+}
+
+// Auto-calibrate the light sensor based on ambient light
+void calibrateLightSensor() {
+    setLEDStatus(STATUS_SCANNING); // Visual indicator that calibration is happening
     
-    // Take multiple readings to establish baseline
-    int maxVal = 0, minVal = 4095;
-    const int samples = 50;
+    // Take multiple readings to determine ambient light level
+    long total = 0;
+    int minVal = 4095; // Max ADC value for ESP32
+    int maxVal = 0;
     
-    for (int i = 0; i < samples; i++) {
+    // Collect samples
+    for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
         int reading = analogRead(LIGHT_SENSOR_PIN);
-        maxVal = max(maxVal, reading);
-        minVal = min(minVal, reading);
-        delay(10);  // Short delay between samples
+        total += reading;
+        
+        // Track min and max values
+        if (reading < minVal) minVal = reading;
+        if (reading > maxVal) maxVal = reading;
+        
+        delay(CALIBRATION_DELAY);
     }
     
-    // Establish thresholds with hysteresis
-    int midpoint = (maxVal + minVal) / 2;
-    highThreshold = midpoint + THRESHOLD_MARGIN;
-    lowThreshold = midpoint - THRESHOLD_MARGIN;
+    // Calculate average and range
+    int avgReading = total / CALIBRATION_SAMPLES;
+    int range = maxVal - minVal;
     
-    // Initialize smoothed value
-    smoothedValue = analogRead(LIGHT_SENSOR_PIN);
-    
-    // Reset signal range tracking
-    recentMax = maxVal;
-    recentMin = minVal;
-    
-    Serial.print(F("Calibration results - Low: "));
-    Serial.print(lowThreshold);
-    Serial.print(F(", High: "));
-    Serial.print(highThreshold);
-    Serial.print(F(", Range: "));
-    Serial.println(maxVal - minVal);
-    
-    lastCalibrationTime = millis();
-}
-
-// Updates signal level tracking with new reading
-void updateSignalLevels(int reading) {
-    // Gradually decay max and grow min to adapt to changing conditions
-    const int MAX_DECAY_RATE = 2;  // How quickly max decays
-    const int MIN_GROWTH_RATE = 2; // How quickly min increases
-    
-    if (reading > recentMax) {
-        recentMax = reading;
+    // Set threshold based on the readings
+    if (range < 100) {
+        // Stable lighting - use average plus 20% margin
+        currentThreshold = avgReading + (avgReading * 0.2);
     } else {
-        recentMax = max(reading, recentMax - MAX_DECAY_RATE);
+        // Variable lighting - use more conservative threshold
+        currentThreshold = avgReading + (range / 2);
     }
     
-    if (reading < recentMin) {
-        recentMin = reading;
-    } else {
-        recentMin = min(reading, recentMin + MIN_GROWTH_RATE);
-    }
-}
-
-// Calculates the average period between recent transitions
-float calculateAveragePeriod() {
-    float sum = 0;
-    int validIntervals = 0;
+    // Ensure threshold is within reasonable bounds
+    if (currentThreshold < 100) currentThreshold = 100;
+    if (currentThreshold > 3900) currentThreshold = 3900;
     
-    for (int i = 1; i < SIGNAL_HISTORY_SIZE; i++) {
-        unsigned long interval = transitionTimes[i] - transitionTimes[i-1];
-        if (interval > 0 && interval < MAX_MORSE_PERIOD) {
-            sum += interval;
-            validIntervals++;
-        }
-    }
-    
-    return (validIntervals > 0) ? (sum / validIntervals) : 0;
-}
-
-// Counts recent transitions within time window
-int countRecentTransitions(unsigned long currentTime, unsigned long windowSize) {
-    int count = 0;
-    
-    for (int i = 0; i < SIGNAL_HISTORY_SIZE; i++) {
-        if (transitionTimes[i] > 0 && 
-            currentTime - transitionTimes[i] < windowSize) {
-            count++;
-        }
-    }
-    
-    return count;
-}
-
-// Calculate confidence score for the signal quality
-float calculateSignalConfidence() {
-    float confidence = 0.0;
-    
-    // Factor 1: Signal contrast ratio
-    int signalRange = recentMax - recentMin;
-    float contrastRatio = (float)signalRange / recentMax;
-    if (contrastRatio > MIN_CONTRAST_RATIO) {
-        confidence += 0.3;
-    }
-    
-    // Factor 2: Consistent timing (standard deviation of periods)
-    float avgPeriod = calculateAveragePeriod();
-    if (avgPeriod > 0 && avgPeriod < MAX_MORSE_PERIOD) {
-        confidence += 0.3;
-    }
-    
-    // Factor 3: Sufficient number of transitions
-    int transitionCount = countRecentTransitions(millis(), TRANSITION_TIME_WINDOW);
-    if (transitionCount >= TRANSITION_COUNT_THRESHOLD) {
-        confidence += 0.4;
-    }
-    
-    return confidence;
-}
-
-// Check if enough time has passed for recalibration
-bool shouldRecalibrate(unsigned long currentTime) {
-    // Don't recalibrate if transmission is active
-    if (isTransmissionActive) {
-        return false;
-    }
-    
-    // Check if it's been long enough since last calibration and activity
-    return (currentTime - lastCalibrationTime > CALIBRATION_INTERVAL) && 
-           (currentTime - lastActiveTime > INACTIVE_TIMEOUT);
+    setLEDStatus(STATUS_IDLE); // Return to normal status
 }
 
 void processLightInput() {
-    unsigned long currentTime = millis();
+    static unsigned long lastChangeTime = 0;
+    static bool lastState = false;
+    static String receivedMorse = "";
+    static bool receivingMorse = false;
+    static unsigned long lastProcessTime = 0;
+    static unsigned long lastCalibrationTime = 0;
     
     // Only read sensor every few milliseconds to reduce CPU load
-    if (currentTime - lastProcessTime < 5) {
+    unsigned long currentTime = millis();
+    if (currentTime - lastProcessTime < 5) { // 5ms sampling rate is sufficient for Morse
         return;
     }
     lastProcessTime = currentTime;
     
-    // Read light sensor
-    int rawReading = analogRead(LIGHT_SENSOR_PIN);
-    
-    // Apply exponential smoothing
-    smoothedValue = SMOOTHING_ALPHA * rawReading + (1 - SMOOTHING_ALPHA) * smoothedValue;
-    
-    // Update min/max signal tracking
-    updateSignalLevels(rawReading);
-    
-    // Check for recalibration opportunity
-    if (shouldRecalibrate(currentTime)) {
-        calibrateSensor();
-        return;
+    // Auto-recalibrate every 10 minutes
+    if (currentTime - lastCalibrationTime > 30000) { // 10 minutes in ms
+        calibrateLightSensor();
+        lastCalibrationTime = currentTime;
     }
     
-    // Determine current state with hysteresis to prevent flickering
-    bool currentState;
-    if (lastState) {
-        // Currently ON - only turn OFF if below low threshold
-        currentState = (smoothedValue > lowThreshold);
-    } else {
-        // Currently OFF - only turn ON if above high threshold
-        currentState = (smoothedValue > highThreshold);
-    }
+    // Read light sensor with smoothing
+    int lightValue = getSmoothReading();
+    bool currentState = (lightValue > currentThreshold);
     
-    // Handle state changes
+    // Ignore state changes that are too quick (debounce)
     if (currentState != lastState) {
-        // Record transition time
-        transitionTimes[transitionIndex] = currentTime;
-        transitionIndex = (transitionIndex + 1) % SIGNAL_HISTORY_SIZE;
+        unsigned long duration = currentTime - lastChangeTime;
         
-        // Mark as active
-        lastActiveTime = currentTime;
+        // Apply debounce
+        if (duration < DEBOUNCE_TIME) {
+            return; // Skip processing if within debounce time
+        }
         
-        // Calculate confidence score for signal quality
-        float signalConfidence = calculateSignalConfidence();
-        
-        // Only process high-confidence signals
-        if (signalConfidence >= MIN_CONFIDENCE_THRESHOLD) {
-            isTransmissionActive = true;
-            
-            unsigned long duration = currentTime - lastChangeTime;
-            
-            // Apply debounce
-            if (duration < DEBOUNCE_TIME) {
-                return; // Skip processing if within debounce time
+        // Valid state change detected
+        if (lastState) { // ON → OFF (End of Pulse)
+            // Add dot or dash based on pulse duration
+            receivedMorse += (duration >= 175) ? "-" : ".";
+            receivingMorse = true;  // Mark that Morse input is active
+        } else if (receivingMorse) { // OFF → ON (Start of Pause) - only process if already receiving
+            // Add appropriate spacing based on pause duration
+            if (duration >= WORD_GAP_DURATION) {
+               receivedMorse += " / ";  // Word gap
             }
-            
-            // Process the state change for Morse code
-            if (lastState) { // ON → OFF (End of Pulse)
-                // Add dot or dash based on pulse duration
-                receivedMorse += (duration >= 175) ? "-" : ".";
-                receivingMorse = true;  // Mark that Morse input is active
-            } else if (receivingMorse) { // OFF → ON (Start of Pause) - only process if already receiving
-                // Add appropriate spacing based on pause duration
-                if (duration >= WORD_GAP_DURATION) {
-                    receivedMorse += " / ";  // Word gap
-                } else if (duration >= LETTER_GAP_DURATION) {
-                    receivedMorse += " ";    // Letter gap
-                }
+             else if (duration >= LETTER_GAP_DURATION) {
+                receivedMorse += " ";    // Letter gap
             }
-        } else {
-            // Low confidence signal - treat as potential environmental change
-            // but still track the state change
-            Serial.print(F("Low confidence signal ("));
-            Serial.print(signalConfidence);
-            Serial.println(F(") - ignoring"));
         }
         
         lastChangeTime = currentTime;
         lastState = currentState;
     }
     
-    // Detect end of transmission
-    if (receivingMorse && (currentTime - lastChangeTime > MESSAGE_TIMEOUT)) {
-        // Check if we've received anything
+    // Process completed message after timeout
+    if (receivingMorse && (currentTime - lastChangeTime) > MESSAGE_TIMEOUT) {
+        // Avoid unnecessary String operations if morse is empty
         if (receivedMorse.length() > 0) {
             Serial.print(F("Full Morse Sequence: "));
             Serial.println(receivedMorse);
             
-            // Decode morse
+            // Decode only if we have actual content
             String decodedOTP = decodeMorse(receivedMorse);
             
-            // Validate OTP length
+            // Early validation to avoid further processing
             if (decodedOTP.length() == 7) {
                 Serial.print(F("Decoded OTP: "));
                 Serial.println(decodedOTP);
@@ -270,9 +148,8 @@ void processLightInput() {
             }
         }
         
-        // Reset states
+        // Reset states more efficiently
         receivedMorse = "";
         receivingMorse = false;
-        isTransmissionActive = false;
     }
 }

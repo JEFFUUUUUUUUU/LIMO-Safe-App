@@ -2,6 +2,7 @@
 #include "FirebaseHandler.h"
 #include "WiFiSetup.h"
 #include "RGBLed.h"
+#include "FingerprintSensor.h"                                            
 
 //#define NanoSerial Serial
 HardwareSerial NanoSerial(1); // UART2 for Nano communication
@@ -126,11 +127,11 @@ void handleNanoData() {
     // Update LED status based on specific conditions
     if (!fingerprintEnrollmentInProgress) {
         if (motionDetected) {
-            setLEDStatus(STATUS_TAMPERED);
+           setLEDStatus(STATUS_TAMPERED);
         } else if (!isSafeClosed) {
             setLEDStatus(STATUS_OPEN);
         } else {
-            setLEDStatus(STATUS_NORMAL);
+           setLEDStatus(STATUS_NORMAL);
         }
     }
     
