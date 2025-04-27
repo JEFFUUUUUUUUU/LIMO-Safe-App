@@ -18,7 +18,7 @@ import com.example.limo_safe.utils.AppFlags
 
 class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedListener {
     private lateinit var auth: FirebaseAuth
-    private var mainContent: LinearLayout? = null
+    private var mainContent: androidx.cardview.widget.CardView? = null
     private var fragmentContainer: FrameLayout? = null
 
     companion object {
