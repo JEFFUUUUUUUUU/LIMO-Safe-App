@@ -1661,25 +1661,12 @@ class MonitoringFragment : Fragment() {
                 val container = dialog.findViewById<LinearLayout>(R.id.fingerprintUsersContainer)
                 val closeButton = dialog.findViewById<Button>(R.id.closeButton)
 
-                // Add delete selected button programmatically to match design
-                val deleteSelectedButton = Button(mainActivity).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        setMargins(0, 8.dpToPx(context), 0, 8.dpToPx(context))
-                    }
-                    text = "Delete Selected Fingerprints"
-                    background = closeButton.background
-                    setTextColor(closeButton.textColors)
+                // Get the delete selected button from XML
+                val deleteSelectedButton = dialog.findViewById<Button>(R.id.deleteSelectedButton).apply {
+                    // Keep only the functionality settings
                     isEnabled = false
-                    visibility = View.GONE
+                    visibility = View.VISIBLE // Make it visible since we're using it
                 }
-
-                // Insert deleteSelectedButton before closeButton
-                val parentLayout = closeButton.parent as LinearLayout
-                val closeButtonIndex = parentLayout.indexOfChild(closeButton)
-                parentLayout.addView(deleteSelectedButton, closeButtonIndex)
 
                 // Track selected fingerprints for multiple deletion
                 val selectedFingerprints = mutableMapOf<String, MutableList<Int>>()
@@ -1783,21 +1770,73 @@ class MonitoringFragment : Fragment() {
                                     setPadding(8.dpToPx(context), 8.dpToPx(context), 8.dpToPx(context), 8.dpToPx(context))
                                 }
 
-                                // Add user email header
-                                val emailHeader = TextView(mainActivity).apply {
-                                    text = userEmail
-                                    setTextColor(ResourcesCompat.getColor(resources, R.color.maroon, null))
-                                    setTypeface(null, Typeface.BOLD)
-                                    textSize = 16f
+                                // Add user email header with delete icon
+                                val headerLayout = LinearLayout(mainActivity).apply {
+                                    orientation = LinearLayout.HORIZONTAL
                                     layoutParams = LinearLayout.LayoutParams(
                                         LinearLayout.LayoutParams.MATCH_PARENT,
                                         LinearLayout.LayoutParams.WRAP_CONTENT
                                     ).apply {
                                         setMargins(0, 0, 0, 8.dpToPx(context))
                                     }
+                                    gravity = Gravity.CENTER_VERTICAL
                                 }
-                                userView.addView(emailHeader)
+                                
+                                val emailHeader = TextView(mainActivity).apply {
+                                    text = userEmail
+                                    setTextColor(ResourcesCompat.getColor(resources, R.color.maroon, null))
+                                    setTypeface(null, Typeface.BOLD)
+                                    textSize = 16f
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        0,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                        1f
+                                    )
+                                }
+                                headerLayout.addView(emailHeader)
+                                
+                                // Add trash can icon next to email
+                                val deleteAllIcon = ImageButton(mainActivity).apply {
+                                    setImageResource(R.drawable.ic_delete)
+                                    setColorFilter(ResourcesCompat.getColor(resources, R.color.maroon, null))
+                                    setBackgroundResource(android.R.color.transparent)
+                                    contentDescription = "Delete All"
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        32.dpToPx(context),
+                                        32.dpToPx(context)
+                                    )
+                                    
+                                    setOnClickListener {
+                                        val builder = androidx.appcompat.app.AlertDialog.Builder(mainActivity)
+                                        builder.setTitle("Delete All Fingerprints")
+                                        builder.setMessage("Are you sure you want to delete all fingerprints for $userEmail?")
+                                        builder.setPositiveButton("Yes") { _, _ ->
+                                            // Send delete_all command
+                                            val sanitizedEmail = userEmail.replace(".", ",")
+                                            FirebaseDatabase.getInstance().reference
+                                                .child("devices").child(deviceId).child("fingerprint")
+                                                .child(sanitizedEmail)
+                                                .setValue("delete_all")
+                                                .addOnSuccessListener {
+                                                    Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
+                                                    container.removeView(userView)
 
+                                                    // Check if container is empty
+                                                    if (container.childCount == 0) {
+                                                        loadingText.text = "No registered fingerprints"
+                                                        loadingText.visibility = View.VISIBLE
+                                                        deleteSelectedButton.visibility = View.GONE
+                                                    }
+                                                }
+                                        }
+                                        builder.setNegativeButton("No", null)
+                                        builder.create().show()
+                                    }
+                                }
+                                headerLayout.addView(deleteAllIcon)
+                                
+                                userView.addView(headerLayout)
+                                
                                 // Initialize entry in selectedFingerprints map
                                 selectedFingerprints[userEmail] = mutableListOf()
 
@@ -1872,49 +1911,6 @@ class MonitoringFragment : Fragment() {
                                     fingerprintContainer.addView(fpRow)
                                 }
                                 userView.addView(fingerprintContainer)
-
-                                // Add delete all button
-                                val deleteAllButton = Button(mainActivity).apply {
-                                    text = "Delete All"
-                                    background = closeButton.background
-                                    setTextColor(closeButton.textColors)
-                                    layoutParams = LinearLayout.LayoutParams(
-                                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                                        LinearLayout.LayoutParams.WRAP_CONTENT
-                                    ).apply {
-                                        gravity = Gravity.END
-                                        setMargins(0, 8.dpToPx(context), 0, 0)
-                                    }
-                                    setPadding(16.dpToPx(context), 4.dpToPx(context), 16.dpToPx(context), 4.dpToPx(context))
-
-                                    setOnClickListener {
-                                        val builder = androidx.appcompat.app.AlertDialog.Builder(mainActivity)
-                                        builder.setTitle("Delete All Fingerprints")
-                                        builder.setMessage("Are you sure you want to delete all fingerprints for $userEmail?")
-                                        builder.setPositiveButton("Yes") { _, _ ->
-                                            // Send delete_all command
-                                            val sanitizedEmail = userEmail.replace(".", ",")
-                                            FirebaseDatabase.getInstance().reference
-                                                .child("devices").child(deviceId).child("fingerprint")
-                                                .child(sanitizedEmail)
-                                                .setValue("delete_all")
-                                                .addOnSuccessListener {
-                                                    Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
-                                                    container.removeView(userView)
-
-                                                    // Check if container is empty
-                                                    if (container.childCount == 0) {
-                                                        loadingText.text = "No registered fingerprints"
-                                                        loadingText.visibility = View.VISIBLE
-                                                        deleteSelectedButton.visibility = View.GONE
-                                                    }
-                                                }
-                                        }
-                                        builder.setNegativeButton("No", null)
-                                        builder.create().show()
-                                    }
-                                }
-                                userView.addView(deleteAllButton)
 
                                 // Add to container
                                 container.addView(userView)

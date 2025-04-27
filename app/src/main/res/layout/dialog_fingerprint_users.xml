@@ -1,44 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@drawable/dialog_background">
 
+    <!-- Title -->
     <TextView
         android:id="@+id/dialogTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Registered Fingerprints"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="@color/maroon"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
-
-    <LinearLayout
-        android:id="@+id/fingerprintUsersContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical" />
-
-    <TextView
-        android:id="@+id/noFingerprintsText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="No registered fingerprints"
-        android:textColor="@color/maroon"
-        android:gravity="center"
-        android:visibility="gone"
-        android:padding="16dp" />
-
-    <Button
-        android:id="@+id/closeButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Close"
-        android:layout_marginTop="16dp"
         android:background="@color/maroon"
-        android:textColor="@android:color/white" />
+        android:gravity="center"
+        android:padding="12dp"
+        android:text="Registered Fingerprints"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+        
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxHeight="400dp">
+            
+            <LinearLayout
+                android:id="@+id/fingerprintUsersContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+                
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/noFingerprintsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No registered fingerprints"
+            android:textColor="@color/maroon"
+            android:gravity="center"
+            android:visibility="gone"
+            android:padding="16dp" />
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="16dp" />
+
+        <Button
+            android:id="@+id/deleteSelectedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="0dp"
+            android:backgroundTint="@color/maroon"
+            android:text="DELETE SELECTED FINGERPRINTS"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/closeButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="CLOSE"
+            android:layout_marginTop="0dp"
+            android:backgroundTint="@color/orange"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
 
 </LinearLayout>
