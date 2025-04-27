@@ -1671,6 +1671,7 @@ class MonitoringFragment : Fragment() {
                 // Track selected fingerprints for multiple deletion
                 val selectedFingerprints = mutableMapOf<String, MutableList<Int>>()
                 var hasAnyFingerprint = false
+                val emailByUserId = mutableMapOf<String, String>()
 
                 // Set up close button
                 closeButton.setOnClickListener {
@@ -1698,7 +1699,7 @@ class MonitoringFragment : Fragment() {
                     builder.setMessage(message)
                     builder.setPositiveButton("Yes") { _, _ ->
                         // Process each user's selected fingerprints
-                        for ((userEmail, fingerprintIds) in selectedFingerprints) {
+                        for ((userId, fingerprintIds) in selectedFingerprints) {
                             if (fingerprintIds.isEmpty()) continue
 
                             // Format the delete command based on number of fingerprints
@@ -1709,13 +1710,14 @@ class MonitoringFragment : Fragment() {
                             }
 
                             // Send delete command to Firebase
-                            val sanitizedEmail = userEmail.replace(".", ",")
+                            val sanitizedUserId = userId
                             FirebaseDatabase.getInstance().reference
                                 .child("devices").child(deviceId).child("fingerprint")
-                                .child(sanitizedEmail)
+                                .child(sanitizedUserId)
                                 .setValue(deleteCommand)
                                 .addOnSuccessListener {
-                                    Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
+                                    val email = emailByUserId[sanitizedUserId] ?: sanitizedUserId
+                                    Toast.makeText(mainActivity, "Delete command sent for $email", Toast.LENGTH_SHORT).show()
                                 }
                         }
 
@@ -1743,7 +1745,8 @@ class MonitoringFragment : Fragment() {
 
                         for (userSnapshot in usersSnapshot.children) {
                             val userId = userSnapshot.key ?: continue
-                            val userEmail = userId.replace(",", ".")
+                            val userEmail = userSnapshot.child("email").getValue(String::class.java) ?: continue
+                            emailByUserId[userId] = userEmail
 
                             // Check if user has registered fingerprints for this device
                             val registeredDevicesSnapshot = userSnapshot.child("registeredDevices").child(deviceId)
@@ -1805,17 +1808,17 @@ class MonitoringFragment : Fragment() {
                                         32.dpToPx(context),
                                         32.dpToPx(context)
                                     )
-                                    
+
                                     setOnClickListener {
                                         val builder = androidx.appcompat.app.AlertDialog.Builder(mainActivity)
                                         builder.setTitle("Delete All Fingerprints")
                                         builder.setMessage("Are you sure you want to delete all fingerprints for $userEmail?")
                                         builder.setPositiveButton("Yes") { _, _ ->
-                                            // Send delete_all command
-                                            val sanitizedEmail = userEmail.replace(".", ",")
+                                            // Send delete_all command using userId
+                                            val sanitizedUserId = userId
                                             FirebaseDatabase.getInstance().reference
                                                 .child("devices").child(deviceId).child("fingerprint")
-                                                .child(sanitizedEmail)
+                                                .child(sanitizedUserId)
                                                 .setValue("delete_all")
                                                 .addOnSuccessListener {
                                                     Toast.makeText(mainActivity, "Delete command sent for $userEmail", Toast.LENGTH_SHORT).show()
@@ -1838,7 +1841,7 @@ class MonitoringFragment : Fragment() {
                                 userView.addView(headerLayout)
                                 
                                 // Initialize entry in selectedFingerprints map
-                                selectedFingerprints[userEmail] = mutableListOf()
+                                selectedFingerprints[userId] = mutableListOf()
 
                                 // Get fingerprint IDs as a list
                                 val fingerprintIds = mutableListOf<Int>()
@@ -1887,9 +1890,9 @@ class MonitoringFragment : Fragment() {
                                         // Set up checkbox listener
                                         setOnCheckedChangeListener { _, isChecked ->
                                             if (isChecked) {
-                                                selectedFingerprints[userEmail]?.add(fingerprintId)
+                                                selectedFingerprints[userId]?.add(fingerprintId)
                                             } else {
-                                                selectedFingerprints[userEmail]?.remove(fingerprintId)
+                                                selectedFingerprints[userId]?.remove(fingerprintId)
                                             }
                                             updateDeleteButtonState()
                                         }
