@@ -7,8 +7,6 @@
 #define LIGHT_SENSOR_PIN 34   // ESP32 GPIO for light sensor
 #define UNIT_TIME 70UL        // Base unit time in ms
 #define THRESHOLD_BASE 500    // Base threshold value
-#define CALIBRATION_SAMPLES 10 // Number of samples for calibration
-#define CALIBRATION_DELAY 50  // Delay between calibration samples (ms)
 #define MESSAGE_TIMEOUT 1000UL // Timeout to detect message completion
 #define DEBOUNCE_TIME 50UL    // Debounce time for signal stability
 
@@ -26,6 +24,5 @@ extern int currentThreshold;  // Dynamic threshold value
 // Function prototypes
 void setupLightSensor();
 void processLightInput();
-void calibrateLightSensor();
 
 #endif

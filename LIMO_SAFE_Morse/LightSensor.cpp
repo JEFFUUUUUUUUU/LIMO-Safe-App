@@ -13,7 +13,7 @@ int currentThreshold = THRESHOLD_BASE;
 void setupLightSensor() {
     pinMode(LIGHT_SENSOR_PIN, INPUT);
     lastChangeTime = millis();
-    calibrateLightSensor(); // Perform initial calibration
+    // Calibration removed
 }
 
 // Gets a smoothed sensor reading by taking multiple samples
@@ -26,46 +26,7 @@ int getSmoothReading() {
     return total / 3;
 }
 
-// Auto-calibrate the light sensor based on ambient light
-void calibrateLightSensor() {
-    setLEDStatus(STATUS_SCANNING); // Visual indicator that calibration is happening
-    
-    // Take multiple readings to determine ambient light level
-    long total = 0;
-    int minVal = 4095; // Max ADC value for ESP32
-    int maxVal = 0;
-    
-    // Collect samples
-    for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
-        int reading = analogRead(LIGHT_SENSOR_PIN);
-        total += reading;
-        
-        // Track min and max values
-        if (reading < minVal) minVal = reading;
-        if (reading > maxVal) maxVal = reading;
-        
-        delay(CALIBRATION_DELAY);
-    }
-    
-    // Calculate average and range
-    int avgReading = total / CALIBRATION_SAMPLES;
-    int range = maxVal - minVal;
-    
-    // Set threshold based on the readings
-    if (range < 100) {
-        // Stable lighting - use average plus 20% margin
-        currentThreshold = avgReading + (avgReading * 0.2);
-    } else {
-        // Variable lighting - use more conservative threshold
-        currentThreshold = avgReading + (range / 2);
-    }
-    
-    // Ensure threshold is within reasonable bounds
-    if (currentThreshold < 100) currentThreshold = 100;
-    if (currentThreshold > 3900) currentThreshold = 3900;
-    
-    setLEDStatus(STATUS_IDLE); // Return to normal status
-}
+// Calibration function removed
 
 void processLightInput() {
     static unsigned long lastChangeTime = 0;
@@ -73,7 +34,6 @@ void processLightInput() {
     static String receivedMorse = "";
     static bool receivingMorse = false;
     static unsigned long lastProcessTime = 0;
-    static unsigned long lastCalibrationTime = 0;
     
     // Only read sensor every few milliseconds to reduce CPU load
     unsigned long currentTime = millis();
@@ -82,11 +42,7 @@ void processLightInput() {
     }
     lastProcessTime = currentTime;
     
-    // Auto-recalibrate every 10 minutes
-    if (currentTime - lastCalibrationTime > 30000) { // 10 minutes in ms
-        calibrateLightSensor();
-        lastCalibrationTime = currentTime;
-    }
+    // Auto-recalibration code removed
     
     // Read light sensor with smoothing
     int lightValue = getSmoothReading();
