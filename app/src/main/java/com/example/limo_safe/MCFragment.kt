@@ -740,11 +740,6 @@ class MCFragment : Fragment() {
         return randomCode
     }
 
-    private fun navigateToLogin() {
-        val mainActivity = requireActivity() as MainActivity
-        mainActivity.clearBackStackAndNavigateToLogin()
-    }
-
     private fun navigateToMonitoring() {
         try {
             if (isAdded && activity != null && !requireActivity().isFinishing) {
@@ -1105,15 +1100,6 @@ class MCFragment : Fragment() {
         }
     }
 
-    private fun initializeViews(view: View) {
-        generateCodeButton = view.findViewById(R.id.generateCodeButton)
-        checkMonitoringButton = view.findViewById(R.id.checkMonitoringButton)
-        exitButton = view.findViewById(R.id.exitButton)
-        generatedCodeText = view.findViewById(R.id.generatedCodeText)
-        codeDisplayText = view.findViewById(R.id.codeDisplayText)
-        cooldownText = view.findViewById(R.id.cooldownText)
-    }
-
     override fun onDestroyView() {
         try {
             // Cancel timers
@@ -1176,34 +1162,6 @@ class MCFragment : Fragment() {
             morseTimer = null
             countDownTimer = null
             super.onDestroy()
-        }
-    }
-
-    private fun handleOnBackPressed() {
-        showExitConfirmationDialog()
-    }
-
-    private fun cleanup() {
-        try {
-            // Cancel timers
-            morseTimer?.cancel()
-            countDownTimer?.cancel()
-
-            // Dismiss dialog
-            if (::dialog.isInitialized && dialog.isShowing) {
-                dialog.dismiss()
-            }
-
-            // Clear state
-            resetGenerateButton()
-            lastMorsePlayTime = 0
-            morseCooldownEndTime = 0
-            generateCooldownEndTime = 0
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            morseTimer = null
-            countDownTimer = null
         }
     }
 
