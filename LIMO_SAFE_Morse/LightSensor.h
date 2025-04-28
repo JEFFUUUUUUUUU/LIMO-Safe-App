@@ -12,7 +12,6 @@
 
 // Morse code timing definitions
 #define LETTER_GAP_DURATION (UNIT_TIME * 3UL)  // 210 ms
-#define WORD_GAP_DURATION   (UNIT_TIME * 7UL)  // 490 ms
 
 // Global variables
 extern String receivedMorse;
@@ -20,9 +19,12 @@ extern String receivedOTP;
 extern unsigned long lastChangeTime;
 extern bool lastState;
 extern int currentThreshold;  // Dynamic threshold value
+extern unsigned long lastAdaptiveUpdate; // For adaptive threshold timing
 
 // Function prototypes
 void setupLightSensor();
+int getSmoothReading();
+void updateAdaptiveThreshold();
 void processLightInput();
 
 #endif
