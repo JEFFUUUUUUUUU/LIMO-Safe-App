@@ -133,12 +133,19 @@ class DialogManager(private val context: Context) {
         val closeButton = dialogView.findViewById<Button>(R.id.closeButton)
         val titleText = dialogView.findViewById<TextView>(R.id.dialogTitle)
 
+        // Ensure this ID exists in the layout (added safety check)
+        if (titleText == null) {
+            Log.e("DialogManager", "Dialog title text view not found in layout!")
+        }
+
         codeDisplayText.text = code
         triesText.text = "Remaining tries: $remainingTries"
         this.triesTextView = triesText
 
-        // Set the initial title - the MCFragment will handle updating it
-        titleText.text = "Play Morse Code"
+        // Set the initial title with time remaining
+        val initialSeconds = remainingExpirationTime / 1000
+        titleText?.text = "Play Morse Code (${initialSeconds}s)"
+        Log.d("DialogManager", "Setting initial dialog title with ${initialSeconds}s expiration")
 
         if (remainingCooldown > 0) {
             // Calculate seconds remaining (round up to ensure we don't show 0 when there's still time)

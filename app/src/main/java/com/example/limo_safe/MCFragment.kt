@@ -24,6 +24,7 @@ import com.example.limo_safe.utils.MorseCodeHelper
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.BiometricManager
 import com.example.limo_safe.utils.PasswordConfirmationDialog
+import com.example.limo_safe.utils.TimerManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.database.DatabaseReference
@@ -59,6 +60,7 @@ class MCFragment : Fragment() {
     private val EXPIRATION_END_TIME_KEY = "expiration_end_time"
 
     private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var timerManager: TimerManager
 
     private lateinit var generateCodeButton: Button
     private lateinit var checkMonitoringButton: Button
@@ -80,17 +82,23 @@ class MCFragment : Fragment() {
 
     private var fromCodeClick = false
 
+    // Add a class variable to store dialog title reference
+    private var dialogTitleText: TextView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         morseCodeHelper = MorseCodeHelper(requireContext())
         // Initialize SharedPreferences
         sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        
+        // Initialize TimerManager
+        timerManager = TimerManager(sharedPreferences)
 
         // Handle back press
         val callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val currentTime = System.currentTimeMillis()
-                if (generateCooldownEndTime <= currentTime && remainingTries > 0) {
+                if (timerManager.isGenerateInCooldown() && remainingTries > 0) {
                     if (::dialog.isInitialized && dialog.isShowing) {
                         dialog.dismiss()
                     }
@@ -468,8 +476,12 @@ class MCFragment : Fragment() {
                                 dialogManager.showMaxTriesDialog()
                                 currentCode = ""
                                 saveCurrentCode("")
+                                remainingTries = 3
                                 saveRemainingTries(3)
-                                dialog.dismiss()
+                                // Reset expiration timer
+                                resetExpirationTimer()
+                                updateGeneratedCodeText()
+                                updateCodeClickableStyle()
                             }
                         },
                         // Handle the expiration
@@ -616,32 +628,16 @@ class MCFragment : Fragment() {
     }
 
     private fun startGenerateButtonCooldown(duration: Long = GENERATE_COOLDOWN) {
-        generateCodeButton.isEnabled = false
-        generateCodeButton.alpha = 0.5f
-
+        timerManager.startGenerateButtonCooldown(
+            duration,
+            generateCodeButton
+        ) {
+            // This code runs when the timer finishes
+            generateCooldownEndTime = 0
+        }
+        
+        // Store the end time for reference
         generateCooldownEndTime = System.currentTimeMillis() + duration
-
-        // Save cooldown end time to SharedPreferences
-        saveGenerateCooldownEndTime(generateCooldownEndTime)
-
-        countDownTimer?.cancel()
-        countDownTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                val minutes = millisUntilFinished / 1000 / 60
-                val seconds = (millisUntilFinished / 1000) % 60
-                generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
-            }
-
-            override fun onFinish() {
-                generateCodeButton.isEnabled = true
-                generateCodeButton.alpha = 1.0f
-                generateCodeButton.text = "Generate Code"
-                generateCooldownEndTime = 0
-
-                // Reset cooldown end time in SharedPreferences
-                saveGenerateCooldownEndTime(0)
-            }
-        }.start()
     }
 
     private fun updateGeneratedCodeText() {
@@ -886,16 +882,30 @@ class MCFragment : Fragment() {
             remainingExpirationTime
         )
 
-        // Only start a new expiration timer if there isn't an active one
-        val currentTime = System.currentTimeMillis()
-        if (expirationEndTime <= currentTime) {
-            // Start a new timer with the full duration
-            startExpirationTimer(EXPIRATION_DURATION)
+        // Now that the dialog is created, get the dialog title and store it
+        dialogTitleText = dialog.findViewById<TextView>(R.id.dialogTitle)
+        if (dialogTitleText == null) {
+            Log.e("MCFragment", "Dialog title not found after dialog creation")
+        } else {
+            Log.d("MCFragment", "Dialog title found after dialog creation: $dialogTitleText")
         }
 
-        startMorseCooldownTimer(remainingCooldown)
-
         dialog.show()
+
+        // We need to wait a moment for the dialog to be fully displayed
+        Handler(Looper.getMainLooper()).postDelayed({
+            // Only start a new expiration timer if there isn't an active one
+            val currentTime = System.currentTimeMillis()
+            if (expirationEndTime <= currentTime) {
+                // Start a new timer with the full duration
+                startExpirationTimer(EXPIRATION_DURATION)
+            } else {
+                // Resume the existing timer with the remaining time
+                startExpirationUITimer(expirationEndTime - currentTime)
+            }
+
+            startMorseCooldownTimer(remainingCooldown)
+        }, 100) // Small delay to ensure dialog is fully displayed
     }
 
     private fun showMorseCodeDialogForce(code: String, cooldown: Long = 0) {
@@ -977,15 +987,23 @@ class MCFragment : Fragment() {
     }
 
     private fun startMorseCooldown(duration: Long) {
-        // Set the cooldown end time in the future
+        // Set the cooldown end time in memory for reference
         morseCooldownEndTime = System.currentTimeMillis() + duration
-        Log.d("MCFragment", "Setting cooldown end time to: $morseCooldownEndTime (${duration}ms from now)")
-
-        // Save cooldown end time to SharedPreferences
-        sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, morseCooldownEndTime).apply()
-
-        // Start the timer with the new duration
-        startMorseCooldownTimer(duration)
+        
+        val playButton = dialog.findViewById<Button>(R.id.playButton)
+        val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
+        
+        if (playButton != null) {
+            timerManager.startMorseCooldown(
+                duration,
+                playButton,
+                cooldownText
+            ) {
+                // This code runs when the timer finishes
+                lastMorsePlayTime = 0
+                morseCooldownEndTime = 0
+            }
+        }
     }
 
     /**
@@ -993,57 +1011,28 @@ class MCFragment : Fragment() {
      * This is a separate method to avoid code duplication and ensure consistent timer behavior
      */
     private fun startMorseCooldownTimer(duration: Long) {
-        // Always cancel any existing timer before starting a new one
-        morseTimer?.cancel()
-        morseTimer = null
-
         val playButton = dialog.findViewById<Button>(R.id.playButton)
         val cooldownText = dialog.findViewById<TextView>(R.id.cooldownText)
-
-        if (playButton != null && cooldownText != null) {
+        
+        if (playButton != null) {
             if (duration > 0) {
-                // Update UI for cooldown state
-                playButton.isEnabled = false
-                playButton.alpha = 0.5f
-
-                // Calculate seconds remaining (round up to ensure we don't show 0 when there's still time)
-                val secondsRemaining = (duration + 999) / 1000
-
-                // Only update button text with cooldown, hide the cooldown text
-                cooldownText.visibility = View.GONE
-                playButton.text = "PLAY MORSE CODE (${secondsRemaining})"
-
-                Log.d("MCFragment", "Starting cooldown timer with ${duration}ms remaining")
-
-                // Start the countdown timer
-                morseTimer = object : CountDownTimer(duration, 1000) {
-                    override fun onTick(millisUntilFinished: Long) {
-                        val seconds = (millisUntilFinished + 999) / 1000 // Round up
-                        // Only update button text with cooldown
-                        playButton.text = "PLAY MORSE CODE (${seconds})"
-                        Log.d("MCFragment", "Cooldown tick: ${seconds}s remaining")
-                    }
-
-                    override fun onFinish() {
-                        // Reset button state when cooldown finishes
-                        if (remainingTries > 0) {
-                            playButton.isEnabled = true
-                            playButton.alpha = 1.0f
-                        }
-                        playButton.text = "PLAY MORSE CODE"
-                        lastMorsePlayTime = 0
-                        morseCooldownEndTime = 0
-                        sharedPreferences.edit().putLong(MORSE_COOLDOWN_END_KEY, 0).apply()
-                        Log.d("MCFragment", "Cooldown timer finished")
-                    }
-                }.start()
+                timerManager.startMorseCooldown(
+                    duration,
+                    playButton,
+                    cooldownText
+                ) {
+                    // This code runs when the timer finishes
+                    lastMorsePlayTime = 0
+                    morseCooldownEndTime = 0
+                }
             } else {
                 // Make sure UI is reset properly when no cooldown
                 playButton.isEnabled = remainingTries > 0
                 playButton.alpha = if (remainingTries > 0) 1.0f else 0.5f
-                cooldownText.visibility = View.GONE
+                if (cooldownText != null) {
+                    cooldownText.visibility = View.GONE
+                }
                 playButton.text = "PLAY MORSE CODE"
-                Log.d("MCFragment", "No cooldown needed, button enabled: ${remainingTries > 0}")
             }
         }
     }
@@ -1103,8 +1092,7 @@ class MCFragment : Fragment() {
     override fun onDestroyView() {
         try {
             // Cancel timers
-            morseTimer?.cancel()
-            countDownTimer?.cancel()
+            timerManager.cancelAllTimers()
 
             // Dismiss dialog
             if (::dialog.isInitialized && dialog.isShowing) {
@@ -1138,8 +1126,7 @@ class MCFragment : Fragment() {
     override fun onDestroy() {
         try {
             // Cancel timers
-            morseTimer?.cancel()
-            countDownTimer?.cancel()
+            timerManager.cancelAllTimers()
 
             // Dismiss dialog
             if (::dialog.isInitialized && dialog.isShowing) {
@@ -1302,44 +1289,70 @@ class MCFragment : Fragment() {
      * Resume cooldown timer if needed
      */
     private fun resumeCooldownIfNeeded() {
-        val currentTime = System.currentTimeMillis()
-
-        // Check if generate button cooldown is active
-        if (generateCooldownEndTime > currentTime && ::generateCodeButton.isInitialized) {
-            val remainingTime = generateCooldownEndTime - currentTime
-
-            // Disable button and start timer
-            generateCodeButton.isEnabled = false
-            generateCodeButton.alpha = 0.5f
-
-            countDownTimer?.cancel()
-            countDownTimer = object : CountDownTimer(remainingTime, 1000) {
-                override fun onTick(millisUntilFinished: Long) {
-                    val minutes = millisUntilFinished / 1000 / 60
-                    val seconds = (millisUntilFinished / 1000) % 60
-                    generateCodeButton.text = "Generate Code (${minutes}:${String.format("%02d", seconds)})"
-                }
-
-                override fun onFinish() {
-                    generateCodeButton.isEnabled = true
-                    generateCodeButton.alpha = 1.0f
-                    generateCodeButton.text = "Generate Code"
-                    generateCooldownEndTime = 0
-
-                    // Reset cooldown end time in SharedPreferences
-                    saveGenerateCooldownEndTime(0)
-                }
-            }.start()
+        // Update dialog title reference if dialog is showing
+        if (::dialog.isInitialized && dialog.isShowing) {
+            dialogTitleText = dialog.findViewById(R.id.dialogTitle)
+            if (dialogTitleText == null) {
+                Log.e("MCFragment", "Could not find dialog title when resuming timers")
+            } else {
+                Log.d("MCFragment", "Found dialog title when resuming timers: $dialogTitleText")
+            }
         }
 
-        // Check if morse cooldown is active and dialog is showing
-        if (morseCooldownEndTime > currentTime && ::dialog.isInitialized && dialog.isShowing) {
-            val remainingTime = morseCooldownEndTime - currentTime
-            Log.d("MCFragment", "resumeCooldownIfNeeded: Resuming morse cooldown with ${remainingTime}ms remaining")
-
-            // Use the common timer function to restart the timer
-            startMorseCooldownTimer(remainingTime)
+        // Use TimerManager to resume all timers if needed
+        timerManager.resumeTimersIfNeeded(
+            generateButton = if (::generateCodeButton.isInitialized) generateCodeButton else null,
+            playButton = if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.findViewById<Button>(R.id.playButton)
+            } else null,
+            cooldownText = if (::dialog.isInitialized && dialog.isShowing) {
+                dialog.findViewById<TextView>(R.id.cooldownText)
+            } else null,
+            titleText = dialogTitleText,
+            onGenerateFinish = {
+                generateCooldownEndTime = 0
+            },
+            onMorseFinish = {
+                lastMorsePlayTime = 0
+                morseCooldownEndTime = 0
+            },
+            onExpirationFinish = {
+                // When timer finishes, show the expired dialog with the code
+                if (::dialogManager.isInitialized) {
+                    // Capture the code before dismissing the dialog
+                    val expiredCode = currentCode
+                    
+                    dialogManager.dismissActiveDialog()
+                    dialogTitleText = null // Clear reference when dialog is dismissed
+                    
+                    // Only show the dialog if we have a valid code
+                    if (expiredCode.isNotEmpty()) {
+                        dialogManager.showCodeExpiredDialog(expiredCode) {
+                            // Reset code and tries when user confirms
+                            currentCode = ""
+                            saveCurrentCode("")
+                            remainingTries = 3
+                            saveRemainingTries(3)
+                            // Reset expiration time
+                            resetExpirationTimer()
+                            updateGeneratedCodeText()
+                            updateCodeClickableStyle()
+                        }
+                    }
+                }
+            }
+        )
+        
+        // Update local time variables from TimerManager
+        if (timerManager.isGenerateInCooldown()) {
+            generateCooldownEndTime = System.currentTimeMillis() + timerManager.getRemainingGenerateCooldownTime()
         }
+        
+        if (timerManager.isMorseInCooldown()) {
+            morseCooldownEndTime = System.currentTimeMillis() + timerManager.getRemainingMorseCooldownTime()
+        }
+        
+        expirationEndTime = System.currentTimeMillis() + timerManager.getRemainingExpirationTime()
     }
 
     /**
@@ -1455,53 +1468,51 @@ class MCFragment : Fragment() {
      * Reset the expiration timer and save to SharedPreferences
      */
     private fun resetExpirationTimer() {
+        timerManager.resetExpirationTimer()
         expirationEndTime = 0
-        sharedPreferences.edit().putLong(EXPIRATION_END_TIME_KEY, 0).apply()
     }
 
     /**
      * Start the expiration timer with the specified duration
-     * This EXACTLY mirrors the logic used in startMorseCooldown for consistent behavior
      */
     private fun startExpirationTimer(duration: Long) {
-        // Set the expiration end time in the future
+        // Set the expiration end time for reference
         expirationEndTime = System.currentTimeMillis() + duration
-        Log.d("MCFragment", "Setting expiration end time to: $expirationEndTime (${duration}ms from now)")
-
-        // Save expiration end time to SharedPreferences
-        sharedPreferences.edit().putLong(EXPIRATION_END_TIME_KEY, expirationEndTime).apply()
-
-        // Start the UI timer with the new duration
-        startExpirationUITimer(duration)
-    }
-
-    /**
-     * Starts or restarts the expiration UI timer with the specified duration
-     * This EXACTLY mirrors the logic used in startMorseCooldownTimer for consistent behavior
-     */
-    private fun startExpirationUITimer(duration: Long) {
-        // Cancel any existing timer
-        val expirationTimer = object : CountDownTimer(duration, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                // Update UI if dialog is showing
-                if (::dialog.isInitialized && dialog.isShowing) {
-                    val titleText = dialog.findViewById<TextView>(R.id.dialogTitle)
-                    if (titleText != null) {
-                        val seconds = (millisUntilFinished + 999) / 1000 // Round up
-                        titleText.text = "Play Morse Code (${seconds}s)"
+        
+        // We need to find the dialog title after the dialog is fully initialized
+        Handler(Looper.getMainLooper()).post {
+            // Find and store the title text
+            dialogTitleText = if (::dialog.isInitialized && dialog.isShowing) {
+                try {
+                    val title = dialog.findViewById<TextView>(R.id.dialogTitle)
+                    if (title != null) {
+                        Log.d("MCFragment", "Found dialog title for expiration timer: $title")
+                    } else {
+                        Log.e("MCFragment", "Dialog title NOT FOUND for expiration timer")
                     }
+                    title
+                } catch (e: Exception) {
+                    Log.e("MCFragment", "Error finding dialog title: ${e.message}")
+                    null
                 }
+            } else {
+                Log.e("MCFragment", "Dialog not initialized or not showing")
+                null
             }
-
-            override fun onFinish() {
-                // When timer finishes, show the expired dialog with the code
+            
+            // Start the timer using the TimerManager with the found title text
+            timerManager.startExpirationTimer(
+                duration,
+                dialogTitleText
+            ) {
+                // This code runs when the timer finishes (code expires)
                 if (::dialogManager.isInitialized) {
                     // Capture the code before dismissing the dialog
                     val expiredCode = currentCode
-                    Log.d("MCFragment", "Timer finished, expired code: $expiredCode")
-
+                    
                     dialogManager.dismissActiveDialog()
-
+                    dialogTitleText = null // Clear reference
+                    
                     // Only show the dialog if we have a valid code
                     if (expiredCode.isNotEmpty()) {
                         dialogManager.showCodeExpiredDialog(expiredCode) {
@@ -1518,11 +1529,64 @@ class MCFragment : Fragment() {
                     }
                 }
             }
-        }.start()
+        }
+    }
 
-        // We don't store the timer reference because we're using the end time approach
-        // for persistence, just like the morse cooldown
-        Log.d("MCFragment", "Started expiration UI timer with ${duration}ms remaining")
+    /**
+     * Starts or restarts the expiration UI timer with the specified duration
+     */
+    private fun startExpirationUITimer(duration: Long) {
+        // We need to find the dialog title after the dialog is fully initialized
+        Handler(Looper.getMainLooper()).post {
+            // Find and store the title text
+            dialogTitleText = if (::dialog.isInitialized && dialog.isShowing) {
+                try {
+                    val title = dialog.findViewById<TextView>(R.id.dialogTitle)
+                    if (title != null) {
+                        Log.d("MCFragment", "Found dialog title for UI timer: $title")
+                    } else {
+                        Log.e("MCFragment", "Dialog title NOT FOUND for UI timer")
+                    }
+                    title
+                } catch (e: Exception) {
+                    Log.e("MCFragment", "Error finding dialog title for UI timer: ${e.message}")
+                    null
+                }
+            } else {
+                Log.e("MCFragment", "Dialog not initialized or not showing for UI timer")
+                null
+            }
+            
+            // Use the TimerManager to handle the timer with the found title text
+            timerManager.startExpirationTimer(
+                duration,
+                dialogTitleText
+            ) {
+                // This code runs when the timer finishes (code expires)
+                if (::dialogManager.isInitialized) {
+                    // Capture the code before dismissing the dialog
+                    val expiredCode = currentCode
+                    
+                    dialogManager.dismissActiveDialog()
+                    dialogTitleText = null // Clear reference
+                    
+                    // Only show the dialog if we have a valid code
+                    if (expiredCode.isNotEmpty()) {
+                        dialogManager.showCodeExpiredDialog(expiredCode) {
+                            // Reset code and tries when user confirms
+                            currentCode = ""
+                            saveCurrentCode("")
+                            remainingTries = 3
+                            saveRemainingTries(3)
+                            // Reset expiration time
+                            resetExpirationTimer()
+                            updateGeneratedCodeText()
+                            updateCodeClickableStyle()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -1530,14 +1594,13 @@ class MCFragment : Fragment() {
      * @return true if expired, false otherwise
      */
     private fun checkExpirationTimer(): Boolean {
-        val now = System.currentTimeMillis()
-        if (expirationEndTime > 0 && expirationEndTime <= now) {
+        if (timerManager.isCodeExpired()) {
             // Capture the expired code before clearing it
             val expiredCode = currentCode
             
             // Always clear all code data when expired
             clearAllCodeData()
-
+            
             // Only show the expired dialog if the user hasn't already used all tries
             val savedTries = sharedPreferences.getInt(REMAINING_TRIES_KEY, 3)
             if (savedTries > 0 && expiredCode.isNotEmpty()) {
