@@ -484,6 +484,38 @@ class LogsFragment : Fragment() {
 
                 return logEntry
             }
+            "multiple_fingerprints_deleted" -> {
+                // Handle fingerprint delete logs
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val total = logData["total"] as? String ?: "Unknown"
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint Deleted",
+                    userName = "Loading...", // Placeholder while loading
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                // Start email fetch if we have a valid userId
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        // Find and update this log entry in the list
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            // Notify adapter on UI thread
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                return logEntry
+            }
             "user_added_to_device" -> {
                 val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
                 LogEntry(
