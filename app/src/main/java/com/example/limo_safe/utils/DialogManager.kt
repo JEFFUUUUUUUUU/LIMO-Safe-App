@@ -79,16 +79,9 @@ class DialogManager(private val context: Context) {
     }
 
 
-    private fun setupTouchListener(view: View) {
-        // Touch listener simplified without session management
-        view.setOnTouchListener { _, _ -> false }
-    }
+    // Touch listener removed as it's not performing any actual function
 
-    private fun setupDialogTouchListener(dialog: androidx.appcompat.app.AlertDialog) {
-        dialog.window?.decorView?.let { decorView ->
-            setupTouchListener(decorView)
-        }
-    }
+    // Dialog touch listener setup removed as it's not performing any actual function
 
     fun createMorseCodeDialog(
         code: String,
@@ -109,7 +102,6 @@ class DialogManager(private val context: Context) {
         dialogData["remaining_expiration_time"] = remainingExpirationTime
         
         val dialog = createMorseCodeDialogInternal(code, remainingTries, remainingCooldown, onPlayClick, onExpire, remainingExpirationTime)
-        setupDialogTouchListener(dialog)
         activeDialog = dialog
         currentDialog = dialog
         return dialog
@@ -124,7 +116,6 @@ class DialogManager(private val context: Context) {
         remainingExpirationTime: Long = 50000 // Default 50 seconds if not specified
     ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_morse_code, null)
-        setupTouchListener(dialogView)
 
         val codeDisplayText = dialogView.findViewById<TextView>(R.id.codeDisplayText)
         val triesText = dialogView.findViewById<TextView>(R.id.triesText)
@@ -179,7 +170,6 @@ class DialogManager(private val context: Context) {
         layoutResId: Int
     ): androidx.appcompat.app.AlertDialog {
         val dialogView = LayoutInflater.from(context).inflate(layoutResId, null)
-        setupTouchListener(dialogView)
 
         val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
             .setView(dialogView)
@@ -187,7 +177,6 @@ class DialogManager(private val context: Context) {
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
-        setupDialogTouchListener(dialog)
         activeDialog = dialog
         return dialog
     }
@@ -363,7 +352,7 @@ class DialogManager(private val context: Context) {
                     dialog.dismiss()
                 }
                 .create()
-            setupDialogTouchListener(fallbackDialog)
+    
             fallbackDialog.show()
         }
     }
@@ -377,7 +366,6 @@ class DialogManager(private val context: Context) {
                 dialog.dismiss()
             }
             .create()
-        setupDialogTouchListener(dialog)
         dialog.show()
     }
 
@@ -418,7 +406,6 @@ class DialogManager(private val context: Context) {
             .setView(layout)
             .setCancelable(false)
             .create()
-        setupDialogTouchListener(dialog)
         activeDialog = dialog
         return dialog
     }
@@ -435,7 +422,6 @@ class DialogManager(private val context: Context) {
             dialogData["expired_code"] = expiredCode
             
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_code_expired, null)
-            setupTouchListener(dialogView)
             
             // Set the expired code text
             val expiredCodeText = dialogView.findViewById<TextView>(R.id.expiredCodeText)
@@ -461,7 +447,6 @@ class DialogManager(private val context: Context) {
             
             val dialog = builder.create()
             dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setupDialogTouchListener(dialog)
             
             // IMPORTANT: Set this as the active dialog
             activeDialog = dialog
