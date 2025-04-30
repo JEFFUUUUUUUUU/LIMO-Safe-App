@@ -13,7 +13,7 @@ bool prevMotionDetected = false;
 unsigned long lastStatusUpdateTime = 0;
 
 // Constants defined using F() macro to store in flash
-const unsigned long STATUS_UPDATE_INTERVAL = 2000;
+const unsigned long STATUS_UPDATE_INTERVAL = 1000;
 
 // Define event types
 #define EVENT_LOCKED      1
@@ -98,8 +98,8 @@ void handleNanoData() {
     // If no data read or empty, return
     if (index == 0) return;
     
-    Serial.print(F("[Nano→ESP32] "));
-    Serial.println(buffer);
+    //Serial.print(F("[Nano→ESP32] "));
+    //Serial.println(buffer);
     
     // Find delimiters
     char* prefix = strtok(buffer, ":");
@@ -190,7 +190,7 @@ void processFirebaseQueue() {
     // Process pending status update first (higher priority)
     if (pendingStatusUpdate) {
         if (updateDeviceStatus(pendingStatusValues[0], pendingStatusValues[1], pendingStatusValues[2])) {
-            Serial.println(F("✅ Status updated in Firebase"));
+            //Serial.println(F("✅ Status updated in Firebase"));
             pendingStatusUpdate = false;
             lastFirebaseOpTime = currentTime;
         } else {
@@ -235,7 +235,7 @@ void processFirebaseQueue() {
             }
             
             if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
-                Serial.println(F("✅ Log entry added to Firebase"));
+                //Serial.println(F("✅ Log entry added to Firebase"));
                 
                 // Mark as processed and move head
                 entry.isValid = false;

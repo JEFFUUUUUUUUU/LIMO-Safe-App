@@ -1,6 +1,7 @@
 #include "FingerprintSensor.h"
 #include "NanoCommunicator.h"
 #include "WiFiSetup.h"
+#include "FirebaseHandler.h"
 #include "RGBLed.h"
 
 // Define pins for fingerprint sensor (adjust if necessary)
@@ -51,10 +52,8 @@ FingerprintState fingerprintState = FP_IDLE;
 EnrollmentState enrollmentState = ENROLL_IDLE;
 
 // Timer variables
-unsigned long lastFingerprintCheck = 0;
 unsigned long enrollmentStateStartTime = 0;
 unsigned long lastCommandCheck = 0;
-const unsigned long FINGERPRINT_CHECK_INTERVAL = 10000; // 10 seconds between checks
 const unsigned long ENROLLMENT_STATE_TIMEOUT = 30000;   // 30 seconds timeout
 const unsigned long COMMAND_CHECK_INTERVAL = 10000;     // 10 seconds between command checks
 
@@ -81,6 +80,7 @@ void initializeFingerprint() {
 }
 
 bool authenticateUser() {
+  
     static unsigned long stateStartTime = 0;
     const unsigned long STATE_TIMEOUT = 500; // 500ms timeout for each state
     
@@ -789,25 +789,28 @@ int findNextAvailableId() {
 
 // Main function to handle all fingerprint operations - call this from the main loop
 void handleFingerprint() {
-    // Check for pending commands in Firebase
-    checkForCommands();
-    
-    // Process enrollment if in progress
-    processEnrollment();
-    
-    // Process delete commands if pending
-    processDeleteCommands();
-    
-    // Check for fingerprint authentication if not doing anything else
-    if (!fingerprintEnrollmentInProgress && enrollmentState == ENROLL_IDLE && !deleteCommandPending) {
+    // Check if we're online with Firebase
+    bool isOnline = isFirebaseReady();
+    // Always try fingerprint authentication regardless of Firebase connectivity
+    // as long as we're not in the middle of an enrollment or delete operation
+    if (!isOnline || !fingerprintEnrollmentInProgress && enrollmentState == ENROLL_IDLE && !deleteCommandPending) {
         if (authenticateUser()) {
             // Authentication successful, handle the unlock process
-            // This could be a call to another function like handleSuccessfulAuth()
             sendCommandToNano("UNLOCK");
-            // For now, just set the LED to success
+            // Set the LED to success
             setLEDStatus(STATUS_UNLOCKED);
             delay(3000);
-            setLEDStatus(STATUS_ONLINE);
+            setLEDStatus(isOnline ? STATUS_ONLINE : STATUS_OFFLINE);
         }
+    }
+    if (isOnline) {
+        // Only check Firebase commands if we're online
+        checkForCommands();
+        
+        // Process enrollment if in progress
+        processEnrollment();
+        
+        // Process delete commands if pending
+        processDeleteCommands();
     }
 }

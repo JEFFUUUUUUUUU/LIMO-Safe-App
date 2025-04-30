@@ -355,59 +355,46 @@ void performTimeSync() {
 
     if (syncSuccessful) {
         Serial.println("✅ Time Synchronization Successful!");
-        printCurrentTime();
+        
+        // Print current time (previously in printCurrentTime)
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        unsigned long long epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+        Serial.print("Current Time (ms): ");
+        Serial.println(epochMilliseconds);
     } else {
         Serial.println("❌ Time Synchronization Failed");
-        printTimeErrorDiagnostics();
+        
+        // Print diagnostics (previously in printTimeErrorDiagnostics)
+        Serial.println("Time Sync Diagnostics:");
+        Serial.print("- WiFi Status: ");
+        switch(WiFi.status()) {
+            case WL_CONNECTED: Serial.println("Connected"); break;
+            case WL_NO_SSID_AVAIL: Serial.println("No SSID Available"); break;
+            case WL_CONNECT_FAILED: Serial.println("Connection Failed"); break;
+            case WL_DISCONNECTED: Serial.println("Disconnected"); break;
+            default: Serial.println("Unknown Status"); break;
+        }
+
+        Serial.println("Possible Causes:");
+        Serial.println("1. Firewall blocking NTP");
+        Serial.println("2. Unstable connection");
+        Serial.println("3. DNS resolution issues");
+        Serial.println("4. NTP server unavailability");
     }
 }
 
-bool isTimeSynchronized(unsigned long long &epochMilliseconds) {
+unsigned long long isTimeSynchronized() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
 
     // Convert to milliseconds
-    epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+    unsigned long long epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
 
     // Convert seconds to check year validity
     struct tm timeinfo;
     localtime_r(&tv.tv_sec, &timeinfo);
 
-    return (timeinfo.tm_year > (2021 - 1900)); // Ensure time is after Jan 1, 2021
-}
-
-unsigned long long isTimeSynchronized() {
-    unsigned long long epochMilliseconds;
-    isTimeSynchronized(epochMilliseconds);  // Calls the existing function
-    return epochMilliseconds;
-}
-
-void printCurrentTime() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-
-    // Convert epoch time to milliseconds
-    unsigned long long epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
-
-    Serial.print("Current Time (ms): ");
-    Serial.println(epochMilliseconds);
-}
-
-
-void printTimeErrorDiagnostics() {
-    Serial.println("Time Sync Diagnostics:");
-    Serial.print("- WiFi Status: ");
-    switch(WiFi.status()) {
-        case WL_CONNECTED: Serial.println("Connected"); break;
-        case WL_NO_SSID_AVAIL: Serial.println("No SSID Available"); break;
-        case WL_CONNECT_FAILED: Serial.println("Connection Failed"); break;
-        case WL_DISCONNECTED: Serial.println("Disconnected"); break;
-        default: Serial.println("Unknown Status"); break;
-    }
-
-    Serial.println("Possible Causes:");
-    Serial.println("1. Firewall blocking NTP");
-    Serial.println("2. Unstable connection");
-    Serial.println("3. DNS resolution issues");
-    Serial.println("4. NTP server unavailability");
+    // Return 0 if time is not valid (before 2021), or the timestamp if valid
+    return (timeinfo.tm_year > (2021 - 1900)) ? epochMilliseconds : 0;
 }

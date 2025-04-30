@@ -27,11 +27,9 @@ void tokenStatusCallback(TokenInfo info);
 bool setupFirebase();
 bool isFirebaseReady();
 bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure);
-bool updateWiFiCredentials(const String& ssid, const String& password);
+bool updateWiFiCredentialsInFirebase(const String& ssid, const String& password);
 bool checkPeriodicWiFiCredentials(); 
-bool checkForNewWiFiCredentials(String& newSSID, String& newPassword);
 bool verifyOTP(String receivedOTP);
 bool isUserRegisteredToDevice(String userTag, String& userId);
-void registerDeviceToFirestore();
 
 #endif

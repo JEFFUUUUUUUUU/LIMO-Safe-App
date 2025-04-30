@@ -28,7 +28,6 @@ void initializeFingerprint();
 bool authenticateUser();
 bool enrollFingerprint(int id);
 void processEnrollment();
-void deleteAllFingerprints();
 void checkForCommands();
 void processDeleteCommands();
 void waitForFingerRemoval(unsigned long timeoutMillis = 3000);

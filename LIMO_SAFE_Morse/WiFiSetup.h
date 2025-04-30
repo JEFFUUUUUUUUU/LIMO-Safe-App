@@ -18,9 +18,6 @@ void clearFlashStorage(bool skipRestart = false);
 
 // NTP Time Sync Functions
 void performTimeSync();
-bool isTimeSynchronized(unsigned long long &epochMilliseconds);
 unsigned long long isTimeSynchronized();
-void printCurrentTime();
-void printTimeErrorDiagnostics();
 
 #endif

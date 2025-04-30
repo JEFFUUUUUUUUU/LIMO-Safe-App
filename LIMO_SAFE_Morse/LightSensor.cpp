@@ -20,6 +20,7 @@ void setupLightSensor() {
     lastChangeTime = millis(); // Initialize timestamp
     // Use fixed threshold instead of adaptive baseline
     currentThreshold = THRESHOLD_BASE;
+    pinMode(LIGHT_SENSOR_PIN, INPUT_PULLDOWN);
 }
 
 /**
@@ -111,7 +112,7 @@ void processLightInput() {
                 String decodedOTP = decodeMorse(receivedMorse);
                 
                 // Validate OTP length (should be exactly 7 characters)
-                if (decodedOTP.length() == 7) {
+                if (decodedOTP.length() == 5) {
                     Serial.print(F("Decoded OTP: "));
                     Serial.println(decodedOTP);
                     
@@ -124,7 +125,7 @@ void processLightInput() {
                     }
                 } else {
                     // Invalid OTP length - reject immediately
-                    Serial.println(F("⚠ Invalid Code Length! Must be 7 characters."));
+                    Serial.println(F("⚠ Invalid Code Length! Must be 5 characters."));
                     setLEDStatus(STATUS_OTP_ERROR); // Indicate error via LED
                 }
             }

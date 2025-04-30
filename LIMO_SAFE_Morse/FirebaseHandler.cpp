@@ -219,17 +219,17 @@ bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
         return false;
     }
 
-    Serial.print("✅ Device status updated: ");
+    /*Serial.print("✅ Device status updated: ");
     Serial.print("Online=");
     Serial.print(isOnline ? "true" : "false");
     Serial.print(", Locked=");
     Serial.print(isLocked ? "true" : "false");
     Serial.print(", Secure=");
-    Serial.println(isSecure ? "true" : "false");
+    Serial.println(isSecure ? "true" : "false"); */
     return true;
 }
 
-bool updateWiFiCredentials(const String& ssid, const String& password) {
+bool updateWiFiCredentialsInFirebase(const String& ssid, const String& password) {
     if (!isFirebaseReady()) {
         Serial.println("❌ Firebase not ready when updating WiFi credentials");
         return false;
@@ -354,7 +354,7 @@ bool checkPeriodicWiFiCredentials() {
     
     else if (wifiCheckState == CHECK_UPDATE_CREDENTIALS) {
         // Update Firebase with new credentials
-        if (updateWiFiCredentials(newSSID, newPassword)) {
+        if (updateWiFiCredentialsInFirebase(newSSID, newPassword)) {
             // Update local storage
             Preferences wifiPrefs;
             wifiPrefs.begin("wifi", false);
@@ -382,45 +382,6 @@ bool checkPeriodicWiFiCredentials() {
         // Reset state machine
         wifiCheckState = CHECK_IDLE;
         return true; // Signal successful credential update
-    }
-    
-    return false;
-}
-
-bool checkForNewWiFiCredentials(String& newSSID, String& newPassword) {
-    if (!isFirebaseReady()) {
-        Serial.println("❌ Firebase not ready to check WiFi credentials");
-        return false;
-    }
-
-    String path = String(DEVICE_PATH) + deviceId + WIFI_NODE;
-
-    // Force Firebase to refresh data
-    Firebase.RTDB.setwriteSizeLimit(&fbdo, "tiny"); 
-    
-    if (!Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
-        Serial.print("❌ Failed to check WiFi credentials: ");
-        Serial.println(fbdo.errorReason());
-        return false;
-    }
-    
-    // Extract SSID and password from response
-    FirebaseJson* json = fbdo.jsonObjectPtr();
-    if (json == nullptr) {
-        return false;
-    }
-    
-    FirebaseJsonData ssidData;
-    FirebaseJsonData passwordData;
-    
-    json->get(ssidData, "ssid");
-    json->get(passwordData, "password");
-    
-    if (ssidData.success && passwordData.success && 
-        ssidData.type == "string" && passwordData.type == "string") {
-        newSSID = ssidData.stringValue;
-        newPassword = passwordData.stringValue;
-        return (newSSID.length() > 0 && newPassword.length() > 0);
     }
     
     return false;
