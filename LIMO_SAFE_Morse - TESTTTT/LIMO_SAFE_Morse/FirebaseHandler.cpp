@@ -373,14 +373,27 @@ bool checkPeriodicWiFiCredentials() {
     }
     
     else if (wifiCheckState == CHECK_RECONNECT) {
-        // Perform WiFi reconnection - potentially blocking but necessary
-        Serial.println("📡 Reconnecting WiFi with new credentials...");
-        WiFi.disconnect();
-        delay(100); // Minimal delay to allow disconnect
-        WiFi.reconnect();
+        // Perform WiFi reconnection - non-blocking 
+        static unsigned long disconnectTime = 0;
+        static bool disconnectStarted = false;
         
-        // Reset state machine
+        if (!disconnectStarted) {
+            Serial.println("📡 Reconnecting WiFi with new credentials...");
+            WiFi.disconnect();
+            disconnectTime = millis();
+            disconnectStarted = true;
+            return false;
+        }
+        
+        // Wait 100ms after disconnect before reconnecting
+        if (millis() - disconnectTime < 100) {
+            return false;
+        }
+        
+        // Reconnect and reset state machine
+        WiFi.reconnect();
         wifiCheckState = CHECK_IDLE;
+        disconnectStarted = false;
         return true; // Signal successful credential update
     }
     
@@ -492,11 +505,15 @@ bool verifyOTP(String receivedOTP) {
     // Successful verification actions
     Serial.println("✅ OTP verified successfully");
     
-    // Unlock sequence
+    // Unlock sequence - use non-blocking approach
     sendCommandToNano("UNLOCK");
     setLEDStatus(STATUS_UNLOCKED);
-    delay(3000);
-    setColorRGB(COLOR_OFF);
+    
+    // Set timer and flag for main loop to handle LED timing
+    extern unsigned long unlockLedTimer;
+    extern bool unlockLedActive;
+    unlockLedTimer = millis();
+    unlockLedActive = true;
     
     return true;
 }

@@ -19,6 +19,17 @@
 #include "FingerprintSensor.h" // Fingerprint reader for biometric authentication
 #include "secrets.h" // Confidential credentials and API keys
 
+// Non-blocking operation flags and timers
+unsigned long unlockLedTimer = 0;
+bool unlockLedActive = false;
+unsigned long wifiSetupTimer = 0;
+bool wifiSetupInProgress = false;
+int wifiSetupAttempts = 0;
+unsigned long firebaseSetupTimer = 0;
+bool firebaseSetupInProgress = false;
+int firebaseSetupAttempts = 0;
+bool systemInitialized = false;
+
 void setup() {
     setLEDStatus(STATUS_OFFLINE); // Initialize LED to offline state
     Serial.begin(115200); // Start serial communication at 115200 baud
@@ -30,61 +41,104 @@ void setup() {
     initializeFingerprint(); // Initialize fingerprint sensor
     //deleteAllFingerprints(); // Commented functionality to wipe fingerprint database
 
-    // Try to connect to WiFi with multiple attempts
-    int wifiAttempts = 5;
-    while (!setupWiFi() && wifiAttempts > 0) {
-        Serial.println("⚠️ Retrying WiFi setup...");
-        wifiAttempts--;
-        delay(5000); // Wait 5 seconds between attempts
-    }
-
-    if (wifiAttempts == 0) {
-        Serial.println("❌ WiFi setup failed! Restarting...");
-        delay(3000);
-        //ESP.restart(); // Commented automatic restart after WiFi failure
-    }
-
-    WiFi.setSleep(false); // Disable WiFi sleep mode for better responsiveness
-    performTimeSync(); // Synchronize device time with NTP server
-
-    // Try to connect to Firebase with multiple attempts
-    int firebaseAttempts = 5;
-    while (!setupFirebase() && firebaseAttempts > 0) {
-        Serial.println("⚠️ Retrying Firebase setup...");
-        firebaseAttempts--;
-        delay(5000); // Wait 5 seconds between attempts
-    }
-
-    if (firebaseAttempts == 0) {
-        Serial.println("❌ Firebase setup failed! Restarting...");
-        delay(3000);
-        //ESP.restart(); // Commented automatic restart after Firebase failure
-    }
-
-    // Log successful WiFi connection to Firebase
-    if (Firebase.ready()) {
-        FirebaseJson logEntry; // Create JSON object for log entry
-        logEntry.set("timestamp", isTimeSynchronized()); // Add timestamp to log
-        logEntry.set("event", "wifi_connected"); // Log event type
-        logEntry.set("ssid", WiFi.SSID()); // Include connected WiFi network name
-
-        String logPath = String("devices/") + deviceId + "/logs"; // Create path to device logs
-        if (Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry)) {
-            Serial.println("✅ WiFi connection logged.");
-        } else {
-            Serial.println("❌ Failed to log WiFi connection.");
-            Serial.println(fbdo.errorReason().c_str()); // Print error reason
-        }
-    }
-    updateDeviceStatus(true, false, false); // Update device status in Firebase
-
-    Serial.println("✅ System initialization complete!");
+    // Set up WiFi connection attempts - non-blocking
+    wifiSetupInProgress = true;
+    wifiSetupAttempts = 5;
+    wifiSetupTimer = millis(); // Start WiFi setup process
+    
+    // System will continue setup in the main loop using non-blocking operations
 }
 
 unsigned long lastFirebaseCheck = 0; // Timestamp of last Firebase check
 const unsigned long FIREBASE_CHECK_INTERVAL = 2000; // Check Firebase every 2 seconds
 
 void loop() {
+    // Continue system initialization if not yet complete
+    if (!systemInitialized) {
+        if (wifiSetupInProgress) {
+            // Handle WiFi setup with timeouts
+            if (millis() - wifiSetupTimer >= 500) { // Check every 500ms
+                wifiSetupTimer = millis();
+                
+                if (setupWiFi()) {
+                    Serial.println("✅ WiFi connected successfully");
+                    wifiSetupInProgress = false;
+                    WiFi.setSleep(false); // Disable WiFi sleep mode for better responsiveness
+                    performTimeSync(); // Synchronize device time with NTP server
+                    
+                    // Start Firebase setup
+                    firebaseSetupInProgress = true;
+                    firebaseSetupAttempts = 5;
+                    firebaseSetupTimer = millis();
+                } else {
+                    wifiSetupAttempts--;
+                    if (wifiSetupAttempts <= 0) {
+                        Serial.println("❌ WiFi setup failed after multiple attempts!");
+                        Serial.println("Continuing with local operations only");
+                        wifiSetupInProgress = false;
+                        
+                        // Continue with Firebase setup anyway, it will handle WiFi issues
+                        firebaseSetupInProgress = true;
+                        firebaseSetupAttempts = 5;
+                        firebaseSetupTimer = millis();
+                    }
+                }
+            }
+        } 
+        else if (firebaseSetupInProgress) {
+            // Handle Firebase setup with timeouts
+            if (millis() - firebaseSetupTimer >= 500) { // Check every 500ms
+                firebaseSetupTimer = millis();
+                
+                if (setupFirebase()) {
+                    Serial.println("✅ Firebase connected successfully");
+                    firebaseSetupInProgress = false;
+                    
+                    // Log successful WiFi connection to Firebase
+                    if (Firebase.ready()) {
+                        FirebaseJson logEntry;
+                        logEntry.set("timestamp", isTimeSynchronized());
+                        logEntry.set("event", "wifi_connected");
+                        logEntry.set("ssid", WiFi.SSID());
+
+                        String logPath = String("devices/") + deviceId + "/logs";
+                        if (Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry)) {
+                            Serial.println("✅ WiFi connection logged.");
+                        } else {
+                            Serial.println("❌ Failed to log WiFi connection.");
+                            Serial.println(fbdo.errorReason().c_str());
+                        }
+                    }
+                    updateDeviceStatus(true, false, false);
+                    
+                    // Complete system initialization
+                    systemInitialized = true;
+                    Serial.println("✅ System initialization complete!");
+                } else {
+                    firebaseSetupAttempts--;
+                    if (firebaseSetupAttempts <= 0) {
+                        Serial.println("❌ Firebase setup failed after multiple attempts!");
+                        Serial.println("Continuing with local operations only");
+                        firebaseSetupInProgress = false;
+                        systemInitialized = true; // Continue without Firebase
+                        Serial.println("✅ System initialization complete (offline mode)!");
+                    }
+                }
+            }
+        }
+        
+        // Process critical functions even during initialization
+        handleNanoData();
+        yield();
+        return; // Skip the rest of the loop until initialization is complete
+    }
+    
+    // Handle non-blocking LED unlocked indicator
+    if (unlockLedActive && millis() - unlockLedTimer >= 3000) {
+        unlockLedActive = false;
+        setColorRGB(COLOR_OFF);
+    }
+    
     // Process light sensor input (decode Morse code)
     processLightInput();
     
@@ -96,7 +150,7 @@ void loop() {
     
     // Monitor WiFi connection status
     if (!checkWiFiConnection()) {
-        return;
+        Serial.println("⚠️ WiFi disconnected, continuing with local operations");
         // Skip Firebase operations while WiFi is down
     } else {
         // Only check Firebase periodically to reduce overhead
@@ -109,9 +163,9 @@ void loop() {
                 Serial.println("⚠️ Firebase unavailable, continuing with local operations");
             } else {
                 // Firebase-dependent operations 
-                    checkPeriodicWiFiCredentials(); // Check for WiFi credential updates
-                    processFirebaseQueue(); // Process pending Firebase operations
-                }
+                checkPeriodicWiFiCredentials(); // Check for WiFi credential updates
+                processFirebaseQueue(); // Process pending Firebase operations
             }
         }
     }
+}

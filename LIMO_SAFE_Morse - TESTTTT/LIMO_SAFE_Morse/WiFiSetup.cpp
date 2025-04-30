@@ -231,25 +231,42 @@ bool updateWiFiCredentials(const char* ssid, const char* password) {
 }
 
 void clearFlashStorage(bool skipRestart) {
-    Serial.println("🧹 Clearing WiFi flash storage...");
+    static unsigned long clearStartTime = 0;
+    static bool clearInitiated = false;
+    static bool clearComplete = false;
+    static bool restartPending = false;
+    static unsigned long restartTime = 0;
     
-    if (wifiPrefs.begin(WIFI_CREDENTIALS_NAMESPACE, false)) {
+    // Step 1: Start the clearing process
+    if (!clearInitiated) {
+        Serial.println("🧹 Clearing WiFi credentials from flash...");
+        wifiPrefs.begin(WIFI_CREDENTIALS_NAMESPACE, false);
         wifiPrefs.clear();
         wifiPrefs.putInt(WIFI_PREF_FAILED, 0);
         wifiPrefs.end();
-        delay(FLASH_WRITE_DELAY_MS);
+        clearStartTime = millis();
+        clearInitiated = true;
+        return;
+    }
+    
+    // Step 2: Wait for flash write to complete
+    if (!clearComplete && (millis() - clearStartTime >= FLASH_WRITE_DELAY_MS)) {
+        Serial.println("✅ Flash storage cleared!");
+        clearComplete = true;
         
-        Serial.println("🧹 Flash storage cleared! Restarting in 3 seconds...");
-        setLEDStatus(STATUS_ERROR);  // Indicate that a reset is happening
-        delay(3000);  // Allow some time before restarting
         if (!skipRestart) {
-            Serial.println("🔁 Restarting in 3 seconds...");
-            setLEDStatus(STATUS_ERROR);
-            delay(3000);
-            ESP.restart();
+            Serial.println("🔄 Restarting device in 3 seconds...");
+            setLEDStatus(STATUS_ERROR);  // Indicate that a reset is happening
+            restartPending = true;
+            restartTime = millis();
         }
-    } else {
-        Serial.println("❌ Failed to access preferences for clearing");
+        return;
+    }
+    
+    // Step 3: Handle restart if needed
+    if (restartPending && (millis() - restartTime >= 3000)) {
+        Serial.println("🔁 Restarting now...");
+        ESP.restart();
     }
 }
 
@@ -336,36 +353,55 @@ void performTimeSync() {
     Serial.println("\n🕒 Attempting NTP Time Synchronization...");
 
     bool syncSuccessful = false;
-    for (int i = 0; i < NTP_SERVER_COUNT; i++) {
+    static int serverIndex = 0;
+    static unsigned long startAttemptTime = 0;
+    static bool attemptInProgress = false;
+    
+    if (!attemptInProgress) {
         Serial.print("- Trying NTP Server: ");
-        Serial.println(NTP_SERVERS[i]);
-
-        configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVERS[i]);
-
-        unsigned long startAttemptTime = millis();
-        while (!isTimeSynchronized() && millis() - startAttemptTime < 10000) {
-            delay(100);
-        }
-
+        Serial.println(NTP_SERVERS[serverIndex]);
+        configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVERS[serverIndex]);
+        startAttemptTime = millis();
+        attemptInProgress = true;
+    }
+    
+    // Check if time sync completed or timed out
+    if (isTimeSynchronized() || millis() - startAttemptTime >= 10000) {
         if (isTimeSynchronized()) {
             syncSuccessful = true;
-            break;
+        } else {
+            // Try next server
+            serverIndex = (serverIndex + 1) % NTP_SERVER_COUNT;
+            if (serverIndex == 0) {
+                // We've tried all servers
+                attemptInProgress = false;
+            } else {
+                // Try next server
+                Serial.print("- Trying NTP Server: ");
+                Serial.println(NTP_SERVERS[serverIndex]);
+                configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVERS[serverIndex]);
+                startAttemptTime = millis();
+            }
         }
     }
 
     if (syncSuccessful) {
         Serial.println("✅ Time Synchronization Successful!");
         
-        // Print current time (previously in printCurrentTime)
+        // Print current time
         struct timeval tv;
         gettimeofday(&tv, NULL);
         unsigned long long epochMilliseconds = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
         Serial.print("Current Time (ms): ");
         Serial.println(epochMilliseconds);
-    } else {
+        
+        // Reset state for next time
+        serverIndex = 0;
+        attemptInProgress = false;
+    } else if (!attemptInProgress) {
         Serial.println("❌ Time Synchronization Failed");
         
-        // Print diagnostics (previously in printTimeErrorDiagnostics)
+        // Print diagnostics
         Serial.println("Time Sync Diagnostics:");
         Serial.print("- WiFi Status: ");
         switch(WiFi.status()) {

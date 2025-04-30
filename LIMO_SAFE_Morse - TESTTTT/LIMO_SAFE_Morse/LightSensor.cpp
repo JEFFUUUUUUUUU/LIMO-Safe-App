@@ -28,12 +28,37 @@ void setupLightSensor() {
  * @return Average light sensor reading value (higher = brighter)
  */
 int getSmoothReading() {
-    int total = 0; // Accumulator for readings
-    for (int i = 0; i < 3; i++) { // Take 3 samples
-        total += analogRead(LIGHT_SENSOR_PIN); // Add each reading to total
-        delay(2);  // Short delay between readings for stability
+    static unsigned long lastReadingTime = 0;
+    static int readingCount = 0;
+    static int totalReading = 0;
+    static bool readingInProgress = false;
+    
+    // If we're not already taking readings, start a new set
+    if (!readingInProgress) {
+        readingInProgress = true;
+        readingCount = 0;
+        totalReading = 0;
+        lastReadingTime = millis();
     }
-    return total / 3; // Return the average value
+    
+    // Check if enough time has passed for the next reading
+    unsigned long currentTime = millis();
+    if (currentTime - lastReadingTime >= 2) { // 2ms between samples
+        totalReading += analogRead(LIGHT_SENSOR_PIN);
+        readingCount++;
+        lastReadingTime = currentTime;
+        
+        // If we've collected enough samples, calculate average and reset
+        if (readingCount >= 3) {
+            int average = totalReading / readingCount;
+            readingInProgress = false;
+            return average;
+        }
+    }
+    
+    // If we're still collecting samples, return the last known value
+    // or a default value if no readings have been taken yet
+    return (readingCount > 0) ? (totalReading / readingCount) : currentThreshold;
 }
 
 /**
