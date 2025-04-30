@@ -10,6 +10,5 @@
 #define FIREBASE_HOST "limo-safe-383d3-default-rtdb.asia-southeast1.firebasedatabase.app"
 // Your Database Secret (NOT the Web API Key)
 #define FIREBASE_AUTH "dJSuL4IFz5260Gx5FNP33dT5JVX2CWWLlAZtxro5"
-#define FIREBASE_API_KEY "AIzaSyAqBTnHzWUNFW2QFEA4IJoQnZNBUohmT4o"
 
 #endif
