@@ -1105,24 +1105,66 @@ class MonitoringFragment : Fragment() {
                                     "device" to deviceId
                                 )
 
-                                // Firebase operations to remove user from both locations
-                                val removeFromDevice = database.child("devices").child(deviceId)
-                                    .child("registeredUsers").child(existingTag).removeValue()
-
-                                val removeFromUser = database.child("users").child(removedUserId)
-                                    .child("registeredDevices").child(deviceId).removeValue()
-
-                                // Add log entry under current user's logs
-                                val addLog = database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
-
-                                // Run all operations in parallel and wait for them to complete
-                                Tasks.whenAllComplete(removeFromDevice, removeFromUser, addLog)
-                                    .addOnSuccessListener {
-                                        Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
+                                // First, send the delete_all command to remove fingerprints on the device
+                                database.child("devices").child(deviceId)
+                                    .child("fingerprint").child(removedUserId)
+                                    .setValue("delete_all")
+                                
+                                // Create a flag to track whether we've seen confirmation
+                                var confirmationReceived = false
+                                
+                                // Set up a listener for logs to watch for confirmation
+                                val logRef = database.child("devices").child(deviceId).child("logs")
+                                val startTime = System.currentTimeMillis()
+                                
+                                // Add listener for log events
+                                val logListener = object : ValueEventListener {
+                                    override fun onDataChange(snapshot: DataSnapshot) {
+                                        // We only care about the listener if we haven't received confirmation yet
+                                        if (!confirmationReceived) {
+                                            // Look for fingerprint deletion events in recent logs
+                                            for (logSnapshot in snapshot.children) {
+                                                val timestamp = logSnapshot.child("timestamp").getValue(Long::class.java) ?: 0
+                                                // Only check logs that happened after our command was sent
+                                                if (timestamp >= startTime) {
+                                                    val eventType = logSnapshot.child("event").getValue(String::class.java)
+                                                    if (eventType == "fingerprint_deleted" || eventType == "all_fingerprints_deleted") {
+                                                        confirmationReceived = true
+                                                        // Remove the listener since we got confirmation
+                                                        logRef.removeEventListener(this)
+                                                        // Proceed with user removal
+                                                        completeUserRemoval(deviceId, removedUserId, existingTag, currentUserId, logEntry)
+                                                        break
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    .addOnFailureListener { e ->
-                                        Toast.makeText(context, "Failed to remove user: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    
+                                    override fun onCancelled(error: DatabaseError) {
+                                        // Error occurred - proceed anyway
+                                        if (!confirmationReceived) {
+                                            confirmationReceived = true
+                                            completeUserRemoval(deviceId, removedUserId, existingTag, currentUserId, logEntry)
+                                        }
                                     }
+                                }
+                                
+                                // Add the listener
+                                logRef.orderByChild("timestamp").startAt(startTime.toDouble())
+                                    .addValueEventListener(logListener)
+                                
+                                // Set a timeout to proceed even if no confirmation is received
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    // If we haven't received confirmation yet, proceed anyway
+                                    if (!confirmationReceived) {
+                                        confirmationReceived = true
+                                        // Remove the listener
+                                        logRef.removeEventListener(logListener)
+                                        // Complete the user removal
+                                        completeUserRemoval(deviceId, removedUserId, existingTag, currentUserId, logEntry)
+                                    }
+                                }, 5000) // 5 second timeout
                             } else {
                                 Toast.makeText(context, "User does not have a tag", Toast.LENGTH_SHORT).show()
                             }
@@ -1136,6 +1178,35 @@ class MonitoringFragment : Fragment() {
             }
             .addOnFailureListener { e ->
                 Toast.makeText(context, "Error checking user existence: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+    
+    // Helper method to complete user removal after fingerprint deletion
+    private fun completeUserRemoval(deviceId: String, userId: String, userTag: String, currentUserId: String, logEntry: Map<String, Any>) {
+        // Firebase operations to remove user from both locations
+        val removeFromDevice = database.child("devices").child(deviceId)
+            .child("registeredUsers").child(userTag).removeValue()
+
+        val removeFromUser = database.child("users").child(userId)
+            .child("registeredDevices").child(deviceId).removeValue()
+        
+        // Delete fingerprint data associated with the user for this device
+        val removeDeviceFingerprint = database.child("devices").child(deviceId)
+            .child("fingerprint").child(userId).removeValue()
+        
+        val removeUserFingerprint = database.child("users").child(userId)
+            .child("registeredDevices").child(deviceId).child("fingerprint").removeValue()
+
+        // Add log entry under current user's logs
+        val addLog = database.child("users").child(currentUserId).child("logs").push().setValue(logEntry)
+
+        // Run all operations in parallel and wait for them to complete
+        Tasks.whenAllComplete(removeFromDevice, removeFromUser, removeDeviceFingerprint, removeUserFingerprint, addLog)
+            .addOnSuccessListener {
+                Toast.makeText(context, "User removed successfully", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Failed to remove user: ${e.message}", Toast.LENGTH_SHORT).show()
             }
     }
 
