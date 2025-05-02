@@ -67,16 +67,33 @@
             android:visibility="gone">
 
             <!-- Status Section -->
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Status"
-                android:textStyle="bold"
-                android:textColor="@color/maroon"
-                android:textSize="16sp"
-                android:layout_marginStart="16dp"
+                android:orientation="horizontal"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Status"
+                    android:textStyle="bold"
+                    android:textColor="@color/maroon"
+                    android:textSize="16sp"
+                    android:layout_marginStart="16dp" />
+
+                <ImageButton
+                    android:id="@+id/resetStatusButton"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginEnd="16dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_reset"
+                    android:tint="@color/maroon"
+                    android:contentDescription="Reset device status" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/onlineStatusText"
