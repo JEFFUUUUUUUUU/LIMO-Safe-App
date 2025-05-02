@@ -34,6 +34,7 @@ import com.example.limo_safe.utils.BiometricManager
 import com.example.limo_safe.utils.DeviceNotificationManager
 import com.example.limo_safe.utils.DialogManager
 import com.example.limo_safe.utils.PasswordConfirmationDialog
+import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.tabs.TabLayout
@@ -1340,6 +1341,7 @@ class MonitoringFragment : Fragment() {
             val addUserButton: ImageButton = itemView.findViewById(R.id.addUserButton)
             val wifiButton: ImageButton = itemView.findViewById(R.id.wifiButton)
             val fingerprintButton: ImageButton = itemView.findViewById(R.id.fingerprintButton)
+            val resetButton: ImageButton = itemView.findViewById(R.id.resetStatusButton)
 
             init {
                 deviceHeader.setOnClickListener {
@@ -1363,6 +1365,14 @@ class MonitoringFragment : Fragment() {
                     val position = adapterPosition
                     if (position != RecyclerView.NO_POSITION) {
                         onWifiClicked(devices[position].id)
+                    }
+                }
+
+                // Reset button listener
+                resetButton.setOnClickListener {
+                    val position = adapterPosition
+                    if (position != RecyclerView.NO_POSITION) {
+                        showResetConfirmationDialog(devices[position].id)
                     }
                 }
 
@@ -2074,6 +2084,224 @@ class MonitoringFragment : Fragment() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+
+        private fun showResetConfirmationDialog(deviceId: String) {
+            try {
+                // Get context safely
+                val activity = context as? FragmentActivity ?: return
+                if (activity.isFinishing || activity.isDestroyed) return
+                
+                // Create custom dialog
+                val dialog = Dialog(activity)
+                dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+                dialog.setContentView(R.layout.dialog_reset_confirmation)
+                dialog.setCancelable(true)
+                
+                // Set button actions
+                dialog.findViewById<Button>(R.id.cancelButton).setOnClickListener {
+                    dialog.dismiss()
+                }
+                
+                dialog.findViewById<Button>(R.id.resetButton).setOnClickListener {
+                    dialog.dismiss()
+                    resetDevice(deviceId)
+                }
+                
+                dialog.show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                try {
+                    Toast.makeText(context, "Error showing dialog: ${e.message}", Toast.LENGTH_SHORT).show()
+                } catch (e2: Exception) {
+                    e2.printStackTrace()
+                }
+            }
+        }
+
+        private fun resetDevice(deviceId: String) {
+            try {
+                // Get current user ID
+                val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+                
+                // Show progress toast
+                Toast.makeText(context, "Starting device reset...", Toast.LENGTH_SHORT).show()
+                
+                // Step 1: Get all users registered to device
+                FirebaseDatabase.getInstance().reference
+                    .child("devices").child(deviceId).child("registeredUsers")
+                    .get()
+                    .addOnSuccessListener { usersSnapshot ->
+                        val nonCurrentUserIds = mutableListOf<String>()
+                        val nonCurrentUserTags = mutableMapOf<String, String>() // userId -> userTag
+                        var currentUserTag: String? = null
+                        
+                        // Separate current user from other users
+                        for (userTagSnapshot in usersSnapshot.children) {
+                            val userTag = userTagSnapshot.key ?: continue
+                            val userId = userTagSnapshot.getValue(String::class.java) ?: continue
+                            
+                            if (userId == currentUserId) {
+                                currentUserTag = userTag
+                            } else {
+                                nonCurrentUserIds.add(userId)
+                                nonCurrentUserTags[userId] = userTag
+                            }
+                        }
+                        
+                        // Step 2: Send a single reset command to wipe all fingerprints on the device
+                        FirebaseDatabase.getInstance().reference
+                            .child("devices").child(deviceId).child("fingerprint")
+                            .child(currentUserId)
+                            .setValue("reset")
+                            .addOnSuccessListener {
+                                Toast.makeText(context, "Fingerprint reset command sent", Toast.LENGTH_SHORT).show()
+                                
+                                // Check for command confirmation before proceeding with Firebase cleanup
+                                // Set checkpoint timestamp for checking logs
+                                val checkpointTime = System.currentTimeMillis()
+                                
+                                // Wait before checking for confirmation and continuing
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    // Check device logs for reset confirmation
+                                    checkResetConfirmation(deviceId, checkpointTime) { confirmed ->
+                                        if (confirmed) {
+                                            // Reset confirmed - proceed with Firebase cleanup
+                                            Toast.makeText(context, "Fingerprint reset confirmed", Toast.LENGTH_SHORT).show()
+                                            
+                                            // Clean up fingerprint data in Firebase for each non-current user
+                                            for (userId in nonCurrentUserIds) {
+                                                FirebaseDatabase.getInstance().reference
+                                                    .child("users").child(userId).child("registeredDevices")
+                                                    .child(deviceId).child("fingerprint")
+                                                    .removeValue()
+                                            }
+                                            
+                                            // Continue with removing users
+                                            removeDeviceUsers(deviceId, nonCurrentUserIds, nonCurrentUserTags, currentUserId, currentUserTag)
+                                        } else {
+                                            // No confirmation found - just show error toast and abort
+                                            Toast.makeText(context, "Fingerprint reset failed. Operation cancelled.", Toast.LENGTH_LONG).show()
+                                            Log.w("MonitoringFragment", "Reset not confirmed - operation cancelled")
+                                        }
+                                    }
+                                }, 10000) // Wait 3 seconds for device to process reset command
+                            }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "Failed to send reset command: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        Toast.makeText(context, "Failed to get device users: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                try {
+                    Toast.makeText(context, "Error during reset: ${e.message}", Toast.LENGTH_SHORT).show()
+                } catch (e2: Exception) {
+                    e2.printStackTrace()
+                }
+            }
+        }
+
+        // Helper method to check for reset confirmation in logs
+        private fun checkResetConfirmation(deviceId: String, checkpointTime: Long, callback: (Boolean) -> Unit) {
+            // Look for reset confirmation in device logs
+            FirebaseDatabase.getInstance().reference
+                .child("devices").child(deviceId).child("logs")
+                .orderByChild("timestamp")
+                .startAt(checkpointTime.toDouble())
+                .get()
+                .addOnSuccessListener { logsSnapshot ->
+                    var resetConfirmed = false
+                    
+                    // Check logs for fingerprint reset confirmation
+                    for (logSnapshot in logsSnapshot.children) {
+                        val eventType = logSnapshot.child("event").getValue(String::class.java)
+                        // Look for the new "fingerprint_reset" or "all_fingerprints_deleted" events
+                        if (eventType == "all_fingerprints_deleted") {
+                            resetConfirmed = true
+                            break
+                        }
+                    }
+                    
+                    callback(resetConfirmed)
+                }
+                .addOnFailureListener { e ->
+                    Log.e("MonitoringFragment", "Error checking logs: ${e.message}")
+                    // Proceed anyway on failure to check logs
+                    callback(false)
+                }
+        }
+
+        // Helper method to remove device users
+        private fun removeDeviceUsers(
+            deviceId: String,
+            nonCurrentUserIds: List<String>,
+            nonCurrentUserTags: Map<String, String>,
+            currentUserId: String,
+            currentUserTag: String?
+        ) {
+            // Remove non-current users
+            val userRemovalOps = mutableListOf<Task<Void>>()
+            for (userId in nonCurrentUserIds) {
+                val userTag = nonCurrentUserTags[userId] ?: continue
+                
+                // Remove user from device
+                val removeFromDevice = FirebaseDatabase.getInstance().reference
+                    .child("devices").child(deviceId).child("registeredUsers")
+                    .child(userTag).removeValue()
+                userRemovalOps.add(removeFromDevice)
+                
+                // Remove device from user
+                val removeFromUser = FirebaseDatabase.getInstance().reference
+                    .child("users").child(userId).child("registeredDevices")
+                    .child(deviceId).removeValue()
+                userRemovalOps.add(removeFromUser)
+            }
+            
+            // After all non-current users are removed, handle current user
+            Tasks.whenAllComplete(userRemovalOps)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        Toast.makeText(context, "Non-current users removed successfully", Toast.LENGTH_SHORT).show()
+                        
+                        // Only proceed with current user if we have one
+                        if (currentUserTag != null) {
+                            // Clean up current user's fingerprint data in Firebase
+                            FirebaseDatabase.getInstance().reference
+                                .child("users").child(currentUserId).child("registeredDevices")
+                                .child(deviceId).child("fingerprint")
+                                .removeValue()
+                                .addOnSuccessListener {
+                                    // Wait a moment before removing current user
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        // Finally remove current user
+                                        FirebaseDatabase.getInstance().reference
+                                            .child("devices").child(deviceId).child("registeredUsers")
+                                            .child(currentUserTag).removeValue()
+                                        
+                                        FirebaseDatabase.getInstance().reference
+                                            .child("users").child(currentUserId).child("registeredDevices")
+                                            .child(deviceId).removeValue()
+                                            .addOnSuccessListener {
+                                                Toast.makeText(context, 
+                                                    "Device reset complete. All users removed.", 
+                                                    Toast.LENGTH_SHORT).show()
+                                            }
+                                    }, 2000)
+                                }
+                        } else {
+                            Toast.makeText(context, 
+                                "Device reset complete. No current user found.", 
+                                Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, 
+                            "Error removing non-current users", 
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
         }
     }
 }
