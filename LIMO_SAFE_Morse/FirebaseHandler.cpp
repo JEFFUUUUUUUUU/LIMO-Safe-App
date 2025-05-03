@@ -23,43 +23,171 @@ const char* const LAST_VERIFICATION_NODE = "/lastVerification";
 const char* const OTP_NODE = "/otp";
 String deviceId;
 
-void checkFirebaseConnection() {
-    static unsigned long lastAttempt = 0;
-    static int attemptCount = 0;
-    const unsigned long delayIntervals[] = {5000, 10000, 30000, 60000};  // 5s, 10s, 30s, 60s
+// Add to the existing global variables at the top
+unsigned long lastFirebaseReconnectAttempt = 0;
+int firebaseReconnectInterval = 2000; // Start with 2 seconds
+const int maxFirebaseReconnectInterval = 60000; // Max 1 minute between attempts
 
-    if (isFirebaseReady()) {
-        attemptCount = 0;  // Reset on success
-        return;
+// Track connection status
+bool wasFirebaseConnected = false;
+
+// Improved Firebase connection checking function
+bool checkFirebaseConnection() {
+    // Static variables for connection management
+    static unsigned long lastFirebaseReconnectAttempt = 0;
+    static int firebaseReconnectInterval = 2000; // Start with 2 seconds
+    static bool wasFirebaseConnected = false;
+    static int firebaseFailedAttempts = 0;
+    const int maxFirebaseReconnectInterval = 60000; // Max 1 minute between attempts
+    const int maxFirebaseFailedAttempts = 3; // Max failures before WiFi reset
+    
+    // Variables for current state
+    bool wifiConnected = WiFi.isConnected();
+    bool firebaseResponsive = false;
+    unsigned long currentMillis = millis();
+
+    // Step 1: Check if WiFi is connected
+    if (!wifiConnected) {
+        if (wasFirebaseConnected) {
+            Serial.println("❌ WiFi disconnected, Firebase unavailable");
+            setLEDStatus(STATUS_OFFLINE);
+            wasFirebaseConnected = false;
+        }
+        return false;
     }
 
-    unsigned long now = millis();
-    if (now - lastAttempt >= delayIntervals[min(attemptCount, 3)]) {
-        Serial.println("🔄 Firebase disconnected! Attempting reconnection...");
+    // Step 2: Use DNS ping to check internet connectivity
+    IPAddress ip;
+    bool internetAvailable = (WiFi.hostByName("8.8.8.8", ip) == 1);
+    
+    if (!internetAvailable) {
+        if (wasFirebaseConnected) {
+            Serial.println("❌ Internet not available, Firebase cannot connect");
+            setLEDStatus(STATUS_OFFLINE);
+            wasFirebaseConnected = false;
+        }
+        return false;
+    }
 
+    // Step 3: Verify Firebase connection if internet is available
+    if (Firebase.ready()) {
+        // Only do the ping test if we have internet
+        if (Firebase.RTDB.getInt(&fbdo, "/status/pingTest")) {
+            firebaseResponsive = true;
+            firebaseFailedAttempts = 0; // Reset failed attempts counter on success
+        } else {
+            firebaseResponsive = false;
+            Serial.println("❌ Firebase ping test failed");
+        }
+    } else {
+        firebaseResponsive = false;
+    }
+
+    // Handle connection state changes
+    bool currentlyConnected = wifiConnected && internetAvailable && firebaseResponsive;
+    if (currentlyConnected != wasFirebaseConnected) {
+        if (currentlyConnected) {
+            Serial.println("✅ Firebase connected");
+            firebaseReconnectInterval = 2000; // Reset reconnect interval on success
+            firebaseFailedAttempts = 0; // Reset failure count
+            updateDeviceStatus(true, false, false);
+        } else {
+            Serial.println("❌ Firebase disconnected");
+            setLEDStatus(STATUS_OFFLINE);
+            // Print more detailed diagnostics
+            if (!internetAvailable) {
+                Serial.println("   - Internet not available despite WiFi connection");
+            } else if (!firebaseResponsive) {
+                Serial.println("   - Firebase not responsive");
+            }
+        }
+        wasFirebaseConnected = currentlyConnected;
+    }
+
+    // Attempt reconnection if needed with exponential backoff
+    if (!currentlyConnected && (currentMillis - lastFirebaseReconnectAttempt > firebaseReconnectInterval)) {
+        Serial.println("🔄 Attempting Firebase reconnection...");
+        lastFirebaseReconnectAttempt = currentMillis;
+        
+        // Full reconnection sequence
+        bool reconnectSuccess = false;
+        
+        // Step 1: Reset Firebase configuration
         Firebase.reset(&config);
+        
+        // Step 2: Re-initialize Firebase with the current config
+        // FIXED: Removed config.cert.verify = false line as it's not a valid property
         Firebase.begin(&config, &auth);
         Firebase.reconnectWiFi(true);
-        fbdo.setBSSLBufferSize(1024, 1024);
-
-        if (isFirebaseReady()) {
-            Serial.println("✅ Firebase Reconnected!");
-            attemptCount = 0;
+        
+        // Step 3: Reset buffer sizes which can help with connection issues
+        //fbdo.setBSSLBufferSize(4096, 2048); // Use larger buffers for reconnection
+        // REMOVED: setSecure() call as it's a private method in the FirebaseData class
+        
+        // Step 4: Verify the reconnection worked
+        delay(500); // Brief pause to allow connection to establish
+        if (Firebase.ready() && Firebase.RTDB.getInt(&fbdo, "/status/pingTest")) {
+            Serial.println("✅ Firebase reconnected successfully");
+            reconnectSuccess = true;
+            firebaseReconnectInterval = 2000; // Reset backoff timer
+            firebaseFailedAttempts = 0; // Reset failure count
+            wasFirebaseConnected = true;
+            updateDeviceStatus(true, false, false);
+            setLEDStatus(STATUS_ONLINE); // Or whatever your normal status is
         } else {
-            Serial.println("❌ Firebase reconnection failed!");
-            attemptCount++;  // Increase delay
+            // Increment failed attempts counter
+            firebaseFailedAttempts++;
+            
+            // Implement exponential backoff with jitter
+            firebaseReconnectInterval = min(
+                (int)(firebaseReconnectInterval * 1.5 + random(500)), 
+                maxFirebaseReconnectInterval
+            );
+            
+            Serial.print("❌ Firebase reconnection failed. Attempt #");
+            Serial.print(firebaseFailedAttempts);
+            Serial.print(" of ");
+            Serial.print(maxFirebaseFailedAttempts);
+            Serial.print(". Next attempt in ");
+            Serial.print(firebaseReconnectInterval / 1000);
+            Serial.println(" seconds");
+            
+            // If we've failed too many times in a row, try resetting WiFi connection
+            if (firebaseFailedAttempts >= maxFirebaseFailedAttempts) {
+                Serial.println("⚠️ Too many Firebase failures. Attempting WiFi reset...");
+                firebaseFailedAttempts = 0; // Reset counter
+                
+                // Try to use default credentials as a fallback
+                String savedSSID, savedPass;
+                int failedAttempts = 0;
+                
+                // Load current WiFi credentials
+                Preferences wifiPrefs;
+                if (wifiPrefs.begin("wifi", false)) {
+                    savedSSID = wifiPrefs.getString("ssid", "");
+                    savedPass = wifiPrefs.getString("pass", "");
+                    wifiPrefs.end();
+                }
+                
+                // Check if we're already using default credentials
+                if (savedSSID == WIFI_SSID && savedPass == WIFI_PASSWORD) {
+                    Serial.println("Already using default credentials, trying full network reset");
+                    WiFi.disconnect(true);
+                    delay(1000);
+                    WiFi.reconnect();
+                } else {
+                    // Fall back to default credentials
+                    Serial.println("Attempting to connect with default credentials");
+                    updateWiFiCredentials(WIFI_SSID, WIFI_PASSWORD);
+                }
+                
+                // Reset Firebase reconnect interval
+                firebaseReconnectInterval = 5000; // A bit longer for WiFi to stabilize
+            }
         }
-
-        lastAttempt = now;
     }
-}
 
-void tokenStatusCallback(TokenInfo info) {
-    if (info.status == token_status_ready) {
-        Serial.println("✅ Firebase Token Ready");
-    } else if (info.status == token_status_error) {
-        Serial.println("❌ Firebase Token Error!");
-    }
+    return currentlyConnected;
 }
 
 bool setupFirebase() {
@@ -96,7 +224,6 @@ bool setupFirebase() {
     // Enhanced SSL/Network Configuration
     config.database_url = FIREBASE_HOST;
     config.signer.tokens.legacy_token = FIREBASE_AUTH;
-    config.token_status_callback = tokenStatusCallback;
 
     // Increase timeout and connection settings
     config.timeout.socketConnection = 10 * 1000;  // 10 seconds socket connection timeout
@@ -128,7 +255,7 @@ bool setupFirebase() {
 
         // Detailed error logging
         Serial.print("🚫 Firebase Connection Error: ");
-        Serial.println(fbdo.errorReason().c_str());
+        //Serial.println(fbdo.errorReason().c_str());
 
         Serial.print("🔄 Firebase initialization attempt failed. Retries left: ");
         Serial.println(initAttempts - 1);
@@ -201,8 +328,7 @@ bool setupFirebase() {
 bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
     if (!isFirebaseReady()) {
         Serial.println("❌ Firebase not ready when updating device status");
-        checkFirebaseConnection();  // Attempt reconnection
-        if (!isFirebaseReady()) return false; 
+        return false; 
     }
 
     String path = String(DEVICE_PATH) + deviceId;  // Firebase path for device status
@@ -214,8 +340,8 @@ bool updateDeviceStatus(bool isOnline, bool isLocked, bool isSecure) {
     json.set("status/timestamp", isTimeSynchronized());
 
     if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &json)) {
-        Serial.print("❌ Failed to update device status: ");
-        Serial.println(fbdo.errorReason());
+        //Serial.print("❌ Failed to update device status: ");
+        //Serial.println(fbdo.errorReason());
         return false;
     }
 
@@ -244,7 +370,7 @@ bool updateWiFiCredentialsInFirebase(const String& ssid, const String& password)
 
     if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &wifiJson)) {
         Serial.print("❌ Failed to update WiFi credentials: ");
-        Serial.println(fbdo.errorReason());
+        //Serial.println(fbdo.errorReason());
         return false;
     }
 
@@ -542,10 +668,19 @@ bool isUserRegisteredToDevice(String userTag, String& userId) {
 }
 
 bool isFirebaseReady() {
-    if (!Firebase.ready()) {
-        Serial.println("❌ Firebase Not Ready!");
-        setLEDStatus(STATUS_OFFLINE);
-        return false;
+    static unsigned long lastStatusCheck = 0;
+    static bool lastStatus = false;
+    const unsigned long STATUS_CHECK_INTERVAL = 500; // Check at most twice per second
+    
+    // Return cached status if checked recently to avoid repeated calls
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastStatusCheck < STATUS_CHECK_INTERVAL) {
+        return lastStatus;
     }
-    return true;
+    
+    // Just do a simple quick check
+    lastStatusCheck = currentMillis;
+    lastStatus = Firebase.ready();
+    
+    return lastStatus;
 }

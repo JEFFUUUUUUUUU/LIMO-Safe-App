@@ -434,6 +434,42 @@ void checkForCommands() {
             Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
             commandFound = true;
         }
+        else if (status == "reset") {
+            String resetValue = fbdo.stringData();
+            resetValue.replace("\"", ""); // Remove quotes
+            Serial.println("📱 Command received: Reset all fingerprints");
+            // Empty the fingerprint database
+                uint8_t p = finger.emptyDatabase();
+                bool success = (p == FINGERPRINT_OK);
+                
+                if (success) {
+                    Serial.println("✅ All fingerprints deleted successfully");
+                } else {
+                    Serial.println("❌ Failed to delete all fingerprints");
+                }
+                
+                // Log the reset event
+                FirebaseJson logEntry;
+                logEntry.set("timestamp", isTimeSynchronized());
+                logEntry.set("event", "all_fingerprints_deleted");
+                logEntry.set("userId", userId);
+                logEntry.set("success", success);
+                
+                String logPath = String("devices/") + deviceId + "/logs";
+                Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+                
+                // Clear the command
+                String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint";
+                Firebase.RTDB.deleteNode(&fbdo, userPath.c_str());
+                
+                // Invalidate the cache
+                firebaseCache.isValid = false;
+                
+                // Set LED status
+                setLEDStatus(success ? STATUS_ONLINE : STATUS_ERROR);
+                return; // Stop processing other commands
+           
+        }
     }
     
     json->iteratorEnd();

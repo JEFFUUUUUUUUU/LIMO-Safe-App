@@ -73,7 +73,7 @@ void setup() {
             Serial.println("✅ WiFi connection logged.");
         } else {
             Serial.println("❌ Failed to log WiFi connection.");
-            Serial.println(fbdo.errorReason().c_str()); // Print error reason
+            //Serial.println(fbdo.errorReason().c_str()); // Print error reason
         }
     }
     updateDeviceStatus(true, false, false); // Update device status in Firebase
@@ -82,36 +82,55 @@ void setup() {
 }
 
 unsigned long lastFirebaseCheck = 0; // Timestamp of last Firebase check
-const unsigned long FIREBASE_CHECK_INTERVAL = 2000; // Check Firebase every 2 seconds
+const unsigned long FIREBASE_CHECK_INTERVAL = 5000; // Check Firebase every 5 seconds (increased from 2s)
+bool lastKnownFirebaseStatus = false; // Track last Firebase status
 
 void loop() {
-    // Process light sensor input (decode Morse code)
+    // Always process inputs and core functionality regardless of connectivity
+    // These operations should never be blocked by connectivity issues
     processLightInput();
-    
-    // Handle fingerprint sensor (high-current operation)
     handleFingerprint();
-    
-    // Always process Nano data to prevent buffer overflow
     handleNanoData();
     
-    // Monitor WiFi connection status
-    if (!checkWiFiConnection()) {
-        return;
-        // Skip Firebase operations while WiFi is down
-    } else {
-        // Only check Firebase periodically to reduce overhead
-        if (millis() - lastFirebaseCheck >= FIREBASE_CHECK_INTERVAL) {
-            checkFirebaseConnection(); // Verify Firebase connectivity
-            lastFirebaseCheck = millis(); // Update timestamp
+    // Non-blocking WiFi status check
+    bool wifiConnected = checkWiFiConnection();
+    
+    // Only periodically check Firebase connectivity to reduce overhead
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastFirebaseCheck >= FIREBASE_CHECK_INTERVAL) {
+        lastFirebaseCheck = currentMillis;
+        
+        // Only check Firebase if WiFi is connected
+        if (wifiConnected) {
+            // Use non-blocking Firebase check
+            lastKnownFirebaseStatus = checkFirebaseConnection();
             
-            // Continue even if Firebase isn't ready
-            if (!Firebase.ready()) {
-                Serial.println("⚠️ Firebase unavailable, continuing with local operations");
+            // Update LED status based on connectivity
+            if (wifiConnected && lastKnownFirebaseStatus) {
+                setLEDStatus(STATUS_ONLINE);
+            } else if (wifiConnected && !lastKnownFirebaseStatus) {
+                setLEDStatus(STATUS_OFFLINE);
             } else {
-                // Firebase-dependent operations 
-                    checkPeriodicWiFiCredentials(); // Check for WiFi credential updates
-                    processFirebaseQueue(); // Process pending Firebase operations
-                }
+                setLEDStatus(STATUS_OFFLINE);
             }
+            
+            // Only try Firebase operations if we believe we're connected
+            // These should be fast timeouts to prevent blocking
+            if (lastKnownFirebaseStatus) {
+                checkPeriodicWiFiCredentials();
+                processFirebaseQueue();
+            }
+        } else {
+            // No WiFi connection
+            setLEDStatus(STATUS_OFFLINE);
+            lastKnownFirebaseStatus = false;
         }
     }
+    
+    // Every 10 loops, allow a very small delay to prevent watchdog issues
+    static int loopCounter = 0;
+    if (++loopCounter >= 10) {
+        loopCounter = 0;
+        delay(1); // Minimal delay to allow background system tasks
+    }
+}

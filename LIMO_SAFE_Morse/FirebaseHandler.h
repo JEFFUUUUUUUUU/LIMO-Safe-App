@@ -22,7 +22,7 @@ extern const char* const OTP_NODE;
 extern String deviceId;
 
 // Function declarations
-void checkFirebaseConnection();
+bool checkFirebaseConnection();
 void tokenStatusCallback(TokenInfo info);
 bool setupFirebase();
 bool isFirebaseReady();

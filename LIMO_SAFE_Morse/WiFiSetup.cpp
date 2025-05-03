@@ -321,7 +321,7 @@ bool updateFirebaseWiFiStatus(bool connected) {
         Serial.println("' in Firebase");
     } else {
         Serial.print("❌ Failed to update Firebase: ");
-        Serial.println(fbdo.errorReason().c_str());
+        //Serial.println(fbdo.errorReason().c_str());
     }
     
     return success;

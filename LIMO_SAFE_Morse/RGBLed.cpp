@@ -18,6 +18,7 @@ void setLEDStatus(Status status) {
             pulseColor(COLOR_BLUE, 5, 800); // Slow pulsing blue (Waiting)
             break;
         case STATUS_LOCKED:
+        case STATUS_OFFLINE:
             setColorRGB(COLOR_RED);  // Solid Red
             break;
         case STATUS_UNLOCKED:
@@ -33,9 +34,6 @@ void setLEDStatus(Status status) {
         case STATUS_ONLINE:
         case STATUS_NORMAL:
             setColorRGB(COLOR_BLUE);  // Solid Blue
-            break;
-        case STATUS_OFFLINE:
-            blinkColor(COLOR_BLUE, 5, 300, 300); // Fast blinking blue (Offline)
             break;
         case STATUS_TAMPERED:
             pulseColor(COLOR_YELLOW, 5, 800);  // Solid Yellow (Red + Green)
