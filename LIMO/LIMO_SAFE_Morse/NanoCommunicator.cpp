@@ -208,11 +208,11 @@ void processNanoCommand(const String& command) {
         // Verify OTP code using Firebase
         if (verifyOTP(command)) {
             // Send validation response back to Nano
-            sendCommandToNano("OTP_VALID");
+            //sendCommandToNano("OTP_VALID");
             Serial.println(F("✅ OTP verified successfully, sent confirmation to Nano"));
         } else {
             // Send invalid response back to Nano
-            sendCommandToNano("OTP_INVALID");
+            //sendCommandToNano("OTP_INVALID");
             Serial.println(F("❌ Invalid OTP code, sent rejection to Nano"));
         }
     } else {

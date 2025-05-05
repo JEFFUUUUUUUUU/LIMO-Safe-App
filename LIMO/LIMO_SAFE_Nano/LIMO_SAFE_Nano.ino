@@ -13,14 +13,13 @@ unsigned long lastLedBlinkTime = 0;
 bool ledState = false;
 
 // Timing constants
-#define STATUS_UPDATE_INTERVAL 1000    // Send status every 1 second
+#define STATUS_UPDATE_INTERVAL 5000    // Send status every 1 second
 #define COMMAND_CHECK_INTERVAL 50      // Check commands every 50ms
 #define LED_BLINK_INTERVAL_NORMAL 1000 // Normal blink interval in ms
 #define LED_BLINK_INTERVAL_ALERT 250   // Fast blink interval for alerts
 
 void setup() {
-    Serial.begin(9600);
-    pinMode(LED_BUILTIN, OUTPUT); 
+    Serial.begin(9600); 
     
     // Initialize all components
     initializeReedSensor();
@@ -51,17 +50,12 @@ void setup() {
 void loop() {
     unsigned long currentMillis = millis();
     
-    // Handle LED status indication
-    updateStatusLED(currentMillis);
-    
     // Process light sensor input for Morse code OTP
     processLightInput();
     
     // Check for ESP commands with appropriate timing
-    static unsigned long lastCommandCheck = 0;
-    if (currentMillis - lastCommandCheck >= COMMAND_CHECK_INTERVAL) {
+    if (espSerial.available()) {
         checkESPResponse();
-        lastCommandCheck = currentMillis;
     }
     
     // Read sensors (non-blocking)
@@ -83,20 +77,4 @@ void loop() {
     }
     
     // No delay needed - the timing is handled by millis() comparisons
-}
-
-// Update the built-in LED based on system status
-void updateStatusLED(unsigned long currentMillis) {
-    unsigned long blinkInterval = LED_BLINK_INTERVAL_NORMAL;
-    
-    // Use faster blink for alert conditions
-    if (tamperDetected || !safeClosed) {
-        blinkInterval = LED_BLINK_INTERVAL_ALERT;
-    }
-    
-    if (currentMillis - lastLedBlinkTime >= blinkInterval) {
-        ledState = !ledState;
-        digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
-        lastLedBlinkTime = currentMillis;
-    }
 }

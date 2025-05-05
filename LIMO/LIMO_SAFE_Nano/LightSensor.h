@@ -4,11 +4,11 @@
 #include <Arduino.h>
 
 // Define constants for light sensor processing
-#define LIGHT_SENSOR_PIN A0   // Arduino Nano analog pin for light sensor
-#define UNIT_TIME 70UL        // Base unit time in ms
-#define THRESHOLD_BASE 500    // Fixed threshold value for light detection
+#define LIGHT_SENSOR_PIN A7   // Arduino Nano analog pin for light sensor
+#define UNIT_TIME 45UL        // Base unit time in ms
+#define THRESHOLD_BASE 100    // Fixed threshold value for light detection
 #define MESSAGE_TIMEOUT 1000UL // Timeout to detect message completion
-#define DEBOUNCE_TIME 50UL    // Debounce time for signal stability
+#define DEBOUNCE_TIME 20UL    // Debounce time for signal stability
 
 // Morse code timing definitions
 #define LETTER_GAP_DURATION (UNIT_TIME * 3UL)  // 210 ms
@@ -26,5 +26,6 @@ void setupLightSensor();
 int getSmoothReading();
 void updateAdaptiveThreshold(); // Now uses fixed threshold (no calibration)
 void processLightInput();
+void calibrateSensor();
 
 #endif 
