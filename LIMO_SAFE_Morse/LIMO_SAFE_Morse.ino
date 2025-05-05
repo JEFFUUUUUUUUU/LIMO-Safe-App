@@ -12,7 +12,6 @@
 #include "WiFiSetup.h" // WiFi configuration and connection management
 #include "FirebaseHandler.h" // Firebase database operations
 #include "NanoCommunicator.h" // Communication with Arduino Nano
-#include "LightSensor.h" // Light sensor for Morse code input
 #include "OTPVerifier.h" // One-time password verification
 #include "UserManager.h" // User authentication and management
 #include "RGBLed.h" // RGB LED status indicator
@@ -26,7 +25,6 @@ void setup() {
     
     setupNanoCommunication(); // Initialize communication with Arduino Nano
     initRGB(); // Initialize RGB LED
-    setupLightSensor(); // Configure light sensor for Morse code input
     initializeFingerprint(); // Initialize fingerprint sensor
     //deleteAllFingerprints(); // Commented functionality to wipe fingerprint database
 
@@ -88,7 +86,6 @@ bool lastKnownFirebaseStatus = false; // Track last Firebase status
 void loop() {
     // Always process inputs and core functionality regardless of connectivity
     // These operations should never be blocked by connectivity issues
-    processLightInput();
     handleFingerprint();
     handleNanoData();
     

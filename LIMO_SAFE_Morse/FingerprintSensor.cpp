@@ -79,6 +79,34 @@ void initializeFingerprint() {
     finger.setSecurityLevel(3);
 }
 
+// Log authentication events to Firebase
+void logAuthenticationEvent(bool success, int fingerprintId = -1) {
+    if (!isFirebaseReady()) {
+        return;
+    }
+    
+    FirebaseJson logEntry;
+    logEntry.set("timestamp", isTimeSynchronized());
+    logEntry.set("event", success ? "fingerprint_authentication_success" : "fingerprint_authentication_failed");
+    
+    if (fingerprintId > 0) {
+        logEntry.set("fingerprintId", fingerprintId);
+        
+        // Get userId associated with this fingerprintId
+        String mappingsPath = String(DEVICE_PATH) + deviceId + "/fingerprint/ids/" + String(fingerprintId);
+        if (Firebase.RTDB.getString(&fbdo, mappingsPath.c_str())) {
+            String userId = fbdo.stringData();
+            userId.replace("\"", ""); // Remove quotes
+            if (userId.length() > 0) {
+                logEntry.set("userId", userId);
+            }
+        }
+    }
+    
+    String logPath = String("devices/") + deviceId + "/logs";
+    Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+}
+
 bool authenticateUser() {
   
     static unsigned long stateStartTime = 0;
@@ -126,11 +154,18 @@ bool authenticateUser() {
                     Serial.print(F("✅ Recognized ID #")); 
                     Serial.println(finger.fingerID);
                     fingerprintState = FP_IDLE;
+                    
+                    // Log successful authentication
+                    logAuthenticationEvent(true, finger.fingerID);
+                    
                     return true; // Authentication successful
                 } else {
                     fingerprintState = FP_IDLE;
                     if (!fingerprintEnrollmentInProgress) {
                         setLEDStatus(STATUS_ERROR);
+                        
+                        // Log failed authentication
+                        logAuthenticationEvent(false);
                     }
                 }
             }

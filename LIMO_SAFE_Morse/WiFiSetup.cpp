@@ -42,13 +42,13 @@ void saveFailedAttempts(int failedAttempts);
 void WiFiEventHandler(WiFiEvent_t event) {
     static int attemptCount = 0;
     static unsigned long lastReconnectAttempt = 0;
-    const unsigned long delayIntervals[] = {5000, 10000, 30000, 60000};  // 5s, 10s, 30s, 60s
+    unsigned long delayInterval = min(5000UL * (1UL << min(attemptCount, 6)), 60000UL);
     unsigned long now = millis();
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             Serial.println("WiFi lost connection");
             setLEDStatus(STATUS_OFFLINE);          
-            if (now - lastReconnectAttempt >= delayIntervals[min(attemptCount, 3)]) {
+            if (now - lastReconnectAttempt >= delayInterval) {
                 Serial.println("🔄 Attempting WiFi reconnection...");
                 WiFi.reconnect();
                 lastReconnectAttempt = now;

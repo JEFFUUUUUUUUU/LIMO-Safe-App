@@ -526,12 +526,32 @@ bool verifyOTP(String receivedOTP) {
     if (!OTPVerifier::validateFormat(receivedOTP, userTag, actualOTP)) {
         Serial.println("❌ Invalid OTP format");
         setLEDStatus(STATUS_OTP_ERROR);
+        
+        // Log OTP format validation failure
+        FirebaseJson logEntry;
+        logEntry.set("timestamp", isTimeSynchronized());
+        logEntry.set("event", "otp_format_invalid");
+        logEntry.set("attempted_otp", receivedOTP);
+        
+        String logPath = String("devices/") + deviceId + "/logs";
+        Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+        
         return false;
     }
     
     // Verify OTP and extract user details
     if (!OTPVerifier::verifyOTPCode(fbdo, userTag, receivedOTP, userId, storedOTP)) {
         setLEDStatus(STATUS_OTP_ERROR);
+        
+        // Log OTP verification failure
+        FirebaseJson logEntry;
+        logEntry.set("timestamp", isTimeSynchronized());
+        logEntry.set("event", "otp_verification_failed");
+        logEntry.set("user_tag", userTag);
+        
+        String logPath = String("devices/") + deviceId + "/logs";
+        Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+        
         return false;
     }
     
@@ -547,6 +567,17 @@ bool verifyOTP(String receivedOTP) {
         // For first time users, register them to the device
         if (!UserManager::registerUserToDevice(fbdo, deviceId, userId, userTag, true)) {
             Serial.println("❌ Failed to register first user to device!");
+            
+            // Log user registration failure
+            FirebaseJson logEntry;
+            logEntry.set("timestamp", isTimeSynchronized());
+            logEntry.set("event", "first_user_registration_failed");
+            logEntry.set("user_id", userId);
+            logEntry.set("user_tag", userTag);
+            
+            String logPath = String("devices/") + deviceId + "/logs";
+            Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+            
             return false;
         }
         isUserRegistered = true; // They should be registered now
@@ -558,6 +589,19 @@ bool verifyOTP(String receivedOTP) {
         
         if (!isUserRegistered) {
             Serial.println("❌ User is NOT registered to this device and device already has users!");
+            
+            // Log unauthorized user attempt
+            FirebaseJson logEntry;
+            logEntry.set("timestamp", isTimeSynchronized());
+            logEntry.set("event", "unauthorized_user_attempt");
+            logEntry.set("user_tag", userTag);
+            if (userId.length() > 0) {
+                logEntry.set("user_id", userId);
+            }
+            
+            String logPath = String("devices/") + deviceId + "/logs";
+            Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+            
             return false;
         }
     }
@@ -565,6 +609,19 @@ bool verifyOTP(String receivedOTP) {
     // At this point, the user should be registered - verify one more time
     if (!isUserRegisteredToDevice(userTag, userId)) {
         Serial.println("❌ User registration verification failed!");
+        
+        // Log user verification failure
+        FirebaseJson logEntry;
+        logEntry.set("timestamp", isTimeSynchronized());
+        logEntry.set("event", "user_verification_failed");
+        logEntry.set("user_tag", userTag);
+        if (userId.length() > 0) {
+            logEntry.set("user_id", userId);
+        }
+        
+        String logPath = String("devices/") + deviceId + "/logs";
+        Firebase.RTDB.pushJSON(&fbdo, logPath.c_str(), &logEntry);
+        
         return false;
     }
     // Determine user role
@@ -614,15 +671,6 @@ bool verifyOTP(String receivedOTP) {
         Serial.println(fbdo.errorReason().c_str());
         // This is not a critical failure, so we'll continue
     }
-
-    // Successful verification actions
-    Serial.println("✅ OTP verified successfully");
-    
-    // Unlock sequence
-    sendCommandToNano("UNLOCK");
-    setLEDStatus(STATUS_UNLOCKED);
-    delay(3000);
-    setColorRGB(COLOR_OFF);
     
     return true;
 }

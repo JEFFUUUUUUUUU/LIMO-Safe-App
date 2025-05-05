@@ -20,10 +20,10 @@ void sendStatusToESP(bool isSafeClosed, bool motionDetected) {
     espSerial.println(motionDetected ? F("UNSAFE") : F("SAFE"));
     espSerial.flush();  // Ensure complete transmission
 
-    Serial.print(F("📤 Sent to ESP: Nano:"));
-    Serial.print(isSafeClosed ? F("CLOSED") : F("OPEN"));
-    Serial.print(F(":"));
-    Serial.println(motionDetected ? F("UNSAFE") : F("SAFE"));
+    //Serial.print(F("📤 Sent to ESP: Nano:"));
+    //Serial.print(isSafeClosed ? F("CLOSED") : F("OPEN"));
+    //Serial.print(F(":"));
+    //Serial.println(motionDetected ? F("UNSAFE") : F("SAFE"));
 }
 
 void checkESPResponse() {
@@ -51,8 +51,6 @@ void checkESPResponse() {
             }
         }
     }
-
-    Serial.println(F("⚠️ No response from ESP within timeout!"));
 }
 
 void processESPCommand(const char* command) {
@@ -62,7 +60,27 @@ void processESPCommand(const char* command) {
         return;
     }
     
-    // Process actual commands
+    // Process OTP verification response
+    if (strncmp(command, "OTP_VALID", 9) == 0) {
+        Serial.println(F("✅ OTP verification successful! Unlocking safe..."));
+        unlockSafe();  // Call function from LockControl
+
+        delay(500);
+
+        Serial.println(F("🔒 Relocking safe..."));
+        lockSafe();  // Lock back after delay
+
+        // Send confirmation to ESP32
+        espSerial.println(F("Nano:SAFE_UNLOCKED"));
+        return;
+    }
+    
+    if (strncmp(command, "OTP_INVALID", 11) == 0) {
+        Serial.println(F("❌ Invalid OTP code! Access denied."));
+        return;
+    }
+    
+    // Process direct unlock command 
     if (strcmp(command, "UNLOCK") == 0) {
         Serial.println(F("🔓 Received 'UNLOCK' command! Unlocking safe..."));
         unlockSafe();  // Call function from LockControl

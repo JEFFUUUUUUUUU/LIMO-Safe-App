@@ -1,5 +1,5 @@
-#ifndef NanoCommunicator_h
-#define NanoCommunicator_h
+#ifndef NANO_COMMUNICATOR_H
+#define NANO_COMMUNICATOR_H
 
 #include <Arduino.h>
 #include <Firebase_ESP_Client.h>
@@ -16,5 +16,6 @@ void handleNanoData();
 void logStateChange(bool isClosed, bool isSecure);
 void processFirebaseQueue();
 void sendCommandToNano(const char* command);
+void processNanoCommand(const String& command);
 
 #endif

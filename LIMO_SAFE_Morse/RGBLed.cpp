@@ -36,13 +36,13 @@ void setLEDStatus(Status status) {
             setColorRGB(COLOR_BLUE);  // Solid Blue
             break;
         case STATUS_TAMPERED:
-            pulseColor(COLOR_YELLOW, 5, 800);  // Solid Yellow (Red + Green)
+            setColorRGB(COLOR_YELLOW);  // Solid Yellow (Red + Green)
             break;
         case STATUS_SCANNING:
             setColorRGB(COLOR_PURPLE);
             break;
          case STATUS_OPEN:
-            setColorRGB(COLOR_YELLOW);  // Solid Purple
+            setColorRGB(COLOR_WHITE);  // Solid Purple
             break;
     }
 }

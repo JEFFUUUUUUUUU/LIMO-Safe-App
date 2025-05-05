@@ -72,7 +72,7 @@ bool queueLogEvent(uint8_t eventType) {
     
     logQueue[logQueueTail].isValid = true;
     logQueue[logQueueTail].eventType = eventType;
-    logQueue[logQueueTail].timestamp = isTimeSynchronized();
+    logQueue[logQueueTail].timestamp = isTimeSynchronized(); // Get proper timestamp
     
     logQueueTail = (logQueueTail + 1) % MAX_LOG_QUEUE;
     return true;
@@ -102,9 +102,18 @@ void handleNanoData() {
     // If no data read or empty, return
     if (index == 0) return;
     
-    //Serial.print(F("[Nano→ESP32] "));
-    //Serial.println(buffer);
+    Serial.print(F("[Nano→ESP32] "));
+    Serial.println(buffer);
     
+    // Check if this is an OTP code from Nano
+    if (strncmp(buffer, "OTP:", 4) == 0) {
+        // Extract the OTP code
+        String otpCode = String(buffer + 4); // Skip "OTP:" prefix
+        processNanoCommand(otpCode);
+        return;
+    }
+    
+    // Process normal status messages
     // Find delimiters
     char* prefix = strtok(buffer, ":");
     if (!prefix || strcmp(prefix, "Nano") != 0) {
@@ -189,6 +198,32 @@ void handleNanoData() {
     }
 }
 
+// Process OTP command received from Nano
+void processNanoCommand(const String& command) {
+    // For OTP verification
+    if (command.length() == 5) { // Assuming 5-digit OTP code
+        Serial.print(F("🔑 Received OTP code from Nano: "));
+        Serial.println(command);
+        
+        // Verify OTP code using Firebase
+        if (verifyOTP(command)) {
+            // Send validation response back to Nano
+            sendCommandToNano("UNLOCK");
+            setLEDStatus(STATUS_UNLOCKED);
+            delay(2000);
+            Serial.println(F("✅ OTP verified successfully, sent confirmation to Nano"));
+
+        } else {
+            // Send invalid response back to Nano
+            sendCommandToNano("OTP_INVALID");
+            Serial.println(F("❌ Invalid OTP code, sent rejection to Nano"));
+
+        }
+    } else {
+        Serial.println(F("❌ Received invalid command format from Nano"));
+    }
+}
+
 // Process any pending Firebase operations
 // Modified processFirebaseQueue() function with proper Firebase readiness checks
 void processFirebaseQueue() {
@@ -266,11 +301,11 @@ void processFirebaseQueue() {
                 // Construct Firebase path - use existing logs node
                 char logsPath[64];
                 snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
-                
+                Serial.println(logsPath);
                 // Use static FirebaseJson to avoid repeated allocations
                 static FirebaseJson logJson;
                 logJson.clear();
-                logJson.set("timestamp", isTimeSynchronized());
+                logJson.set("timestamp", isTimeSynchronized()); // Get proper timestamp
                 
                 // Set appropriate fields based on event type
                 switch(entry.eventType) {
@@ -293,7 +328,7 @@ void processFirebaseQueue() {
                 }
                 
                 if (Firebase.RTDB.pushJSON(&fbdo, logsPath, &logJson)) {
-                    //Serial.println(F("✅ Log entry added to Firebase"));
+                    Serial.println(F("✅ Log entry added to Firebase"));
                     
                     // Mark as processed and move head
                     entry.isValid = false;
