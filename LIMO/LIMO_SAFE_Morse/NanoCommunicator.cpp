@@ -208,12 +208,15 @@ void processNanoCommand(const String& command) {
         // Verify OTP code using Firebase
         if (verifyOTP(command)) {
             // Send validation response back to Nano
-            //sendCommandToNano("OTP_VALID");
+            sendCommandToNano("UNLOCK");
+            setLEDStatus(STATUS_UNLOCKED);
             Serial.println(F("✅ OTP verified successfully, sent confirmation to Nano"));
+
         } else {
             // Send invalid response back to Nano
-            //sendCommandToNano("OTP_INVALID");
+            sendCommandToNano("OTP_INVALID");
             Serial.println(F("❌ Invalid OTP code, sent rejection to Nano"));
+
         }
     } else {
         Serial.println(F("❌ Received invalid command format from Nano"));
@@ -297,7 +300,7 @@ void processFirebaseQueue() {
                 // Construct Firebase path - use existing logs node
                 char logsPath[64];
                 snprintf(logsPath, sizeof(logsPath), "%s%s/logs", DEVICE_PATH, deviceId);
-                
+                Serial.println(logsPath);
                 // Use static FirebaseJson to avoid repeated allocations
                 static FirebaseJson logJson;
                 logJson.clear();

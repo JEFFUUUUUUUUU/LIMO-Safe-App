@@ -1,6 +1,6 @@
 #include "ReedSensor.h"
 
-const int reedSwitchPin = 12;
+const int reedSwitchPin = 10;
 
 // Debouncing variables
 static bool lastReading = false;
@@ -8,12 +8,13 @@ static bool stableState = false;
 static unsigned long lastDebounceTime = 0;
 
 void initializeReedSensor() {
-    // Change to INPUT mode since KY-021 has its own pull-up resistor
-    pinMode(reedSwitchPin, INPUT);
-    
-    // Initialize the stable state
-    lastReading = digitalRead(reedSwitchPin) == LOW;
-    stableState = lastReading;
+  // Enable internal pull-up resistor on the reed switch pin
+  pinMode(reedSwitchPin, INPUT_PULLUP);
+
+  // Initialize the stable state
+  // Now HIGH means no magnet (pull-up), LOW means magnet (switch closed to ground)
+  lastReading = digitalRead(reedSwitchPin) == LOW;
+  stableState = lastReading;
 }
 
 bool isSafeClosed() {

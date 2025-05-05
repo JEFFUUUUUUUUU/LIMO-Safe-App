@@ -614,15 +614,6 @@ bool verifyOTP(String receivedOTP) {
         Serial.println(fbdo.errorReason().c_str());
         // This is not a critical failure, so we'll continue
     }
-
-    // Successful verification actions
-    Serial.println("✅ OTP verified successfully");
-    
-    // Unlock sequence
-    sendCommandToNano("UNLOCK");
-    setLEDStatus(STATUS_UNLOCKED);
-    delay(3000);
-    setColorRGB(COLOR_OFF);
     
     return true;
 }

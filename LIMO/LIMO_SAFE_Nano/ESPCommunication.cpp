@@ -61,7 +61,7 @@ void processESPCommand(const char* command) {
     }
     
     // Process OTP verification response
-    /*if (strncmp(command, "OTP_VALID", 9) == 0) {
+    if (strncmp(command, "OTP_VALID", 9) == 0) {
         Serial.println(F("✅ OTP verification successful! Unlocking safe..."));
         unlockSafe();  // Call function from LockControl
 
@@ -78,7 +78,7 @@ void processESPCommand(const char* command) {
     if (strncmp(command, "OTP_INVALID", 11) == 0) {
         Serial.println(F("❌ Invalid OTP code! Access denied."));
         return;
-    }*/
+    }
     
     // Process direct unlock command 
     if (strcmp(command, "UNLOCK") == 0) {

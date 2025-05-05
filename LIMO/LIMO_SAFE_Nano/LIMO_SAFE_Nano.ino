@@ -13,7 +13,7 @@ unsigned long lastLedBlinkTime = 0;
 bool ledState = false;
 
 // Timing constants
-#define STATUS_UPDATE_INTERVAL 5000    // Send status every 1 second
+#define STATUS_UPDATE_INTERVAL 1000    // Send status every 1 second
 #define COMMAND_CHECK_INTERVAL 50      // Check commands every 50ms
 #define LED_BLINK_INTERVAL_NORMAL 1000 // Normal blink interval in ms
 #define LED_BLINK_INTERVAL_ALERT 250   // Fast blink interval for alerts
