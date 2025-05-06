@@ -477,19 +477,39 @@ class LogsFragment : Fragment() {
             }
             "otp_verification_failed" -> {
                 val userTag = logData["user_tag"] as? String ?: "Unknown"
-                LogEntry(
+                
+                val logEntry = LogEntry(
                     deviceName = resolvedDeviceId,
                     timestamp = timestamp,
                     status = "OTP Verification Failed",
-                    userName = userTag,
+                    userName = userTag, // Initial placeholder showing the tag
                     eventType = "Authentication",
                     uniqueId = key
                 )
+                
+                // Lookup userId from tag, then fetch email
+                if (userTag != "Unknown") {
+                    fetchUserIdFromTag(resolvedDeviceId, userTag) { userId ->
+                        if (userId != null) {
+                            fetchUserEmail(userId) { email ->
+                                val index = allLogs.indexOfFirst { it.uniqueId == key }
+                                if (index != -1) {
+                                    val updatedLog = logEntry.copy(userName = email ?: userTag)
+                                    allLogs[index] = updatedLog
+                                    Handler(Looper.getMainLooper()).post {
+                                        logsAdapter.notifyItemChanged(index)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                logEntry
             }
             "user_verification_failed" -> {
                 val userTag = logData["user_tag"] as? String ?: "Unknown"
-                val userId = logData["user_id"] as? String ?: ""
-
+                
                 val logEntry = LogEntry(
                     deviceName = resolvedDeviceId,
                     timestamp = timestamp,
@@ -499,14 +519,19 @@ class LogsFragment : Fragment() {
                     uniqueId = key
                 )
 
-                if (userId.isNotEmpty()) {
-                    fetchUserEmail(userId) { email ->
-                        val index = allLogs.indexOfFirst { it.uniqueId == key }
-                        if (index != -1) {
-                            val updatedLog = logEntry.copy(userName = email ?: userId)
-                            allLogs[index] = updatedLog
-                            Handler(Looper.getMainLooper()).post {
-                                logsAdapter.notifyItemChanged(index)
+                // Lookup userId from tag, then fetch email
+                if (userTag != "Unknown") {
+                    fetchUserIdFromTag(resolvedDeviceId, userTag) { userId ->
+                        if (userId != null) {
+                            fetchUserEmail(userId) { email ->
+                                val index = allLogs.indexOfFirst { it.uniqueId == key }
+                                if (index != -1) {
+                                    val updatedLog = logEntry.copy(userName = email ?: userTag)
+                                    allLogs[index] = updatedLog
+                                    Handler(Looper.getMainLooper()).post {
+                                        logsAdapter.notifyItemChanged(index)
+                                    }
+                                }
                             }
                         }
                     }
@@ -927,6 +952,35 @@ class LogsFragment : Fragment() {
                     callback(null)
                 }
             })
+    }
+
+    private fun fetchUserIdFromTag(deviceId: String, tagId: String, callback: (String?) -> Unit) {
+        // Query the users to find the one with this tag
+        val usersRef = database.child("users")
+        
+        usersRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                var foundUserId: String? = null
+                
+                // Iterate through all users to find which one has this tag
+                for (userSnapshot in snapshot.children) {
+                    val userId = userSnapshot.key
+                    val userTag = userSnapshot.child("tag").getValue(String::class.java)
+                    
+                    if (userTag == tagId) {
+                        foundUserId = userId
+                        break
+                    }
+                }
+                
+                callback(foundUserId)
+            }
+            
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("LogsFragment", "Error fetching userId from tag", error.toException())
+                callback(null)
+            }
+        })
     }
 
     companion object {
