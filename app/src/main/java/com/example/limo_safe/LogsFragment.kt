@@ -350,16 +350,61 @@ class LogsFragment : Fragment() {
 
         // Handle events with an "event" field
         return when (event) {
-            "user_role_updated" -> {
-                val updatedUser = logData["user"] as? Map<String, Any> ?: emptyMap()
+            // Lock state events
+            "lock" -> {
+                val isLocked = logData["locked"] as? Boolean ?: false
+                val userName = if (logData.containsKey("user")) {
+                    val userData = logData["user"] as? Map<String, Any>
+                    userData?.get("email") as? String ?: "System"
+                } else "System"
+
                 LogEntry(
                     deviceName = resolvedDeviceId,
                     timestamp = timestamp,
-                    status = "Role: ${logData["newRole"] as? String ?: "Unknown"}",
-                    userName = updatedUser["email"] as? String ?: "Unknown",
-                    eventType = "User Role Update",
+                    status = if (isLocked) "Device Locked" else "Device Unlocked",
+                    userName = userName,
+                    eventType = "Security",
                     uniqueId = key
                 )
+            }
+            "security" -> {
+                val isSecure = logData["secure"] as? Boolean ?: false
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = if (isSecure) "Device Secured" else "Tamper Detected",
+                    userName = "System",
+                    eventType = "Security",
+                    uniqueId = key
+                )
+            }
+            "unauthorized_user_attempt" -> {
+                val userTag = logData["user_tag"] as? String ?: "Unknown"
+                val userId = logData["user_id"] as? String ?: ""
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Unauthorized User Attempt",
+                    userName = userTag,
+                    eventType = "Security",
+                    uniqueId = key
+                )
+
+                if (userId.isNotEmpty()) {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
             }
             "otp" -> {
                 // Create log entry with placeholder, then fetch email
@@ -419,6 +464,55 @@ class LogsFragment : Fragment() {
                 }
 
                 return logEntry
+            }
+            "otp_format_invalid" -> {
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Invalid OTP Format",
+                    userName = "System",
+                    eventType = "Authentication",
+                    uniqueId = key
+                )
+            }
+            "otp_verification_failed" -> {
+                val userTag = logData["user_tag"] as? String ?: "Unknown"
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "OTP Verification Failed",
+                    userName = userTag,
+                    eventType = "Authentication",
+                    uniqueId = key
+                )
+            }
+            "user_verification_failed" -> {
+                val userTag = logData["user_tag"] as? String ?: "Unknown"
+                val userId = logData["user_id"] as? String ?: ""
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "User Verification Failed",
+                    userName = userTag,
+                    eventType = "Authentication",
+                    uniqueId = key
+                )
+
+                if (userId.isNotEmpty()) {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
             }
             "fingerprint_enrolled" -> {
                 // Handle fingerprint enrollment logs
@@ -484,6 +578,44 @@ class LogsFragment : Fragment() {
 
                 return logEntry
             }
+            "fingerprint_authentication_success" -> {
+                val fingerprintId = (logData["fingerprintId"] as? Number)?.toInt() ?: 0
+                val userId = logData["userId"] as? String ?: ""
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint Authentication Success (#$fingerprintId)",
+                    userName = "System",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId.isNotEmpty()) {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "fingerprint_authentication_failed" -> {
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint Authentication Failed",
+                    userName = "System",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+            }
             "multiple_fingerprints_deleted" -> {
                 // Handle fingerprint delete logs
                 val userId = logData["userId"] as? String ?: "Unknown"
@@ -516,6 +648,186 @@ class LogsFragment : Fragment() {
 
                 return logEntry
             }
+            "all_fingerprints_deleted" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val success = logData["success"] as? Boolean ?: false
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = if (success) "All Fingerprints Deleted" else "Failed to Delete All Fingerprints",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "user_fingerprints_deleted" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val total = (logData["total"] as? Number)?.toInt() ?: 0
+                val success = (logData["success"] as? Number)?.toInt() ?: 0
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "All User Fingerprints Deleted ($success/$total)",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "user_fingerprints_delete_partial" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val total = (logData["total"] as? Number)?.toInt() ?: 0
+                val success = (logData["success"] as? Number)?.toInt() ?: 0
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Partial Fingerprint Deletion ($success/$total)",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "fingerprint_deleted" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val fingerprintId = (logData["fingerprintId"] as? Number)?.toInt() ?: 0
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Fingerprint #$fingerprintId Deleted",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "fingerprint_delete_failed" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+                val fingerprintId = (logData["fingerprintId"] as? Number)?.toInt() ?: 0
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Failed to Delete Fingerprint #$fingerprintId",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "fingerprint_delete_no_fingerprints" -> {
+                val userId = logData["userId"] as? String ?: "Unknown"
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "No Fingerprints Found to Delete",
+                    userName = "Loading...",
+                    eventType = "Biometric",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
+            "user_role_updated" -> {
+                val updatedUser = logData["user"] as? Map<String, Any> ?: emptyMap()
+                LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "Role: ${logData["newRole"] as? String ?: "Unknown"}",
+                    userName = updatedUser["email"] as? String ?: "Unknown",
+                    eventType = "User Role Update",
+                    uniqueId = key
+                )
+            }
             "user_added_to_device" -> {
                 val userData = logData["user"] as? Map<String, Any> ?: emptyMap()
                 LogEntry(
@@ -538,6 +850,34 @@ class LogsFragment : Fragment() {
                     uniqueId = key
                 )
             }
+            "first_user_registration_failed" -> {
+                val userId = logData["user_id"] as? String ?: "Unknown"
+                val userTag = logData["user_tag"] as? String ?: "Unknown"
+
+                val logEntry = LogEntry(
+                    deviceName = resolvedDeviceId,
+                    timestamp = timestamp,
+                    status = "First User Registration Failed",
+                    userName = "Loading...",
+                    eventType = "User Management",
+                    uniqueId = key
+                )
+
+                if (userId != "Unknown") {
+                    fetchUserEmail(userId) { email ->
+                        val index = allLogs.indexOfFirst { it.uniqueId == key }
+                        if (index != -1) {
+                            val updatedLog = logEntry.copy(userName = email ?: userId)
+                            allLogs[index] = updatedLog
+                            Handler(Looper.getMainLooper()).post {
+                                logsAdapter.notifyItemChanged(index)
+                            }
+                        }
+                    }
+                }
+
+                logEntry
+            }
             "device_online" -> {
                 LogEntry(
                     deviceName = resolvedDeviceId,
@@ -555,33 +895,6 @@ class LogsFragment : Fragment() {
                     status = "WiFi Connected: ${logData["ssid"] as? String ?: "Unknown Network"}",
                     userName = logData["ip_address"] as? String ?: "N/A",
                     eventType = "Network",
-                    uniqueId = key
-                )
-            }
-            "lock" -> {
-                val isLocked = logData["locked"] as? Boolean ?: false
-                val userName = if (logData.containsKey("user")) {
-                    val userData = logData["user"] as? Map<String, Any>
-                    userData?.get("email") as? String ?: "System"
-                } else "System"
-
-                LogEntry(
-                    deviceName = resolvedDeviceId,
-                    timestamp = timestamp,
-                    status = if (isLocked) "Device Locked" else "Device Unlocked",
-                    userName = userName,
-                    eventType = "Security",
-                    uniqueId = key
-                )
-            }
-            "security" -> {
-                val isSecure = logData["secure"] as? Boolean ?: false
-                LogEntry(
-                    deviceName = resolvedDeviceId,
-                    timestamp = timestamp,
-                    status = if (isSecure) "Device Secured" else "Tamper Detected",
-                    userName = "System",
-                    eventType = "Security",
                     uniqueId = key
                 )
             }
