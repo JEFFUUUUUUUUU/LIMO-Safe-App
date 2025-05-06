@@ -17,6 +17,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.example.limo_safe.utils.AppFlags
 
 class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedListener {
+    // Camera permission request code - must match the one in MCFragment
+    private val CAMERA_PERMISSION_REQUEST_CODE = 123
     private lateinit var auth: FirebaseAuth
     private var mainContent: androidx.cardview.widget.CardView? = null
     private var fragmentContainer: FrameLayout? = null
@@ -54,7 +56,13 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
             // We just need to make sure we don't clear those preferences
             
             // Save that we have dialog state
-            if (currentFragment is MCFragment || currentFragment is MonitoringFragment) {
+            if (currentFragment is MCFragment) {
+                // For MCFragment, explicitly save that we might have a dialog open
+                editor.putBoolean(KEY_DIALOG_STATE, true)
+                // Trigger the MCFragment to save its dialog state
+                currentFragment.saveDialogStatePublic()
+                Log.d(TAG, "Triggered MCFragment to save dialog state")
+            } else if (currentFragment is MonitoringFragment) {
                 editor.putBoolean(KEY_DIALOG_STATE, true)
             }
 
@@ -394,34 +402,37 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
     override fun onResume() {
         super.onResume()
         
-        // We always want to start with the login screen when the app is reopened
-        // So we don't restore any previous navigation state
-        if (supportFragmentManager.backStackEntryCount == 0) {
-            // Check initial state when first launching the app
+        val prefs = getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
+        val wasMinimized = prefs.getBoolean("was_minimized", false)
+        
+        if (wasMinimized) {
+            // App was minimized, restore previous state
+            Log.d(TAG, "App was minimized, restoring previous state")
+            restoreNavigationState()
+        } else if (supportFragmentManager.backStackEntryCount == 0) {
+            // First launch or no back stack, check initial state
             checkInitialState()
         }
         
         // Reset the minimized flag
-        getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("was_minimized", false)
-            .apply()
-            
-        Log.d(TAG, "App resumed, starting fresh")
+        prefs.edit().putBoolean("was_minimized", false).apply()
+        
+        Log.d(TAG, "App resumed")
     }
 
     override fun onPause() {
         super.onPause()
         
-        // We don't need to save navigation state anymore since we're
-        // always logging out when the app is destroyed and reopened
-        // But we'll keep the minimized flag for compatibility
+        // Save the current navigation state
+        saveNavigationState()
+        
+        // Set the minimized flag
         getSharedPreferences(NAV_STATE_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean("was_minimized", true)
             .apply()
-            
-        Log.d(TAG, "App paused")
+        
+        Log.d(TAG, "App paused, saved navigation state and set minimized flag")
     }
 
     override fun onDestroy() {
@@ -565,6 +576,30 @@ class MainActivity : AppCompatActivity(), FragmentManager.OnBackStackChangedList
         } catch (e: Exception) {
             Log.e(TAG, "Error navigating to ForgotPasswordFragment: ${e.message}")
             Toast.makeText(this, "Navigation error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Handle permission results at the activity level
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        // Log the permission result
+        Log.d(TAG, "Permission result received: requestCode=$requestCode")
+        
+        // Check if this is the camera permission result
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            // Ensure we're on the MCFragment after permission dialog is dismissed
+            Handler(Looper.getMainLooper()).postDelayed({
+                // Check if we need to restore the MCFragment
+                val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+                if (currentFragment !is MCFragment) {
+                    Log.d(TAG, "Restoring MCFragment after permission dialog")
+                    // Navigate to MCFragment
+                    onLoginSuccessful()
+                } else {
+                    Log.d(TAG, "Already on MCFragment after permission dialog")
+                }
+            }, 100) // Small delay to ensure UI is ready
         }
     }
 }

@@ -28,7 +28,7 @@ class MorseCodeHelper(context: Context) {
 
     // Morse code timing constants
     companion object {
-        private const val UNIT_TIME = 60L
+        private const val UNIT_TIME = 45L
 
         // Morse Code Mapping
         private val morseCodeMap = mapOf(
@@ -85,7 +85,7 @@ class MorseCodeHelper(context: Context) {
                             pulses.add(MorsePulse(false, UNIT_TIME))
                         }
                     }
-                    pulses.add(MorsePulse(false, UNIT_TIME * 4))
+                    pulses.add(MorsePulse(false, UNIT_TIME * 5))
                 }
             }
             return pulses

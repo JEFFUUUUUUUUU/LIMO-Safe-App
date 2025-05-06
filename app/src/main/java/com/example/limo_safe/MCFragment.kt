@@ -1246,7 +1246,17 @@ class MCFragment : Fragment() {
             CAMERA_PERMISSION_REQUEST_CODE -> {
                 // Check if permission was granted
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // Permission granted, do nothing special
+                    // Permission granted, show toast
+                    Toast.makeText(
+                        requireContext(),
+                        "Camera permission granted",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    // Proceed with generating code if that's what we were trying to do
+                    if (::generateCodeButton.isInitialized && generateCodeButton.isEnabled) {
+                        generateRandomCode()
+                    }
                 } else {
                     // Permission denied, show a toast message
                     Toast.makeText(
@@ -1255,21 +1265,42 @@ class MCFragment : Fragment() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+
+                // Regardless of permission result, make sure we're still on the LIMO Generator page
+                // by checking if we're still attached to the activity
+                if (isAdded && !isDetached) {
+                    // We're still on the MCFragment, no need to navigate
+                    Log.d("MCFragment", "Still on MCFragment after permission result")
+                } else {
+                    // If somehow we got detached, try to navigate back to MCFragment
+                    val mainActivity = activity as? MainActivity
+                    if (mainActivity != null && !mainActivity.isFinishing) {
+                        Log.d("MCFragment", "Navigating back to MCFragment after permission result")
+                        mainActivity.onLoginSuccessful() // This will navigate to MCFragment
+                    }
+                }
                 return
+            }
+            else -> {
+                // Call super implementation for other permission requests
+                super.onRequestPermissionsResult(requestCode, permissions, grantResults)
             }
         }
     }
 
     // Reset the generate button to its initial state
     private fun resetGenerateButton() {
-        // Reset all properties using apply to set multiple properties at once
-        generateCodeButton.apply {
-            // Enable the button
-            isEnabled = true
-            // Set full opacity
-            alpha = 1.0f
-            // Reset text
-            text = "Generate Code"
+        // Only proceed if the button is initialized
+        if (::generateCodeButton.isInitialized) {
+            // Reset all properties using apply to set multiple properties at once
+            generateCodeButton.apply {
+                // Enable the button
+                isEnabled = true
+                // Set full opacity
+                alpha = 1.0f
+                // Reset text
+                text = "Generate Code"
+            }
         }
     }
 
@@ -1893,6 +1924,14 @@ class MCFragment : Fragment() {
         
         // Apply changes
         editor.apply()
+    }
+
+    /**
+     * Public method to save dialog state that can be called from MainActivity
+     * This ensures the dialog state is properly saved when the app is minimized
+     */
+    fun saveDialogStatePublic() {
+        saveDialogState()
     }
 
     companion object {

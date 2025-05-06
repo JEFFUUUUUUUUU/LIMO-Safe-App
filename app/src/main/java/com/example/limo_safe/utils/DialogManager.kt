@@ -65,12 +65,12 @@ class DialogManager(private val context: Context) {
             }
             activeDialog = null
             triesTextView = null  // Added from the removed duplicate method
-            
+
             // Clear dialog tracking state
             currentDialog = null
             currentDialogTag = null
             // We don't clear dialogData here to allow for restoration if needed
-            
+
             // We don't cancel any timers here - MCFragment handles all timers
             // This ensures the timer continues even if the dialog is closed and reopened
         } catch (e: Exception) {
@@ -94,13 +94,13 @@ class DialogManager(private val context: Context) {
         // Track this dialog for state restoration
         currentDialogTag = "morse_code_dialog"
         currentDialog = activeDialog
-        
+
         // Store dialog data for potential restoration
         dialogData["code"] = code
         dialogData["remaining_tries"] = remainingTries
         dialogData["remaining_cooldown"] = remainingCooldown
         dialogData["remaining_expiration_time"] = remainingExpirationTime
-        
+
         val dialog = createMorseCodeDialogInternal(code, remainingTries, remainingCooldown, onPlayClick, onExpire, remainingExpirationTime)
         activeDialog = dialog
         currentDialog = dialog
@@ -195,32 +195,32 @@ class DialogManager(private val context: Context) {
     fun showMaxTriesDialog() {
         // Dismiss any active dialog first
         dismissActiveDialog()
-        
+
         // Create a custom dialog using the dialog_max_tries.xml layout
         val dialog = android.app.Dialog(context)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_max_tries)
         dialog.setCancelable(false)
-        
+
         // Make sure the dialog window has a transparent background
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        
+
         // Set the dialog width to 90% of the screen width to ensure text isn't cut off
         val displayMetrics = context.resources.displayMetrics
         val width = (displayMetrics.widthPixels * 0.9).toInt()
         dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-        
+
         // Center the dialog on the screen
         dialog.window?.setGravity(Gravity.CENTER)
-        
+
         // Get reference to the OK button in the custom layout
         val okButton = dialog.findViewById<Button>(R.id.okButton)
-        
+
         // Set up button click listener
         okButton?.setOnClickListener {
             dialog.dismiss()
         }
-        
+
         // Show the dialog
         dialog.show()
     }
@@ -228,38 +228,38 @@ class DialogManager(private val context: Context) {
     fun showExitConfirmationDialog(onConfirm: () -> Unit) {
         // Dismiss any active dialog first
         dismissActiveDialog()
-        
+
         // Create a custom dialog using a custom approach for proper styling
         val dialog = android.app.Dialog(context)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_exit_confirmation)
         dialog.setCancelable(false)
-        
+
         // Make sure the dialog window has a transparent background
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        
+
         // Set the dialog width to 90% of the screen width to ensure text isn't cut off
         val displayMetrics = context.resources.displayMetrics
         val width = (displayMetrics.widthPixels * 0.9).toInt()
         dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-        
+
         // Center the dialog on the screen
         dialog.window?.setGravity(Gravity.CENTER)
-            
+
         // Get references to the buttons in the custom layout
         val yesButton = dialog.findViewById<Button>(R.id.yesButton)
         val noButton = dialog.findViewById<Button>(R.id.noButton)
-        
+
         // Set up button click listeners
         yesButton?.setOnClickListener {
             dialog.dismiss()
             onConfirm()
         }
-        
+
         noButton?.setOnClickListener {
             dialog.dismiss()
         }
-        
+
         // Store as active dialog and show
         // We're using a different dialog type, so we need to update our tracking differently
         if (activeDialog != null) {
@@ -359,7 +359,7 @@ class DialogManager(private val context: Context) {
                     dialog.dismiss()
                 }
                 .create()
-    
+
             fallbackDialog.show()
         }
     }
@@ -421,25 +421,25 @@ class DialogManager(private val context: Context) {
         try {
             // Dismiss any active dialog first
             dismissActiveDialog()
-            
+
             // Track this dialog for state restoration
             currentDialogTag = "code_expired_dialog"
-            
+
             // Store dialog data for potential restoration
             dialogData["expired_code"] = expiredCode
-            
+
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_code_expired, null)
-            
+
             // Set the expired code text
             val expiredCodeText = dialogView.findViewById<TextView>(R.id.expiredCodeText)
             expiredCodeText.text = expiredCode
-            
+
             val okButton = dialogView.findViewById<Button>(R.id.okButton)
-            
+
             okButton.setOnClickListener {
                 // IMPORTANT: First dismiss the dialog to prevent any potential issues
                 dismissActiveDialog()
-                
+
                 try {
                     // Execute the onConfirm callback inside a try-catch to prevent app crashes
                     onConfirm()
@@ -447,28 +447,28 @@ class DialogManager(private val context: Context) {
                     Log.e("DialogManager", "Error in code expiration dialog onConfirm callback", e)
                 }
             }
-            
+
             val builder = androidx.appcompat.app.AlertDialog.Builder(context)
                 .setView(dialogView)
                 .setCancelable(false)
-            
+
             val dialog = builder.create()
             dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            
+
             // IMPORTANT: Set this as the active dialog
             activeDialog = dialog
-            
+
             // Show the dialog
             dialog.show()
         } catch (e: Exception) {
             Log.e("DialogManager", "Error showing code expired dialog", e)
         }
     }
-    
+
     fun showCodeExpiredDialog(onConfirm: () -> Unit) {
         showCodeExpiredDialog("", onConfirm)
     }
-    
+
     companion object {
         fun createLoadingDialog(context: Context): androidx.appcompat.app.AlertDialog {
             return DialogManager(context).createLoadingDialog()
